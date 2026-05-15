@@ -1,10 +1,10 @@
+from datetime import date
 import time
-import math
 from typing import Any
 from uuid import uuid4
 
 import pandas as pd
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import settings
@@ -30,7 +30,6 @@ from app.services.workbench.source_db import (
     _is_date_like_column_name,
     _previous_dataset_row_count,
     _quote,
-    _resolve_source_column_name,
     _source_begin,
     _source_column_meta,
     _source_columns_map,
@@ -137,10 +136,36 @@ def _same_table_date_sequence_pair(left_stage_name: str, right_stage_name: str) 
         and right_stage_name in SAME_TABLE_DATE_SEQUENCE_STAGES
     )
 
+
+def _normalized_date_sequence_stage_aliases() -> list[tuple[str, list[str]]]:
+    normalized: list[tuple[str, list[str]]] = []
+    for item in DATE_SEQUENCE_STAGE_ALIASES:
+        if isinstance(item, str):
+            stage_name = item
+            aliases = [item]
+        elif isinstance(item, (tuple, list)):
+            if len(item) == 1:
+                stage_name = str(item[0])
+                aliases = [str(item[0])]
+            elif len(item) == 2:
+                stage_name = str(item[0])
+                raw_aliases = item[1]
+                if isinstance(raw_aliases, str):
+                    aliases = [raw_aliases]
+                else:
+                    aliases = [str(alias) for alias in raw_aliases]
+            else:
+                raise ValueError(f"Invalid DATE_SEQUENCE_STAGE_ALIASES entry: {item!r}")
+        else:
+            raise ValueError(f"Invalid DATE_SEQUENCE_STAGE_ALIASES entry: {item!r}")
+        normalized.append((stage_name, aliases))
+    return normalized
+
+
 def _build_dynamic_date_gap_rules(available: dict[str, str]) -> list[dict]:
     matches_by_alias = _builtin_stage_column_matches(available)
     stage_columns: list[tuple[str, list[str]]] = []
-    for stage_name, aliases in DATE_SEQUENCE_STAGE_ALIASES:
+    for stage_name, aliases in _normalized_date_sequence_stage_aliases():
         matched_columns: list[str] = []
         for alias in aliases:
             matched_columns.extend(matches_by_alias.get(alias, []))
@@ -211,10 +236,11 @@ def _sql_table_column_samples(conn, table_name: str, column_name: str, size: int
     schema = _quote(settings.source_db_schema)
     table_q = _quote(table_name)
     column_q = _quote(column_name)
+    safe_size = max(1, min(int(size), 100))
     sql = text(
-        f"SELECT {column_q} FROM {schema}.{table_q} WHERE {column_q} IS NOT NULL LIMIT {int(size)}"
+        f"SELECT {column_q} FROM {schema}.{table_q} WHERE {column_q} IS NOT NULL LIMIT :sample_limit"
     )
-    return [_safe_json(row[0]) for row in conn.execute(sql).fetchall()]
+    return [_safe_json(row[0]) for row in conn.execute(sql, {"sample_limit": safe_size}).fetchall()]
 
 def _sql_common_key_count(conn, left_table: str, left_column: str, right_table: str, right_column: str) -> int:
     _validate_identifier(left_table, "left_table")
@@ -273,10 +299,10 @@ def _sql_common_key_sample(
         ) r
         ON l.join_key = r.join_key
         ORDER BY l.join_key
-        LIMIT {safe_size}
+        LIMIT :sample_limit
         """
     )
-    return [_safe_json(row[0]) for row in conn.execute(sql).fetchall()]
+    return [_safe_json(row[0]) for row in conn.execute(sql, {"sample_limit": safe_size}).fetchall()]
 
 def _build_join_select_list(selected_tables: list[str], source_columns: dict[str, list[dict]]) -> str:
     parts: list[str] = []
@@ -386,27 +412,8 @@ def _build_sql_feature_expression(
         return f"({_sql_safe_numeric(first_expr)} / NULLIF({denominator}, 0))"
     if feature_type == "sum" and second_expr is not None:
         return f"(COALESCE({_sql_safe_numeric(first_expr)}, 0) + COALESCE({_sql_safe_numeric(second_expr)}, 0))"
-    if feature_type == "comparisonflag" and second_expr is not None and rule.operator:
-        left_num = _sql_safe_numeric(first_expr)
-        right_num = _sql_safe_numeric(second_expr)
-        if rule.operator == ">":
-            return _sql_boolean_as_double(f"{left_num} > {right_num}")
-        if rule.operator == ">=":
-            return _sql_boolean_as_double(f"{left_num} >= {right_num}")
-        if rule.operator == "<":
-            return _sql_boolean_as_double(f"{left_num} < {right_num}")
-        if rule.operator == "<=":
-            return _sql_boolean_as_double(f"{left_num} <= {right_num}")
-        if rule.operator == "=":
-            return _sql_boolean_as_double(f"{left_num} = {right_num}")
-        if rule.operator == "!=":
-            return _sql_boolean_as_double(f"{left_num} <> {right_num}")
     if feature_type == "missingflag":
         return _sql_boolean_as_double(f"{first_expr} IS NULL")
-    if feature_type == "comparisonflag" and rule.operator == "null":
-        return _sql_boolean_as_double(f"{first_expr} IS NULL")
-    if feature_type == "comparisonflag" and rule.operator == "not null":
-        return _sql_boolean_as_double(f"{first_expr} IS NOT NULL")
     if feature_type == "daysbetween" and second_expr is not None and second_meta is not None:
         first_ts = _sql_safe_timestamp(first_expr, first_meta.get("data_type"))
         second_ts = _sql_safe_timestamp(second_expr, second_meta.get("data_type"))
@@ -582,9 +589,9 @@ def _build_source_table_ref(table_name: str) -> str:
     quoted_table = _quote(table_name)
     return f"{schema}.{quoted_table} AS {quoted_table}"
 
-def _unqualified_source_table_ref(table_name: str) -> str:
+def _source_table_ref_no_alias(table_name: str) -> str:
     _validate_identifier(table_name, "table_name")
-    return table_name
+    return f"{_quote(settings.source_db_schema)}.{_quote(table_name)}"
 
 def _safe_date_literal(value: Any) -> str | None:
     if value in (None, ""):
@@ -793,7 +800,7 @@ def _build_date_sequence_anomaly_conditions(
 ) -> list[tuple[str, str]]:
     stage_exprs: list[tuple[str, list[tuple[str, str]]]] = []
 
-    for stage_name, aliases in DATE_SEQUENCE_STAGE_ALIASES:
+    for stage_name, aliases in _normalized_date_sequence_stage_aliases():
         exprs: list[tuple[str, str]] = []
 
         for table_name in joined_tables:
@@ -896,7 +903,7 @@ def _build_sql_anomaly_expressions(
                 AND base."{table_name}.invoice_date" IS NOT NULL
                 AND (
                     SELECT COUNT(*)
-                    FROM {_unqualified_source_table_ref(table_name)} b2
+                    FROM {_source_table_ref_no_alias(table_name)} b2
                     WHERE b2.record_status = 'V'
                       AND b2.{invoice_column} = base."{table_name}.{invoice_column}"
                       AND {_safe_sql_date_expr(f'b2.invoice_date')}
@@ -916,7 +923,7 @@ def _build_sql_anomaly_expressions(
                 AND base."cmp_scroll.cda_name" = 'CDA- Main Office Jabalpur'
                 AND NOT EXISTS (
                     SELECT 1
-                    FROM {_unqualified_source_table_ref("ecs")} e
+                    FROM {_source_table_ref_no_alias("ecs")} e
                     WHERE e.payment_reference_no = base."cmp_scroll.payment_reference_no"
                 )
             )
@@ -933,7 +940,7 @@ def _build_sql_anomaly_expressions(
                 AND base."cheque_slip.fk_dak" IS NOT NULL
                 AND EXISTS (
                     SELECT 1
-                    FROM {_unqualified_source_table_ref("ecs")} e
+                    FROM {_source_table_ref_no_alias("ecs")} e
                     WHERE e.fk_dak = base."cheque_slip.fk_dak"
                 )
             )
@@ -950,7 +957,7 @@ def _build_sql_anomaly_expressions(
                     fk_dak,
                     COUNT(*) AS schedule3_total_count,
                     COUNT(*) FILTER (WHERE record_status IN ('P', 'V')) AS schedule3_pv_count
-                FROM {_unqualified_source_table_ref("schedule3")}
+                FROM {_source_table_ref_no_alias("schedule3")}
                 WHERE fk_dak IS NOT NULL
                 GROUP BY fk_dak
             )
@@ -962,7 +969,7 @@ def _build_sql_anomaly_expressions(
                 SELECT
                     fk_dak,
                     COUNT(*) FILTER (WHERE record_status = 'V' AND approved = true) AS cheque_slip_v_approved_count
-                FROM {_unqualified_source_table_ref("cheque_slip")}
+                FROM {_source_table_ref_no_alias("cheque_slip")}
                 WHERE fk_dak IS NOT NULL
                 GROUP BY fk_dak
             )
@@ -1425,19 +1432,19 @@ def _read_temp_anomaly_payload_frame(
     chunk_size = 5000
     for start in range(0, len(row_ids), chunk_size):
         chunk = row_ids[start:start + chunk_size]
-        rows_sql = ", ".join(f"({int(row_id)})" for row_id in chunk)
+        query = text(
+            f"""
+            SELECT {", ".join(select_columns)}
+            FROM {_workbench_temp_table_ref(temp_table)}
+            WHERE {_quote(TEMP_ROW_ID_COLUMN)} IN :row_ids
+            ORDER BY {_quote(TEMP_ROW_ID_COLUMN)}
+            """
+        ).bindparams(bindparam("row_ids", expanding=True))
         frames.append(
             pd.read_sql_query(
-                text(
-                    f"""
-                    SELECT {", ".join(select_columns)}
-                    FROM {_workbench_temp_table_ref(temp_table)}
-                    INNER JOIN (VALUES {rows_sql}) AS wanted({_quote(TEMP_ROW_ID_COLUMN)})
-                      USING ({_quote(TEMP_ROW_ID_COLUMN)})
-                    ORDER BY {_quote(TEMP_ROW_ID_COLUMN)}
-                    """
-                ),
+                query,
                 conn,
+                params={"row_ids": [int(row_id) for row_id in chunk]},
             )
         )
     df = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()

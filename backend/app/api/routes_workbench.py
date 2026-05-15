@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import OperationalError
 
 from app.core.database import check_app_db_connection, get_db
+from app.core.errors import WorkbenchValidationError
 from app.schemas.workbench_schema import (
     BuiltinRuleRequest,
     DatasetFeedbackRequest,
@@ -33,9 +34,17 @@ def _log_request(request: Request, message: str):
     logger.debug(f"[{request_id}] {message}")
 
 
-@router.get("/tables", response_model=list[TableInfo])
+@router.get(
+    "/tables",
+    response_model=list[TableInfo],
+    summary="List source tables",
+    responses={
+        503: {"description": "Source database is unavailable."},
+        500: {"description": "Unexpected failure while inspecting source metadata."},
+    },
+)
 def get_tables(request: Request):
-    """Get list of available source database tables."""
+    """Return available source tables and columns for workbench configuration."""
     try:
         tables = list_source_tables()
         _log_request(request, f"Retrieved {len(tables)} tables")
@@ -48,9 +57,13 @@ def get_tables(request: Request):
         raise HTTPException(status_code=500, detail="Failed to retrieve tables")
 
 
-@router.get("/connection")
+@router.get(
+    "/connection",
+    summary="Check source connectivity",
+    responses={503: {"description": "Source database connection failed."}},
+)
 def get_connection_status(request: Request):
-    """Check connection status to source database."""
+    """Check whether the source database is reachable before preview or run actions."""
     try:
         status = source_connection_status()
         if status.get("connected"):
@@ -65,9 +78,16 @@ def get_connection_status(request: Request):
         raise HTTPException(status_code=503, detail={"connected": False, "error": "Connection check failed"})
 
 
-@router.post("/default-feature-rules")
+@router.post(
+    "/default-feature-rules",
+    summary="Suggest built-in feature rules",
+    responses={
+        400: {"description": "Join/date configuration is invalid for rule generation."},
+        503: {"description": "Source database is unavailable."},
+    },
+)
 def get_default_feature_rules(payload: BuiltinRuleRequest, request: Request):
-    """Get default feature rules for selected tables."""
+    """Suggest built-in feature rules inferred from the selected tables and join path."""
     try:
         rules = builtin_feature_rules(payload)
         _log_request(request, f"Generated {len(rules)} feature rules")
@@ -83,9 +103,16 @@ def get_default_feature_rules(payload: BuiltinRuleRequest, request: Request):
         raise HTTPException(status_code=500, detail="Failed to generate feature rules")
 
 
-@router.post("/preview")
+@router.post(
+    "/preview",
+    summary="Preview workbench join output",
+    responses={
+        400: {"description": "The request is valid JSON but fails workbench validation."},
+        503: {"description": "Source database is unavailable."},
+    },
+)
 def preview_workbench_route(payload: WorkbenchRunRequest, request: Request):
-    """Preview workbench execution without saving results."""
+    """Preview the joined dataset without training a model or writing result rows."""
     try:
         result = preview_workbench(payload)
         _log_request(request, "Preview completed successfully")
@@ -93,6 +120,9 @@ def preview_workbench_route(payload: WorkbenchRunRequest, request: Request):
     except ConnectionError as exc:
         logger.warning(f"Workbench preview connection error: {exc}")
         raise HTTPException(status_code=503, detail=str(exc))
+    except WorkbenchValidationError as exc:
+        logger.warning("Workbench preview structured validation error: %s", exc.message)
+        raise HTTPException(status_code=400, detail=exc.to_http_detail())
     except ValueError as exc:
         logger.warning(f"Workbench preview validation error: {exc}")
         raise HTTPException(status_code=400, detail=f"Validation error: {str(exc)}")
@@ -101,9 +131,22 @@ def preview_workbench_route(payload: WorkbenchRunRequest, request: Request):
         raise HTTPException(status_code=500, detail="Preview execution failed")
 
 
-@router.post("/run", response_model=WorkbenchRunResponse)
+@router.post(
+    "/run",
+    response_model=WorkbenchRunResponse,
+    summary="Execute anomaly workbench",
+    responses={
+        400: {
+            "description": (
+                "Workbench validation failed, including edge cases such as empty engineered "
+                "feature frames or feature rules that only produce missing values."
+            )
+        },
+        503: {"description": "A required database connection is unavailable."},
+    },
+)
 def run_workbench_route(payload: WorkbenchRunRequest, request: Request, db: Session = Depends(get_db)):
-    """Execute workbench with specified configuration and save results."""
+    """Execute the full workbench pipeline and persist anomaly results."""
     try:
         result = run_workbench(db, payload)
         _log_request(request, f"Workbench run completed - Run ID: {result.get('run_id')}")
@@ -111,6 +154,9 @@ def run_workbench_route(payload: WorkbenchRunRequest, request: Request, db: Sess
     except ConnectionError as exc:
         logger.warning(f"Workbench source DB connection error: {exc}")
         raise HTTPException(status_code=503, detail=str(exc))
+    except WorkbenchValidationError as exc:
+        logger.warning("Workbench structured validation error: %s", exc.message)
+        raise HTTPException(status_code=400, detail=exc.to_http_detail())
     except ValueError as exc:
         logger.warning(f"Workbench validation error: {exc}")
         raise HTTPException(status_code=400, detail=f"Validation error: {str(exc)}")
@@ -121,9 +167,13 @@ def run_workbench_route(payload: WorkbenchRunRequest, request: Request, db: Sess
         raise HTTPException(status_code=500, detail=str(exc) or "Workbench execution failed")
 
 
-@router.get("/datasets")
+@router.get(
+    "/datasets",
+    summary="List saved datasets",
+    responses={503: {"description": "Application database is unavailable."}},
+)
 def dataset_list_route(request: Request, db: Session = Depends(get_db)):
-    """Get list of saved datasets."""
+    """Return datasets created by prior workbench runs."""
     try:
         datasets = list_saved_datasets(db)
         _log_request(request, f"Retrieved {len(datasets)} datasets")
@@ -140,7 +190,11 @@ def dataset_list_route(request: Request, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail="Failed to retrieve datasets")
 
 
-@router.get("/review-table", response_model=ReviewTableResponse)
+@router.get(
+    "/review-table",
+    response_model=ReviewTableResponse,
+    summary="Get review-table summary",
+)
 def review_table_route(
     request: Request,
     dataset_table: str | None = None,
@@ -150,7 +204,7 @@ def review_table_route(
     run_id: int | None = None,
     db: Session = Depends(get_db),
 ):
-    """Get review table with anomalies for dataset."""
+    """Return paginated anomaly rows plus aggregate review-table totals."""
     try:
         result = review_table_data(
             db,
@@ -167,7 +221,7 @@ def review_table_route(
         raise HTTPException(status_code=500, detail="Failed to retrieve review table")
 
 
-@router.get("/review-rows")
+@router.get("/review-rows", summary="Get review rows")
 def review_rows_route(
     request: Request,
     dataset_table: str | None = None,
@@ -177,7 +231,7 @@ def review_rows_route(
     run_id: int | None = None,
     db: Session = Depends(get_db),
 ):
-    """Get review rows with anomalies for dataset."""
+    """Return review rows for a dataset or run, filtered by anomaly status."""
     try:
         result = review_rows_data(
             db,
@@ -194,9 +248,13 @@ def review_rows_route(
         raise HTTPException(status_code=500, detail="Failed to retrieve review rows")
 
 
-@router.post("/feedback")
+@router.post(
+    "/feedback",
+    summary="Save record feedback",
+    responses={400: {"description": "The feedback payload is invalid or the record was not found."}},
+)
 def dataset_feedback_route(payload: DatasetFeedbackRequest, request: Request, db: Session = Depends(get_db)):
-    """Save review feedback for a dataset row."""
+    """Persist reviewer feedback for an anomaly row."""
     try:
         result = update_dataset_feedback(db, payload)
         _log_request(request, f"Feedback saved for record {payload.record_id}")
@@ -209,9 +267,13 @@ def dataset_feedback_route(payload: DatasetFeedbackRequest, request: Request, db
         raise HTTPException(status_code=500, detail="Failed to save feedback")
 
 
-@router.post("/isolation-reason", response_model=IsolationReasonResponse)
+@router.post(
+    "/isolation-reason",
+    response_model=IsolationReasonResponse,
+    summary="Explain an Isolation Forest anomaly",
+)
 def isolation_reason_route(payload: IsolationReasonRequest, request: Request):
-    """Generate a short local-LLM explanation for an Isolation Forest anomaly."""
+    """Generate a short explanation for a scored anomaly using local IF context."""
     try:
         result = explain_isolation_anomaly(payload)
         _log_request(request, f"Generated IF reason for prediction {payload.prediction_id}")
@@ -220,14 +282,14 @@ def isolation_reason_route(payload: IsolationReasonRequest, request: Request):
         logger.exception("Error generating Isolation Forest reason")
         raise HTTPException(status_code=500, detail="Failed to generate Isolation Forest reason")
 
-@router.get("/report", response_model=ReportResponse)
+@router.get("/report", response_model=ReportResponse, summary="Get run report")
 def report_route(
     request: Request,
     dataset_table: str | None = None,
     run_id: int | None = None,
     db: Session = Depends(get_db),
 ):
-    """Get detailed report for dataset or specific run."""
+    """Return report metrics for the latest dataset or a specific run identifier."""
     try:
         result = report_data(db, dataset_table=dataset_table, run_id=run_id)
         _log_request(request, f"Generated report for {dataset_table or 'current'}@run_id={run_id}")

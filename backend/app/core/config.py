@@ -72,6 +72,7 @@ def _build_app_db_url() -> str:
 class Settings(BaseModel):
     app_name: str = "Tulip 2.0 Anomaly System"
     db_url: str = _build_app_db_url()
+    log_json: bool = str(os.getenv("TULIP_LOG_JSON", "true")).strip().lower() in {"1", "true", "yes", "on"}
     source_db_host: str = str(os.getenv("TULIP_SOURCE_DB_HOST", "localhost")).strip()
     source_db_port: int = int(str(os.getenv("TULIP_SOURCE_DB_PORT", "5432")).strip())
     source_db_name: str = str(os.getenv("TULIP_SOURCE_DB_NAME", "tulip 2"))
@@ -84,11 +85,36 @@ class Settings(BaseModel):
         "yes",
         "on",
     }
+    app_db_pool_size: int = int(str(os.getenv("TULIP_APP_DB_POOL_SIZE", "5")).strip())
+    app_db_max_overflow: int = int(str(os.getenv("TULIP_APP_DB_MAX_OVERFLOW", "10")).strip())
+    app_db_pool_timeout_seconds: int = int(str(os.getenv("TULIP_APP_DB_POOL_TIMEOUT_SECONDS", "30")).strip())
+    app_db_pool_recycle_seconds: int = int(str(os.getenv("TULIP_APP_DB_POOL_RECYCLE_SECONDS", "3600")).strip())
+    source_db_pool_size: int = int(str(os.getenv("TULIP_SOURCE_DB_POOL_SIZE", "10")).strip())
+    source_db_max_overflow: int = int(str(os.getenv("TULIP_SOURCE_DB_MAX_OVERFLOW", "20")).strip())
+    source_db_pool_timeout_seconds: int = int(str(os.getenv("TULIP_SOURCE_DB_POOL_TIMEOUT_SECONDS", "30")).strip())
+    source_db_pool_recycle_seconds: int = int(str(os.getenv("TULIP_SOURCE_DB_POOL_RECYCLE_SECONDS", "3600")).strip())
     active_model_path: str = str(MODEL_DIR / "active_model.joblib")
     random_state: int = 42
     ollama_base_url: str = str(os.getenv("TULIP_OLLAMA_BASE_URL", "http://localhost:11434")).rstrip("/")
     anomaly_reason_model: str = str(os.getenv("TULIP_ANOMALY_REASON_MODEL", "qwen3:4b")).strip()
     anomaly_reason_timeout_seconds: float = float(str(os.getenv("TULIP_ANOMALY_REASON_TIMEOUT_SECONDS", "60")).strip())
+    anomaly_reason_timeout_min_seconds: float = float(str(os.getenv("TULIP_ANOMALY_REASON_TIMEOUT_MIN_SECONDS", "15")).strip())
+    anomaly_reason_timeout_per_1k_chars_seconds: float = float(
+        str(os.getenv("TULIP_ANOMALY_REASON_TIMEOUT_PER_1K_CHARS_SECONDS", "6")).strip()
+    )
+    anomaly_reason_timeout_load_penalty_seconds: float = float(
+        str(os.getenv("TULIP_ANOMALY_REASON_TIMEOUT_LOAD_PENALTY_SECONDS", "5")).strip()
+    )
+    anomaly_reason_retry_attempts: int = int(str(os.getenv("TULIP_ANOMALY_REASON_RETRY_ATTEMPTS", "2")).strip())
+    anomaly_reason_retry_backoff_seconds: float = float(str(os.getenv("TULIP_ANOMALY_REASON_RETRY_BACKOFF_SECONDS", "1.5")).strip())
+    anomaly_reason_cache_ttl_seconds: float = float(str(os.getenv("TULIP_ANOMALY_REASON_CACHE_TTL_SECONDS", "900")).strip())
+    anomaly_reason_circuit_fail_threshold: int = int(str(os.getenv("TULIP_ANOMALY_REASON_CIRCUIT_FAIL_THRESHOLD", "3")).strip())
+    anomaly_reason_circuit_reset_seconds: float = float(str(os.getenv("TULIP_ANOMALY_REASON_CIRCUIT_RESET_SECONDS", "45")).strip())
+    rate_limit_enabled: bool = str(os.getenv("TULIP_RATE_LIMIT_ENABLED", "true")).strip().lower() in {"1", "true", "yes", "on"}
+    rate_limit_requests: int = int(str(os.getenv("TULIP_RATE_LIMIT_REQUESTS", "120")).strip())
+    rate_limit_window_seconds: int = int(str(os.getenv("TULIP_RATE_LIMIT_WINDOW_SECONDS", "60")).strip())
+    anomaly_feature_max_columns: int = int(str(os.getenv("TULIP_ANOMALY_FEATURE_MAX_COLUMNS", "40")).strip())
+    anomaly_feature_min_score: float = float(str(os.getenv("TULIP_ANOMALY_FEATURE_MIN_SCORE", "0.15")).strip())
     workbench_explain_analyze: bool = str(os.getenv("TULIP_WORKBENCH_EXPLAIN_ANALYZE", "false")).strip().lower() in {
         "1",
         "true",

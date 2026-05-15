@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Card from "../components/Card";
-import { getWorkbenchConnection, getWorkbenchDefaultFeatureRules, getWorkbenchTables, previewWorkbench, runWorkbench, } from "../api/anomalyApi";
+import { getWorkbenchDefaultFeatureRules, getWorkbenchTables, previewWorkbench, runWorkbench, } from "../api/anomalyApi";
+const INITIAL_TABLE_LOAD_RETRIES = 6;
+const INITIAL_TABLE_LOAD_DELAY_MS = 1000;
 const DEFAULT_OUTLIER_RULE = (index) => ({
     name: `Outlier rule ${index + 1}`,
     first_column: "",
@@ -9,66 +11,52 @@ const DEFAULT_OUTLIER_RULE = (index) => ({
     value: "",
     second_value: "",
 });
-const DEFAULT_FEATURE_RULE = (index) => ({
-    name: `Feature ${index + 1}`,
-    feature_type: "daysbetween",
-    first_column: "",
-    second_column: "",
-    operator: ">",
-    locked: false,
-});
 export default function WorkbenchPage({ onRunComplete }) {
     const [tables, setTables] = useState([]);
+    const [tableLoadError, setTableLoadError] = useState("");
     const [selectedTables, setSelectedTables] = useState([]);
     const [joins, setJoins] = useState([]);
     const [outlierRules, setOutlierRules] = useState([]);
     const [featureRules, setFeatureRules] = useState([]);
     const [amountField, setAmountField] = useState("");
-    const [removedFeatureRules, setRemovedFeatureRules] = useState([]);
     const [fromDate, setFromDate] = useState("");
     const [toDate, setToDate] = useState("");
     const [loading, setLoading] = useState(true);
     const [previewing, setPreviewing] = useState(false);
     const [running, setRunning] = useState(false);
+    const [autoFeatureLoading, setAutoFeatureLoading] = useState(false);
+    const [autoFeatureError, setAutoFeatureError] = useState("");
     const [result, setResult] = useState(null);
     const [previewResult, setPreviewResult] = useState(null);
     const [runError, setRunError] = useState("");
     const [runWarning, setRunWarning] = useState("");
-    const [connectionError, setConnectionError] = useState("");
     const [tableSearch, setTableSearch] = useState("");
     const [showSuggestions, setShowSuggestions] = useState(false);
     const [showAllTables, setShowAllTables] = useState(false);
     const [activeStep, setActiveStep] = useState(1);
+    async function loadTables(attempt = 0) {
+        setLoading(true);
+        setTableLoadError("");
+        try {
+            const response = await getWorkbenchTables();
+            setTables(response.data || []);
+        }
+        catch (error) {
+            if (attempt < INITIAL_TABLE_LOAD_RETRIES) {
+                window.setTimeout(() => {
+                    loadTables(attempt + 1);
+                }, INITIAL_TABLE_LOAD_DELAY_MS);
+                return;
+            }
+            setTables([]);
+            setTableLoadError("Unable to load tables from the backend. Make sure the backend is running and refresh or retry.");
+        }
+        finally {
+            setLoading(false);
+        }
+    }
     useEffect(() => {
-        const loadDatabaseDetails = async () => {
-            setLoading(true);
-            try {
-                const [tableResponse, connectionResponse] = await Promise.allSettled([
-                    getWorkbenchTables(),
-                    getWorkbenchConnection(),
-                ]);
-                if (tableResponse.status === "fulfilled") {
-                    setTables(tableResponse.value.data || []);
-                }
-                else {
-                    setTables([]);
-                }
-                if (connectionResponse.status === "fulfilled") {
-                    setConnectionError("");
-                }
-                else {
-                    const detail = connectionResponse.reason?.response?.data?.detail;
-                    setConnectionError(typeof detail === "string"
-                        ? detail
-                        : detail?.error ||
-                            "Unable to connect to PostgreSQL. Please check backend env credentials.");
-                }
-            }
-            finally {
-                setLoading(false);
-            }
-        };
-        loadDatabaseDetails();
+        loadTables();
     }, []);
     const columnOptions = useMemo(() => {
         return selectedTables.flatMap((tableName) => {
@@ -89,6 +77,12 @@ export default function WorkbenchPage({ onRunComplete }) {
             (!rule.second_column || availableColumns.has(rule.second_column))));
         setAmountField((current) => (current && availableColumns.has(current) ? current : ""));
     }, [availableColumns]);
+    useEffect(() => {
+        setRunError("");
+        setRunWarning("");
+        setPreviewResult(null);
+        setResult(null);
+    }, [selectedTables, joins, fromDate, toDate]);
     const filteredTables = useMemo(() => {
         const query = tableSearch.trim().toLowerCase();
         if (!query)
@@ -112,9 +106,9 @@ export default function WorkbenchPage({ onRunComplete }) {
         !join.join_type);
     const isJoinStepComplete = selectedTables.length > 0 &&
         (!requiresJoins || (joins.length > 0 && !hasIncompleteJoin));
-    const isDateStepComplete = Boolean(fromDate && toDate && fromDate <= toDate);
+    const isDateStepComplete = isDateSelectionValid(fromDate, toDate);
     const canEditRules = isJoinStepComplete && isDateStepComplete;
-    const canRun = isDateStepComplete && !previewing && !running;
+    const canRun = isDateStepComplete && !previewing && !running && !autoFeatureLoading;
     useEffect(() => {
         if (!requiresJoins && activeStep === 2) {
             setActiveStep(3);
@@ -151,13 +145,67 @@ export default function WorkbenchPage({ onRunComplete }) {
             return isSame ? current : nextJoins;
         });
     }, [selectedTables]);
+    const hasExplicitDateRange = Boolean(fromDate && toDate);
+    useEffect(() => {
+        let cancelled = false;
+        const shouldLoadAutomaticFeatures = selectedTables.length > 0 && isJoinStepComplete && isDateStepComplete && hasExplicitDateRange;
+        setFeatureRules([]);
+        setAutoFeatureError("");
+        if (!shouldLoadAutomaticFeatures) {
+            setAutoFeatureLoading(false);
+            return () => {
+                cancelled = true;
+            };
+        }
+        const loadAutomaticFeatures = async () => {
+            setAutoFeatureLoading(true);
+            try {
+                const response = await getWorkbenchDefaultFeatureRules({
+                    selected_tables: selectedTables,
+                    joins,
+                    from_date: fromDate || null,
+                    to_date: toDate || null,
+                });
+                if (cancelled) {
+                    return;
+                }
+                const incomingRules = (response.data || []).map((rule) => ({
+                    ...rule,
+                    operator: rule.operator || "",
+                    locked: true,
+                }));
+                if (incomingRules.length === 0) {
+                    setFeatureRules([]);
+                    setAutoFeatureError("No ML features were selected for the chosen dates. Check the selected date range and source data.");
+                    return;
+                }
+                setFeatureRules(incomingRules);
+                setAutoFeatureError("");
+            }
+            catch (error) {
+                if (cancelled) {
+                    return;
+                }
+                setFeatureRules([]);
+                setAutoFeatureError(formatWorkbenchError(extractWorkbenchError(error)).message);
+            }
+            finally {
+                if (!cancelled) {
+                    setAutoFeatureLoading(false);
+                }
+            }
+        };
+        loadAutomaticFeatures();
+        return () => {
+            cancelled = true;
+        };
+    }, [selectedTables, joins, fromDate, toDate, hasExplicitDateRange, isJoinStepComplete, isDateStepComplete]);
     const steps = useMemo(() => [
         { id: 1, label: "Select Tables", complete: selectedTables.length > 0, disabled: false },
         { id: 2, label: "Join Builder", complete: isJoinStepComplete, disabled: !requiresJoins },
         { id: 3, label: "Date Range", complete: isDateStepComplete, disabled: selectedTables.length === 0 || !isJoinStepComplete },
         { id: 4, label: "Human Outliers", complete: true, disabled: !canEditRules },
-        { id: 5, label: "ML Features", complete: true, disabled: !canEditRules },
-        { id: 6, label: "Preview And Run", complete: Boolean(result), disabled: !canEditRules },
+        { id: 5, label: "Preview And Run", complete: Boolean(result), disabled: !canEditRules },
     ], [canEditRules, isDateStepComplete, isJoinStepComplete, requiresJoins, result, selectedTables.length]);
     function goToStep(stepId) {
         const target = steps.find((step) => step.id === stepId);
@@ -194,41 +242,6 @@ export default function WorkbenchPage({ onRunComplete }) {
     }
     function addOutlierRule() {
         setOutlierRules((current) => [...current, DEFAULT_OUTLIER_RULE(current.length)]);
-    }
-    function addFeatureRule() {
-        setFeatureRules((current) => [...current, DEFAULT_FEATURE_RULE(current.length)]);
-    }
-    async function toggleBuiltInFeatureRules() {
-        const response = await getWorkbenchDefaultFeatureRules({
-            selected_tables: selectedTables,
-            joins,
-            from_date: fromDate || null,
-            to_date: toDate || null,
-        });
-        const incomingRules = (response.data || []).map((rule) => ({
-            ...rule,
-            operator: rule.operator || "",
-            locked: true,
-        }));
-        setFeatureRules((current) => toggleRuleGroup(current, incomingRules, featureRuleKey));
-    }
-    function removeFeatureRule(index) {
-        setFeatureRules((current) => {
-            const removedRule = current[index];
-            if (removedRule) {
-                setRemovedFeatureRules((removed) => [...removed, removedRule]);
-            }
-            return current.filter((_, itemIndex) => itemIndex !== index);
-        });
-    }
-    function restoreLastFeatureRule() {
-        setRemovedFeatureRules((current) => {
-            if (current.length === 0)
-                return current;
-            const restoredRule = current[current.length - 1];
-            setFeatureRules((featureCurrent) => [...featureCurrent, restoredRule]);
-            return current.slice(0, -1);
-        });
     }
     function buildWorkbenchPayload() {
         if (selectedTables.length === 0) {
@@ -365,8 +378,12 @@ export default function WorkbenchPage({ onRunComplete }) {
           </div>
 
           {loading ? <div>Loading tables...</div> : null}
-          {connectionError ? <div style={errorBox}>{connectionError}</div> : null}
-
+          {tableLoadError ? (<div style={errorBox}>
+              {tableLoadError}
+              <button type="button" onClick={loadTables} style={{ ...secondaryButton, marginTop: 10, padding: "8px 12px" }}>
+                Retry
+              </button>
+            </div>) : null}
           {showSuggestions && (tableSearch.trim() || showAllTables) ? (<div style={suggestionPanel}>
               {visibleTables.map((table) => {
                 const active = selectedTables.includes(table.table_name);
@@ -389,11 +406,7 @@ export default function WorkbenchPage({ onRunComplete }) {
         <Card title="3. Date Range">
           {runWarning ? <div style={warningBox}>{runWarning}</div> : null}
           {runError ? <div style={errorBox}>{runError}</div> : null}
-
-          <div style={statusRow}>
-            <div style={statusChip}>Outlier rules: {outlierRules.filter((rule) => rule.first_column).length}</div>
-            <div style={statusChip}>Feature rules: {featureRules.filter((rule) => rule.first_column).length}</div>
-          </div>
+          {autoFeatureError ? <div style={errorBox}>{autoFeatureError}</div> : null}
 
           <div style={dateGrid}>
             <div style={field}>
@@ -436,6 +449,7 @@ export default function WorkbenchPage({ onRunComplete }) {
 
       {activeStep === 4 ? (<div style={wizardPanel}>
         <Card title="4. Human Outliers">
+          {autoFeatureError ? <div style={errorBox}>{autoFeatureError}</div> : null}
           <div style={actionBar}>
             <button type="button" onClick={addOutlierRule} disabled={!canEditRules} style={secondaryButton}>Add Outlier Rule</button>
           </div>
@@ -468,71 +482,17 @@ export default function WorkbenchPage({ onRunComplete }) {
       </div>) : null}
 
       {activeStep === 5 ? (<div style={wizardPanel}>
-        <Card title="5. User Defined Features For ML">
-          <div style={actionBar}>
-            <button type="button" onClick={addFeatureRule} disabled={!canEditRules} style={secondaryButton}>Add Feature Rule</button>
-            <button type="button" onClick={toggleBuiltInFeatureRules} disabled={!canEditRules} style={secondaryButton}>
-              Load Inbuilt Features
-            </button>
-            <button type="button" onClick={restoreLastFeatureRule} disabled={!canEditRules || removedFeatureRules.length === 0} style={secondaryButton}>
-              Restore Removed Feature ({removedFeatureRules.length})
-            </button>
-          </div>
-
-          <div style={scrollRuleBox}>
-            <div style={stack}>
-            {featureRules.map((rule, index) => {
-            const usesSecondColumn = featureUsesSecondColumn(rule.feature_type);
-            const usesOperator = featureUsesOperator(rule.feature_type);
-            const isLockedRule = Boolean(rule.locked);
-            const featureControlDisabled = !canEditRules || isLockedRule;
-            return (<div key={index} style={featureRuleStyle(rule.feature_type, isLockedRule)}>
-                  {isLockedRule ? (<div style={builtInField}>{rule.feature_type}</div>) : (<select value={rule.feature_type} disabled={featureControlDisabled} onChange={(event) => {
-                        const nextType = event.target.value;
-                        updateList(setFeatureRules, index, {
-                            feature_type: nextType,
-                            second_column: featureUsesSecondColumn(nextType) ? rule.second_column : "",
-                            operator: featureUsesOperator(nextType) ? rule.operator || ">" : ">",
-                        });
-                    }} style={compactFeatureTypeInput}>
-                      {FEATURE_TYPE_OPTIONS.map((option) => (<option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>))}
-                    </select>)}
-
-                  {isLockedRule ? (<div style={builtInField}>{rule.first_column}</div>) : (<SearchableOptionSelect value={rule.first_column} onChange={(value) => updateList(setFeatureRules, index, { first_column: value })} options={columnOptions} placeholder={usesSecondColumn ? "First column" : "Column"} compact disabled={featureControlDisabled}/>)}
-
-                  {usesSecondColumn ? (isLockedRule ? (<div style={builtInField}>{rule.second_column}</div>) : (<SearchableOptionSelect value={rule.second_column} onChange={(value) => updateList(setFeatureRules, index, { second_column: value })} options={columnOptions} placeholder="Second column" compact disabled={featureControlDisabled}/>)) : null}
-
-                  {usesOperator ? (isLockedRule ? (<div style={builtInField}>{rule.operator}</div>) : (<select value={rule.operator} disabled={featureControlDisabled} onChange={(event) => updateList(setFeatureRules, index, { operator: event.target.value })} style={compactOperatorInput}>
-                        <option value=">">{">"}</option>
-                        <option value=">=">{">="}</option>
-                        <option value="<">{"<"}</option>
-                        <option value="<=">{"<="}</option>
-                        <option value="=">{"="}</option>
-                        <option value="!=">{"!="}</option>
-                        <option value="null">null</option>
-                        <option value="not null">not null</option>
-                      </select>)) : null}
-
-                  {!isLockedRule ? (<button type="button" onClick={() => removeFeatureRule(index)} disabled={!canEditRules} style={ruleRemoveButton} title="Remove" aria-label="Remove feature rule">
-                      x
-                    </button>) : null}
-                </div>);
-        })}
-            </div>
-          </div>
-        </Card>
-      </div>) : null}
-
-      {activeStep === 6 ? (<div style={wizardPanel}>
-        <Card title="6. Preview And Run">
+        <Card title="5. Preview And Run">
           {runWarning ? <div style={warningBox}>{runWarning}</div> : null}
           {runError ? <div style={errorBox}>{runError}</div> : null}
+          {autoFeatureError ? <div style={errorBox}>{autoFeatureError}</div> : null}
 
           <div style={finalActionBox}>
             <div style={finalActionTitle}>Finish Setup</div>
-            <div style={finalActionText}>Preview the join setup first, then run Isolation Forest when the setup looks correct.</div>
+            <div style={finalActionText}>Preview the join setup first, then run Isolation Forest when the setup looks correct. ML features are loaded automatically from the selected tables, joins, and dates.</div>
+            <div style={statusRow}>
+              <div style={statusChip}>Automatic ML features: {autoFeatureLoading ? "Loading..." : featureRules.filter((rule) => rule.first_column).length}</div>
+            </div>
             <div style={actionBar}>
               <button type="button" onClick={executePreview} disabled={!canRun} style={previewResult && !previewing ? successButton : primaryButton}>
                 {previewing ? "Previewing..." : "Preview Join Setup"}
@@ -642,20 +602,11 @@ function formatWorkbenchError(detail) {
     }
     if (message.includes("No usable feature columns were produced")) {
         return {
-            message: "The selected tables and feature rules did not produce any usable date features for Isolation Forest. Choose tables with date columns or add valid date feature rules for the current tables.",
+            message: "No ML features were selected for the chosen dates. Check the selected date range and source data.",
             isFatal: true,
         };
     }
     return { message, isFatal: true };
-}
-function toggleRuleGroup(current, incoming, getKey) {
-    const incomingKeys = new Set(incoming.map(getKey));
-    const currentKeys = new Set(current.map(getKey));
-    const allSelected = incoming.length > 0 && incoming.every((item) => currentKeys.has(getKey(item)));
-    if (allSelected) {
-        return current.filter((item) => !incomingKeys.has(getKey(item)));
-    }
-    return [...current, ...incoming.filter((item) => !currentKeys.has(getKey(item)))];
 }
 function updateList(setter, index, patch) {
     setter((current) => current.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)));
@@ -663,46 +614,20 @@ function updateList(setter, index, patch) {
 function removeListItem(setter, index) {
     setter((current) => current.filter((_, itemIndex) => itemIndex !== index));
 }
-function normalizeRuleValue(value) {
-    return String(value ?? "").trim().toLowerCase();
-}
-function featureRuleKey(rule) {
-    return [
-        normalizeRuleValue(rule.name),
-        normalizeRuleValue(rule.feature_type),
-        normalizeRuleValue(rule.first_column),
-        normalizeRuleValue(rule.second_column),
-        normalizeRuleValue(rule.operator),
-    ].join("|");
-}
-const FEATURE_TYPE_OPTIONS = [
-    { value: "comparisonflag", label: "comparisonflag" },
-    { value: "daysbetween", label: "daysbetween" },
-    { value: "isweekend", label: "isweekend" },
-    { value: "isbusinesshour", label: "isbusinesshour" },
-];
 function featureUsesSecondColumn(featureType) {
-    return ["comparisonflag", "daysbetween"].includes(featureType);
+    return featureType === "daysbetween";
 }
 function featureUsesOperator(featureType) {
-    return featureType === "comparisonflag";
+    return false;
 }
-function featureRuleStyle(featureType, locked = false) {
-    if (locked) {
-        if (featureUsesOperator(featureType))
-            return featureCompareBuiltInRuleRow;
-        if (featureUsesSecondColumn(featureType))
-            return featureTwoColumnBuiltInRuleRow;
-        return featureSingleColumnBuiltInRuleRow;
+function isDateSelectionValid(fromDate, toDate) {
+    if (!fromDate && !toDate) {
+        return true;
     }
-    if (!featureUsesSecondColumn(featureType) && !featureUsesOperator(featureType)) {
-        return featureSingleColumnNoNameRuleRow;
+    if (fromDate && toDate) {
+        return fromDate <= toDate;
     }
-    if (featureUsesOperator(featureType))
-        return featureCompareRuleRow;
-    if (featureUsesSecondColumn(featureType))
-        return featureTwoColumnRuleRow;
-    return featureSingleColumnRuleRow;
+    return true;
 }
 const page = { display: "grid", gap: 18 };
 const stepper = {
@@ -795,7 +720,6 @@ const compactInput = { ...input, borderRadius: 12, padding: "8px 9px", minWidth:
 const disabledInput = { background: "#f8fafc", color: "#94a3b8", cursor: "not-allowed" };
 const joinTypeInput = { ...smallInput, minWidth: 140 };
 const compactOperatorInput = { ...compactInput, minWidth: 0 };
-const compactFeatureTypeInput = { ...compactInput, minWidth: 0, fontWeight: 700 };
 const browseButton = { borderRadius: 14, border: "1px solid #cbd5e1", background: "#fff", color: "#334155", padding: "11px 14px", fontWeight: 800, cursor: "pointer", minWidth: 48 };
 const compactBrowseButton = { ...browseButton, borderRadius: 12, padding: 0, minWidth: 0, width: 34, height: 38 };
 const disabledButton = { opacity: 0.55, cursor: "not-allowed" };
@@ -805,14 +729,6 @@ const activeSuggestionItem = { background: "#eff6ff", color: "#1d4ed8", fontWeig
 const chipRow = { display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 };
 const selectedChip = { borderRadius: 999, border: "1px solid #fdba74", background: "#fff7ed", color: "#9a3412", padding: "7px 11px", cursor: "pointer", fontWeight: 700 };
 const hint = { marginTop: 10, color: "#64748b", fontSize: 13 };
-const scrollRuleBox = {
-    maxHeight: 540,
-    overflowY: "auto",
-    border: "1px solid #e2e8f0",
-    borderRadius: 18,
-    padding: 12,
-    background: "#f8fafc",
-};
 const errorBox = { marginTop: 12, borderRadius: 14, background: "#fff1f2", border: "1px solid #fecdd3", color: "#b91c1c", padding: "10px 12px", fontSize: 13, lineHeight: 1.5 };
 const warningBox = { marginBottom: 12, borderRadius: 14, background: "#fff7ed", border: "1px solid #fdba74", color: "#9a3412", padding: "10px 12px", fontSize: 13, lineHeight: 1.5 };
 const statusRow = { display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 };
@@ -837,60 +753,6 @@ const outlierRuleRow = {
     gridTemplateColumns: "minmax(112px, 1fr) 88px minmax(112px, 1fr) 38px",
     gap: 6,
     alignItems: "start",
-};
-const featureSingleColumnRuleRow = {
-    display: "grid",
-    gridTemplateColumns: "minmax(96px, 0.9fr) 136px minmax(132px, 1fr) 38px",
-    gap: 6,
-    alignItems: "start",
-};
-const featureSingleColumnNoNameRuleRow = {
-    display: "grid",
-    gridTemplateColumns: "136px minmax(132px, 1fr) 38px",
-    gap: 6,
-    alignItems: "start",
-};
-const featureSingleColumnBuiltInRuleRow = {
-    display: "grid",
-    gridTemplateColumns: "136px minmax(132px, 1fr)",
-    gap: 6,
-    alignItems: "start",
-};
-const featureTwoColumnRuleRow = {
-    display: "grid",
-    gridTemplateColumns: "136px minmax(108px, 1fr) minmax(108px, 1fr) 38px",
-    gap: 6,
-    alignItems: "start",
-};
-const featureTwoColumnBuiltInRuleRow = {
-    display: "grid",
-    gridTemplateColumns: "136px minmax(108px, 1fr) minmax(108px, 1fr)",
-    gap: 6,
-    alignItems: "start",
-};
-const featureCompareRuleRow = {
-    display: "grid",
-    gridTemplateColumns: "136px minmax(108px, 1fr) minmax(108px, 1fr) 88px 38px",
-    gap: 6,
-    alignItems: "start",
-};
-const featureCompareBuiltInRuleRow = {
-    display: "grid",
-    gridTemplateColumns: "136px minmax(108px, 1fr) minmax(108px, 1fr) 88px",
-    gap: 6,
-    alignItems: "start",
-};
-const builtInField = {
-    borderRadius: 12,
-    border: "1px solid #cbd5e1",
-    background: "#fff",
-    color: "#0f172a",
-    padding: "8px 10px",
-    minHeight: 38,
-    display: "flex",
-    alignItems: "center",
-    fontWeight: 600,
-    overflow: "hidden",
 };
 const ruleRemoveButton = {
     border: "1px solid #fecaca",

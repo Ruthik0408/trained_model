@@ -235,7 +235,7 @@ function getReasonList(item, reasons) {
         .flatMap((reason) => String(reason || "").split(","))
         .map((reason) => reason.trim())
         .filter(Boolean);
-    if (reasons.llm_if_reason) {
+    if (reasons.ml_anomaly_flag && reasons.llm_if_reason) {
         splitReasons.push(reasons.llm_if_reason);
     }
     const seen = new Set();

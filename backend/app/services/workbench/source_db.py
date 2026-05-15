@@ -86,10 +86,11 @@ def _source_engine():
     return create_engine(
         url,
         future=True,
-        pool_size=10,
-        max_overflow=20,
+        pool_size=settings.source_db_pool_size,
+        max_overflow=settings.source_db_max_overflow,
         pool_pre_ping=True,
-        pool_recycle=3600,
+        pool_recycle=settings.source_db_pool_recycle_seconds,
+        pool_timeout=settings.source_db_pool_timeout_seconds,
     )
 
 def _dispose_source_engine() -> None:

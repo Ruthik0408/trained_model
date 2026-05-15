@@ -1,10 +1,13 @@
 from datetime import datetime, timezone
+import hashlib
+import json
 
 from app.schemas.workbench_schema import BuiltinRuleRequest, WorkbenchRunRequest
 from app.services.workbench.constants import (
     BUILTIN_FEATURE_RULES_CACHE_TTL,
     SINGLE_FEATURE_TYPES,
     _builtin_feature_rules_cache,
+    logger,
 )
 from app.services.workbench.source_db import _source_columns_map
 from app.services.workbench.sql_runtime import (
@@ -45,8 +48,16 @@ def builtin_feature_rules(
         )
         from_date = _safe_date_literal(getattr(request_payload, "from_date", None))
         to_date = _safe_date_literal(getattr(request_payload, "to_date", None))
+    
 
-    cache_key = (tuple(sorted(selected_tables)), join_signature, from_date, to_date)
+    join_hash = hashlib.md5(
+        json.dumps(join_signature, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+    ).hexdigest()
+    cache_key = (
+    tuple(sorted(selected_tables)),
+    join_hash,
+    from_date,
+    to_date,)
     now = datetime.now(tz=timezone.utc).timestamp()
     cached = _builtin_feature_rules_cache.get(cache_key)
     if cached is not None and now - cached[0] < BUILTIN_FEATURE_RULES_CACHE_TTL:
@@ -61,11 +72,19 @@ def builtin_feature_rules(
             or _safe_date_literal(getattr(request_payload, "to_date", None))
         )
     )
-    present_ratios = (
-        _joined_feature_column_presence_ratios(request_payload, table_frames)
-        if use_joined_presence and request_payload is not None
-        else _feature_column_presence_ratios(table_frames)
-    )
+    if use_joined_presence and request_payload is not None:
+        try:
+            present_ratios = _joined_feature_column_presence_ratios(request_payload, table_frames)
+        except Exception as exc:
+            logger.warning(
+                "Falling back to table-level built-in feature detection for tables=%s because "
+                "join/date-aware feature profiling failed: %s",
+                selected_tables,
+                exc,
+            )
+            present_ratios = _feature_column_presence_ratios(table_frames)
+    else:
+        present_ratios = _feature_column_presence_ratios(table_frames)
     available = {
         f"{table_name}.{column['column_name']}": column.get("data_type", "")
         for table_name, columns in table_frames.items()

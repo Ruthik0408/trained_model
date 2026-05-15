@@ -9,6 +9,7 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.models import WorkbenchRun
+from app.services.llm_reason_service import build_deterministic_isolation_reason
 from app.services.workbench.constants import (
     FEATURE_NAME_COLUMN,
     FEATURE_VALUES_COLUMN,
@@ -480,16 +481,14 @@ def _dataset_row_to_prediction(
         raw_signals = feature_payload.get("__ml_explanation_signals")
         if isinstance(raw_signals, list):
             ml_feature_signals = [item for item in raw_signals if isinstance(item, dict)]
-        stored_reason = feature_payload.get("__ml_llm_if_reason")
-        if isinstance(stored_reason, str) and stored_reason.strip():
-            llm_if_reason = stored_reason.strip()
-        stored_model = feature_payload.get("__ml_llm_if_reason_model")
-        if isinstance(stored_model, str) and stored_model.strip():
-            llm_if_reason_model = stored_model.strip()
-        llm_if_reason_fallback = bool(feature_payload.get("__ml_llm_if_reason_fallback", False))
     payload["review_key"] = row.get(FEATURE_NAME_COLUMN)
     human_rule = bool(row.get(HUMAN_RULE_COLUMN))
     isolation_rule = bool(row.get(ISOLATION_RULE_COLUMN))
+    if not isolation_rule:
+        ml_feature_signals = []
+        llm_if_reason = None
+        llm_if_reason_model = None
+        llm_if_reason_fallback = False
     if_score = _safe_json(row.get(IF_SCORE_COLUMN))
     ml_threshold = _safe_json(row.get(ML_THRESHOLD_COLUMN))
     feedback = _score_to_feedback(row.get(FEEDBACK_SCORE_COLUMN))
@@ -502,6 +501,11 @@ def _dataset_row_to_prediction(
         builtin_reason = builtin_reason_by_record_id.get(str(int(record_id))) if record_id is not None else None
         if builtin_reason and builtin_reason not in reason_list:
             reason_list.append(builtin_reason)
+    deterministic_reason = build_deterministic_isolation_reason(ml_feature_signals, payload)
+    if isolation_rule and deterministic_reason:
+        llm_if_reason = deterministic_reason
+        llm_if_reason_model = "deterministic"
+        llm_if_reason_fallback = False
     return {
         "prediction_id": int(record_id),
         "source_record_id": int(record_id),

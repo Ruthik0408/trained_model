@@ -1,4 +1,5 @@
 import re
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
@@ -26,7 +27,6 @@ from app.services.workbench.constants import (
     SYSTEM_COLUMNS,
     logger,
 )
-from app.services.workbench.llm_prep import _feature_name_for_tables, _presentable_reason_text, _review_payload_for_row
 from app.services.workbench.source_db import (
     _clear_result_table_columns_cache,
     _clear_result_table_exists_cache,
@@ -41,6 +41,50 @@ from app.services.workbench.source_db import (
 from app.services.workbench.sql_runtime import _feature_rule_aliases
 from app.services.workbench.source_db import _normalize_storage_columns
 from app.services.workbench.utils import _round_storage_score, _safe_json, _safe_numeric_scalar
+
+
+def _feature_name_for_tables(selected_tables: list[str]) -> str:
+    parts = [str(table) for table in selected_tables[:3]]
+    parts.extend(["null"] * (3 - len(parts)))
+    return ".".join(parts)
+
+
+def _presentable_reason_text(value: Any) -> str | None:
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return None
+    text_value = str(value).strip()
+    if not text_value:
+        return None
+    return re.sub(r"\s+", " ", text_value.replace("OUTLIER::", "").replace("_", " ")).strip()
+
+
+def _review_payload_for_row(row: pd.Series, feature_aliases: set[str]) -> dict[str, Any]:
+    payload: dict[str, Any] = {}
+    for column, value in row.items():
+        column_name = str(column)
+        if column_name in SYSTEM_COLUMNS or column_name in feature_aliases:
+            continue
+        payload[column_name] = _safe_json(value)
+    return payload
+
+
+@dataclass(frozen=True)
+class DatasetBuildInputs:
+    joined: pd.DataFrame
+    feature_frame: pd.DataFrame
+    payload: WorkbenchRunRequest
+    dataset_table: str
+    dataset_run_id: int
+    human_outlier_flag: pd.Series
+    human_reasons: list[str]
+    human_reason_series: pd.Series | None
+    builtin_reason_series: pd.Series | None
+    isolation_scores: np.ndarray
+    ml_flag: pd.Series
+    ml_threshold: float
+    final_flag: pd.Series
+    filtered_joined_override: pd.DataFrame | None = None
+    explanation_signals_override: dict[Any, list[dict[str, Any]]] | None = None
 
 def list_saved_datasets(db: Session) -> list[dict[str, Any]]:
     runs = db.query(WorkbenchRun).order_by(WorkbenchRun.run_id.desc()).all()
@@ -89,9 +133,6 @@ def update_dataset_feedback(db: Session, payload) -> dict[str, Any]:
 def _feature_values_payload(
     row: pd.Series,
     signals: list[dict[str, Any]] | None = None,
-    llm_if_reason: str | None = None,
-    llm_if_reason_model: str | None = None,
-    llm_if_reason_fallback: bool | None = None,
 ) -> dict[str, Any]:
     payload = {
         str(column): _safe_json(value)
@@ -99,10 +140,6 @@ def _feature_values_payload(
     }
     if signals:
         payload["__ml_explanation_signals"] = signals
-    if llm_if_reason:
-        payload["__ml_llm_if_reason"] = llm_if_reason
-        payload["__ml_llm_if_reason_model"] = llm_if_reason_model
-        payload["__ml_llm_if_reason_fallback"] = bool(llm_if_reason_fallback)
     return payload
 
 def _coerce_insert_value(value: Any) -> Any:
@@ -125,63 +162,45 @@ def _score_to_feedback(value: Any) -> str | None:
             return label
     return None
 
-def _build_dataset_frame(
-    joined: pd.DataFrame,
-    feature_frame: pd.DataFrame,
-    payload: WorkbenchRunRequest,
-    *,
-    dataset_table: str,
-    dataset_run_id: int,
-    human_outlier_flag: pd.Series,
-    human_reasons: list[str],
-    human_reason_series: pd.Series | None,
-    builtin_reason_series: pd.Series | None,
-    isolation_scores: np.ndarray,
-    ml_flag: pd.Series,
-    ml_threshold: float,
-    final_flag: pd.Series,
-    filtered_joined_override: pd.DataFrame | None = None,
-    explanation_signals_override: dict[Any, list[dict[str, Any]]] | None = None,
-    llm_if_reasons_override: dict[Any, dict[str, Any]] | None = None,
-) -> pd.DataFrame:
-    anomaly_mask = final_flag.astype(bool)
-    filtered_feature_frame = feature_frame.loc[anomaly_mask]
-    filtered_human_outlier_flag = human_outlier_flag.loc[anomaly_mask]
-    filtered_ml_flag = ml_flag.loc[anomaly_mask]
+def _build_dataset_frame(inputs: DatasetBuildInputs) -> pd.DataFrame:
+    anomaly_mask = inputs.final_flag.astype(bool)
+    filtered_feature_frame = inputs.feature_frame.loc[anomaly_mask]
+    filtered_human_outlier_flag = inputs.human_outlier_flag.loc[anomaly_mask]
+    filtered_ml_flag = inputs.ml_flag.loc[anomaly_mask]
     filtered_human_reasons = (
-        human_reason_series.loc[anomaly_mask]
-        if human_reason_series is not None
+        inputs.human_reason_series.loc[anomaly_mask]
+        if inputs.human_reason_series is not None
         else pd.Series(None, index=filtered_human_outlier_flag.index)
     )
     filtered_builtin_reasons = (
-        builtin_reason_series.loc[anomaly_mask]
-        if builtin_reason_series is not None
+        inputs.builtin_reason_series.loc[anomaly_mask]
+        if inputs.builtin_reason_series is not None
         else pd.Series(None, index=filtered_human_outlier_flag.index)
     )
-    filtered_joined = filtered_joined_override if filtered_joined_override is not None else joined.loc[anomaly_mask]
-    feature_aliases = set(_feature_rule_aliases(payload.feature_rules))
+    filtered_joined = (
+        inputs.filtered_joined_override
+        if inputs.filtered_joined_override is not None
+        else inputs.joined.loc[anomaly_mask]
+    )
+    feature_aliases = set(_feature_rule_aliases(inputs.payload.feature_rules))
 
     logger.info(
         "Joined has %s rows; saving %s anomaly rows to %s.%s",
-        len(joined),
+        len(inputs.joined),
         len(filtered_feature_frame),
         RESULT_SCHEMA,
-        dataset_table,
+        inputs.dataset_table,
     )
 
-    default_rule_reason = human_reasons or ["Human-defined outlier rule matched"]
-    explanation_signals = explanation_signals_override or {}
-    llm_if_reasons = llm_if_reasons_override or {}
+    default_rule_reason = inputs.human_reasons or ["Human-defined outlier rule matched"]
+    explanation_signals = inputs.explanation_signals_override or {}
 
     dataset = pd.DataFrame(index=filtered_feature_frame.index)
-    dataset.insert(0, FEATURE_NAME_COLUMN, _feature_name_for_tables(payload.selected_tables))
+    dataset.insert(0, FEATURE_NAME_COLUMN, _feature_name_for_tables(inputs.payload.selected_tables))
     dataset[FEATURE_VALUES_COLUMN] = [
         _feature_values_payload(
             row,
             explanation_signals.get(row_index),
-            llm_if_reasons.get(row_index, {}).get("reason"),
-            llm_if_reasons.get(row_index, {}).get("model"),
-            llm_if_reasons.get(row_index, {}).get("fallback"),
         )
         for row_index, row in filtered_feature_frame.iterrows()
     ]
@@ -198,9 +217,12 @@ def _build_dataset_frame(
     ]
     dataset[HUMAN_RULE_COLUMN] = [bool(flag) for flag in filtered_human_outlier_flag]
     dataset[ISOLATION_RULE_COLUMN] = [bool(flag) for flag in filtered_ml_flag]
-    dataset[IF_SCORE_COLUMN] = [_round_storage_score(value) for value in np.asarray(isolation_scores)[anomaly_mask.to_numpy()]]
-    dataset[ML_THRESHOLD_COLUMN] = _round_storage_score(ml_threshold)
-    dataset[RUN_ID_COLUMN] = int(dataset_run_id)
+    dataset[IF_SCORE_COLUMN] = [
+        _round_storage_score(value)
+        for value in np.asarray(inputs.isolation_scores)[anomaly_mask.to_numpy()]
+    ]
+    dataset[ML_THRESHOLD_COLUMN] = _round_storage_score(inputs.ml_threshold)
+    dataset[RUN_ID_COLUMN] = int(inputs.dataset_run_id)
     dataset[REVIEW_PAYLOAD_COLUMN] = [
         _review_payload_for_row(row, feature_aliases)
         for _, row in filtered_joined.iterrows()

@@ -1,10 +1,9 @@
 import { api } from "./client";
 /**
  * API Query Cache - Simple in-memory cache for GET requests
- * TTL: 5 minutes for table metadata, 1 minute for dynamic data
+ * TTL: 1 minute for dynamic data
  */
 const apiCache = new Map();
-const TABLE_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 const DATA_CACHE_TTL = 60 * 1000; // 1 minute
 function getCacheKey(url, params) {
     return params ? `${url}?${new URLSearchParams(params).toString()}` : url;
@@ -28,16 +27,7 @@ export function clearApiCache() {
     console.debug("API cache cleared");
 }
 // API functions with cache support and better error handling
-export const getWorkbenchTables = () => {
-    const cacheKey = getCacheKey("/api/workbench/tables");
-    const cached = getCachedData(cacheKey, TABLE_CACHE_TTL);
-    if (cached)
-        return Promise.resolve({ data: cached });
-    return api.get("/api/workbench/tables").then((response) => {
-        setCacheData(cacheKey, response.data);
-        return response;
-    });
-};
+export const getWorkbenchTables = () => api.get("/api/workbench/tables");
 export const getWorkbenchConnection = () => api.get("/api/workbench/connection");
 export const getWorkbenchDefaultFeatureRules = (payload) => api.post("/api/workbench/default-feature-rules", payload);
 export const previewWorkbench = (payload) => api.post("/api/workbench/preview", payload);

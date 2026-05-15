@@ -4,18 +4,23 @@ import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import OperationalError, SQLAlchemyError
 
 from app.api.routes_workbench import router as workbench_router
 from app.core.config import settings
 from app.core.database import Base, engine, check_app_db_connection
+from app.core.logging_utils import configure_logging
+from app.core.rate_limit import InMemoryRateLimiter
 
 logger = logging.getLogger(__name__)
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s  %(levelname)-8s  %(name)s  %(message)s",
+configure_logging(settings.log_json)
+
+rate_limiter = InMemoryRateLimiter(
+    limit=settings.rate_limit_requests,
+    window_seconds=settings.rate_limit_window_seconds,
 )
 
 
@@ -99,6 +104,33 @@ async def add_request_id(request: Request, call_next):
         response.status_code,
         duration_ms,
     )
+    return response
+
+
+@app.middleware("http")
+async def rate_limit_requests(request: Request, call_next):
+    if not settings.rate_limit_enabled or request.url.path in {"/health"}:
+        return await call_next(request)
+
+    forwarded_for = request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+    client_host = forwarded_for or (request.client.host if request.client else "unknown")
+    key = f"{client_host}:{request.url.path}"
+    allowed, remaining, retry_after = rate_limiter.allow(key)
+    if not allowed:
+        logger.warning("Rate limit exceeded for client=%s path=%s", client_host, request.url.path)
+        return JSONResponse(
+            status_code=429,
+            content={"detail": "Rate limit exceeded. Please retry later."},
+            headers={
+                "Retry-After": str(retry_after),
+                "X-RateLimit-Limit": str(settings.rate_limit_requests),
+                "X-RateLimit-Remaining": "0",
+            },
+        )
+
+    response = await call_next(request)
+    response.headers["X-RateLimit-Limit"] = str(settings.rate_limit_requests)
+    response.headers["X-RateLimit-Remaining"] = str(max(0, remaining))
     return response
 
 
