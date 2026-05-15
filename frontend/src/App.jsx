@@ -2,26 +2,29 @@ import React, { useState } from "react";
 import WorkbenchPage from "./pages/WorkbenchPage";
 import ReviewPage from "./pages/ReviewPage";
 import ReportsPage from "./pages/ReportsPage";
+import { ErrorBoundary } from "./components/ErrorBoundary";
+import { SCREENS, SCREEN_LABELS, STORAGE_KEYS } from "./constants";
+
 const screens = [
-    { id: "workbench", label: "Screen 1: Workbench" },
-    { id: "review", label: "Screen 2: Review" },
-    { id: "reports", label: "Screen 3: Reports" },
+  { id: SCREENS.WORKBENCH, label: SCREEN_LABELS[SCREENS.WORKBENCH] },
+  { id: SCREENS.REVIEW, label: SCREEN_LABELS[SCREENS.REVIEW] },
+  { id: SCREENS.REPORTS, label: SCREEN_LABELS[SCREENS.REPORTS] },
 ];
-const LATEST_WORKBENCH_RUN_KEY = "tulip.latestWorkbenchRun";
+
 function loadLatestWorkbenchRun() {
-    if (typeof window === "undefined") {
-        return null;
+  if (typeof window === "undefined") {
+    return null;
+  }
+  try {
+    const rawValue = window.sessionStorage.getItem(STORAGE_KEYS.LATEST_WORKBENCH_RUN);
+    if (!rawValue) {
+      return null;
     }
-    try {
-        const rawValue = window.sessionStorage.getItem(LATEST_WORKBENCH_RUN_KEY);
-        if (!rawValue) {
-            return null;
-        }
-        return JSON.parse(rawValue);
-    }
-    catch {
-        return null;
-    }
+    return JSON.parse(rawValue);
+  }
+  catch {
+    return null;
+  }
 }
 export default function App() {
     const [activeTab, setActiveTab] = useState("workbench");
@@ -30,7 +33,7 @@ export default function App() {
     const handleRunComplete = (run) => {
         setLatestWorkbenchRun(run);
         if (typeof window !== "undefined") {
-            window.sessionStorage.setItem(LATEST_WORKBENCH_RUN_KEY, JSON.stringify(run));
+            window.sessionStorage.setItem(STORAGE_KEYS.LATEST_WORKBENCH_RUN, JSON.stringify(run));
         }
     };
     const goPrevious = () => {
@@ -45,33 +48,53 @@ export default function App() {
         }
         setActiveTab(screens[activeIndex + 1].id);
     };
-    return (<div style={page}>
-      <div style={shell}>
-        {activeTab === "workbench" ? (<div style={nav}>
-            <div>
-              <div style={kicker}>Tulip 2.0</div>
-              <h1 style={title}>ANOMALY DETECTION</h1>
+    return (
+    <ErrorBoundary>
+      <div style={page}>
+        <div style={shell}>
+          {activeTab === SCREENS.WORKBENCH ? (
+            <div style={nav}>
+              <div>
+                <div style={kicker}>Tulip 2.0</div>
+                <h1 style={title}>ANOMALY DETECTION</h1>
+              </div>
             </div>
-          </div>) : null}
+          ) : null}
 
-        {activeIndex > 0 ? (<button type="button" onClick={goPrevious} style={{ ...navArrow, ...navArrowLeft }} aria-label="Go to previous screen">
-            ‹
-          </button>) : null}
-        {activeIndex < screens.length - 1 ? (<button type="button" onClick={goNext} style={{ ...navArrow, ...navArrowRight }} aria-label="Go to next screen">
-            ›
-          </button>) : null}
+          {activeIndex > 0 ? (
+            <button
+              type="button"
+              onClick={goPrevious}
+              style={{ ...navArrow, ...navArrowLeft }}
+              aria-label="Go to previous screen"
+            >
+              ‹
+            </button>
+          ) : null}
+          {activeIndex < screens.length - 1 ? (
+            <button
+              type="button"
+              onClick={goNext}
+              style={{ ...navArrow, ...navArrowRight }}
+              aria-label="Go to next screen"
+            >
+              ›
+            </button>
+          ) : null}
 
-        <div style={activeTab === "workbench" ? visibleScreen : hiddenScreen}>
-          <WorkbenchPage onRunComplete={handleRunComplete}/>
-        </div>
-        <div style={activeTab === "review" ? visibleScreen : hiddenScreen}>
-          <ReviewPage latestWorkbenchRun={latestWorkbenchRun}/>
-        </div>
-        <div style={activeTab === "reports" ? visibleScreen : hiddenScreen}>
-          <ReportsPage latestWorkbenchRun={latestWorkbenchRun}/>
+          <div style={activeTab === SCREENS.WORKBENCH ? visibleScreen : hiddenScreen}>
+            <WorkbenchPage onRunComplete={handleRunComplete} />
+          </div>
+          <div style={activeTab === SCREENS.REVIEW ? visibleScreen : hiddenScreen}>
+            <ReviewPage latestWorkbenchRun={latestWorkbenchRun} />
+          </div>
+          <div style={activeTab === SCREENS.REPORTS ? visibleScreen : hiddenScreen}>
+            <ReportsPage latestWorkbenchRun={latestWorkbenchRun} />
+          </div>
         </div>
       </div>
-    </div>);
+    </ErrorBoundary>
+    );
 }
 const page = {
     minHeight: "100vh",

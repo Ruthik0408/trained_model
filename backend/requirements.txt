@@ -31,7 +31,6 @@ pytz==2026.1.post1
 PyYAML==6.0.3
 scikit-learn==1.6.1
 scipy==1.15.3
-shap==0.46.0
 six==1.17.0
 SQLAlchemy==2.0.39
 starlette==1.0.0
@@ -44,4 +43,4 @@ uvicorn==0.35.0
 uvloop==0.22.1
 watchfiles==1.1.1
 websockets==16.0
-xgboost==3.2.0
+

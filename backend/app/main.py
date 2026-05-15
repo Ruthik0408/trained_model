@@ -13,6 +13,11 @@ from app.core.config import settings
 from app.core.database import Base, engine, check_app_db_connection
 from app.core.logging_utils import configure_logging
 from app.core.rate_limit import InMemoryRateLimiter
+from app.core.errors import (
+    WorkbenchValidationError,
+    WorkbenchConnectionError,
+    format_error_response,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -132,6 +137,35 @@ async def rate_limit_requests(request: Request, call_next):
     response.headers["X-RateLimit-Limit"] = str(settings.rate_limit_requests)
     response.headers["X-RateLimit-Remaining"] = str(max(0, remaining))
     return response
+
+
+# ---------------------------------------------------------------------------
+# Global exception handler — standardizes all error responses
+# ---------------------------------------------------------------------------
+@app.middleware("http")
+async def exception_handler_middleware(request: Request, call_next):
+    """Catch unhandled exceptions and format consistent error responses."""
+    try:
+        response = await call_next(request)
+        return response
+    except WorkbenchValidationError as exc:
+        logger.warning("[%s] Validation error: %s", getattr(request.state, "request_id", "?"), exc.message)
+        return JSONResponse(status_code=400, content=exc.to_http_detail())
+    except WorkbenchConnectionError as exc:
+        logger.error("[%s] Connection error: %s", getattr(request.state, "request_id", "?"), exc.message)
+        return JSONResponse(status_code=503, content=exc.to_http_detail())
+    except ConnectionError as exc:
+        logger.error("[%s] Upstream connection error: %s", getattr(request.state, "request_id", "?"), str(exc))
+        detail = format_error_response(exc, 503)
+        return JSONResponse(status_code=503, content=detail)
+    except ValueError as exc:
+        logger.warning("[%s] Value error: %s", getattr(request.state, "request_id", "?"), str(exc))
+        detail = format_error_response(exc, 400)
+        return JSONResponse(status_code=400, content=detail)
+    except Exception as exc:
+        logger.exception("[%s] Unhandled exception", getattr(request.state, "request_id", "?"))
+        detail = format_error_response(exc, 500)
+        return JSONResponse(status_code=500, content=detail)
 
 
 # ---------------------------------------------------------------------------

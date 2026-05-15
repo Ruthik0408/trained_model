@@ -6,7 +6,7 @@ Provides TTL-based caching helpers for expensive database queries and computatio
 import logging
 import threading
 import time
-from typing import Any, Callable, Dict, TypeVar
+from typing import Any, Callable, Dict, Optional, TypeVar, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +16,7 @@ T = TypeVar('T')
 class TTLCache:
     """Thread-safe TTL-based cache for expensive operations."""
     
-    def __init__(self, ttl_seconds: float = 60.0):
+    def __init__(self, ttl_seconds: float = 60.0) -> None:
         """
         Initialize TTL cache.
         
@@ -24,10 +24,10 @@ class TTLCache:
             ttl_seconds: Time-to-live in seconds. Cache entries expire after this duration.
         """
         self.ttl = ttl_seconds
-        self._cache: Dict[str, tuple[Any, float]] = {}
+        self._cache: Dict[str, Tuple[Any, float]] = {}
         self._lock = threading.Lock()
     
-    def get(self, key: str) -> Any | None:
+    def get(self, key: str) -> Optional[Any]:
         """
         Get value from cache if it exists and hasn't expired.
         
@@ -39,13 +39,16 @@ class TTLCache:
         """
         with self._lock:
             if key not in self._cache:
+                logger.debug(f"Cache miss: {key}")
                 return None
             
             value, timestamp = self._cache[key]
             if time.monotonic() - timestamp > self.ttl:
+                logger.debug(f"Cache expired: {key}")
                 del self._cache[key]
                 return None
             
+            logger.debug(f"Cache hit: {key}")
             return value
     
     def set(self, key: str, value: Any) -> None:
@@ -58,8 +61,9 @@ class TTLCache:
         """
         with self._lock:
             self._cache[key] = (value, time.monotonic())
+            logger.debug(f"Cache set: {key}")
     
-    def invalidate(self, key: str | None = None) -> None:
+    def invalidate(self, key: Optional[str] = None) -> None:
         """
         Invalidate cache entry or entire cache.
         
@@ -69,8 +73,10 @@ class TTLCache:
         with self._lock:
             if key is None:
                 self._cache.clear()
+                logger.info(f"Cache cleared (all entries)")
             elif key in self._cache:
                 del self._cache[key]
+                logger.debug(f"Cache invalidated: {key}")
     
     def invalidate_prefix(self, prefix: str) -> None:
         """
@@ -83,6 +89,8 @@ class TTLCache:
             keys_to_delete = [k for k in self._cache if k.startswith(prefix)]
             for k in keys_to_delete:
                 del self._cache[k]
+            if keys_to_delete:
+                logger.info(f"Cache invalidated {len(keys_to_delete)} entries with prefix: {prefix}")
     
     def size(self) -> int:
         """Get current cache size."""
