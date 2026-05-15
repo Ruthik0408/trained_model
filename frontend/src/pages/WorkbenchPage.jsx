@@ -110,8 +110,8 @@ export default function WorkbenchPage({ onRunComplete }) {
     const canEditRules = isJoinStepComplete && isDateStepComplete;
     const canRun = isDateStepComplete && !previewing && !running && !autoFeatureLoading;
     useEffect(() => {
-        if (!requiresJoins && activeStep === 2) {
-            setActiveStep(3);
+        if (!requiresJoins && activeStep === 3) {
+            setActiveStep(4);
         }
     }, [activeStep, requiresJoins]);
     useEffect(() => {
@@ -202,8 +202,8 @@ export default function WorkbenchPage({ onRunComplete }) {
     }, [selectedTables, joins, fromDate, toDate, hasExplicitDateRange, isJoinStepComplete, isDateStepComplete]);
     const steps = useMemo(() => [
         { id: 1, label: "Select Tables", complete: selectedTables.length > 0, disabled: false },
-        { id: 2, label: "Join Builder", complete: isJoinStepComplete, disabled: !requiresJoins },
-        { id: 3, label: "Date Range", complete: isDateStepComplete, disabled: selectedTables.length === 0 || !isJoinStepComplete },
+        { id: 2, label: "Date Range", complete: isDateStepComplete, disabled: selectedTables.length === 0 },
+        { id: 3, label: "Join Builder", complete: isJoinStepComplete, disabled: !requiresJoins || selectedTables.length === 0 || !isDateStepComplete },
         { id: 4, label: "Human Outliers", complete: true, disabled: !canEditRules },
         { id: 5, label: "Preview And Run", complete: Boolean(result), disabled: !canEditRules },
     ], [canEditRules, isDateStepComplete, isJoinStepComplete, requiresJoins, result, selectedTables.length]);
@@ -348,7 +348,7 @@ export default function WorkbenchPage({ onRunComplete }) {
       <div style={stepper}>
         {steps.map((step) => {
             const isActive = step.id === activeStep;
-            const isSkipped = step.id === 2 && !requiresJoins;
+            const isSkipped = step.id === 3 && !requiresJoins;
             return (<button key={step.id} type="button" onClick={() => goToStep(step.id)} disabled={step.disabled} style={{
                     ...stepButton,
                     ...(isActive ? activeStepButton : {}),
@@ -402,8 +402,8 @@ export default function WorkbenchPage({ onRunComplete }) {
         </Card>
       </div>) : null}
 
-      {activeStep === 3 ? (<div style={wizardPanel}>
-        <Card title="3. Date Range">
+      {activeStep === 2 ? (<div style={wizardPanel}>
+        <Card title="2. Date Range">
           {runWarning ? <div style={warningBox}>{runWarning}</div> : null}
           {runError ? <div style={errorBox}>{runError}</div> : null}
           {autoFeatureError ? <div style={errorBox}>{autoFeatureError}</div> : null}
@@ -411,21 +411,21 @@ export default function WorkbenchPage({ onRunComplete }) {
           <div style={dateGrid}>
             <div style={field}>
               <label htmlFor="from-date" style={label}>From date</label>
-              <input id="from-date" type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} disabled={!isJoinStepComplete} style={input}/>
+              <input id="from-date" type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} disabled={!selectedTables.length} style={input}/>
             </div>
             <div style={field}>
               <label htmlFor="to-date" style={label}>To date</label>
-              <input id="to-date" type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} disabled={!isJoinStepComplete} style={input}/>
+              <input id="to-date" type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} disabled={!selectedTables.length} style={input}/>
             </div>
           </div>
 
-          <SearchableOptionSelect value={amountField} onChange={setAmountField} options={columnOptions} placeholder="Select amount field" disabled={!isJoinStepComplete}/>
+          <SearchableOptionSelect value={amountField} onChange={setAmountField} options={columnOptions} placeholder="Select amount field" disabled={!selectedTables.length}/>
 
         </Card>
       </div>) : null}
 
-      {activeStep === 2 && requiresJoins ? (<div style={wizardPanel}>
-      <Card title="2. Join Builder">
+      {activeStep === 3 && requiresJoins ? (<div style={wizardPanel}>
+      <Card title="3. Join Builder">
         <div style={stack}>
           {joins.map((join, index) => (<div key={`${index}-${join.left_table}-${join.right_table}`} style={row}>
               <div style={joinTableField}>{join.left_table}</div>

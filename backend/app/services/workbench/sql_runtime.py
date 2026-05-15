@@ -685,6 +685,50 @@ def _list_date_filter_sql(payload: WorkbenchRunRequest, source_columns: dict[str
         to_date=to_date,
     )
 
+
+def _filtered_source_cte_name(table_name: str) -> str:
+    _validate_identifier(table_name, "table_name")
+    return f"filtered_{table_name}"
+
+
+def _build_source_prefilter_ctes(
+    payload: WorkbenchRunRequest,
+    source_columns: dict[str, list[dict]],
+) -> tuple[list[str], dict[str, str], list[str]]:
+    from_date = _safe_date_literal(getattr(payload, "from_date", None))
+    to_date = _safe_date_literal(getattr(payload, "to_date", None))
+    if not from_date and not to_date:
+        return [], {}, []
+    if from_date and to_date and from_date > to_date:
+        return [], {}, []
+
+    target = _preferred_date_filter_target(payload, source_columns)
+    if target is None:
+        return [], {}, []
+
+    table_name, column = target
+    filter_sql = _date_range_filter_sql(
+        table_name,
+        column,
+        from_date=from_date,
+        to_date=to_date,
+    )
+    cte_name = _filtered_source_cte_name(table_name)
+    cte_sql = f"""
+    {cte_name} AS (
+        SELECT *
+        FROM {_build_source_table_ref(table_name)}
+        WHERE {filter_sql}
+    )
+    """
+    source_refs = {
+        table_name: f"{_quote(cte_name)} AS {_quote(table_name)}",
+    }
+    warnings = [
+        f"Applied date filter pushdown on {table_name}.{column['column_name']} before joining source tables."
+    ]
+    return [cte_sql], source_refs, warnings
+
 def _validate_join_payload_tables(payload: WorkbenchRunRequest, source_columns: dict[str, list[dict]]) -> None:
     _validate_selected_tables(payload.selected_tables, source_columns)
 
@@ -895,58 +939,115 @@ def _build_sql_anomaly_expressions(
         if not required_cols.issubset(cols):
             continue
 
+        cte_name = f"{table_name}_invoice_dupes"
+        invoice_column_q = _quote(invoice_column)
+        record_status_q = _quote("record_status")
+        invoice_date_q = _quote("invoice_date")
+        source_invoice_date_expr = _safe_sql_date_expr(invoice_date_q)
+        base_invoice_date_expr = _safe_sql_date_expr(f'base."{table_name}.invoice_date"')
+
+        ctes.append(
+            f"""
+            {cte_name} AS (
+                SELECT
+                    {invoice_column_q} AS invoice_value,
+                    {source_invoice_date_expr} AS invoice_date_value,
+                    COUNT(*) AS duplicate_count
+                FROM {_source_table_ref_no_alias(table_name)}
+                WHERE {record_status_q} = 'V'
+                  AND {invoice_column_q} IS NOT NULL
+                  AND {invoice_date_q} IS NOT NULL
+                GROUP BY {invoice_column_q}, {source_invoice_date_expr}
+            )
+            """
+        )
+        outer_joins.append(
+            f"""
+            LEFT JOIN {cte_name}
+                ON {cte_name}.invoice_value = base."{table_name}.{invoice_column}"
+               AND {cte_name}.invoice_date_value = {base_invoice_date_expr}
+            """
+        )
+
         conditions.append((
             f"""
             (
                 base."{table_name}.record_status" = 'V'
                 AND base."{table_name}.{invoice_column}" IS NOT NULL
                 AND base."{table_name}.invoice_date" IS NOT NULL
-                AND (
-                    SELECT COUNT(*)
-                    FROM {_source_table_ref_no_alias(table_name)} b2
-                    WHERE b2.record_status = 'V'
-                      AND b2.{invoice_column} = base."{table_name}.{invoice_column}"
-                      AND {_safe_sql_date_expr(f'b2.invoice_date')}
-                          = {_safe_sql_date_expr(f'base."{table_name}.invoice_date"')}
-                ) > 1
+                AND COALESCE({cte_name}.duplicate_count, 0) > 1
             )
             """,
             f"{table_name} has duplicate valid invoice number + invoice_date",
         ))
 
+    ecs_payment_refs_cte_added = False
+    ecs_by_dak_cte_added = False
+
     # CMP scroll payment_reference_no must exist in ECS
     if has_table("cmp_scroll") and has_table("ecs"):
-        conditions.append((
-            f"""
-            (
-                base."cmp_scroll.payment_reference_no" IS NOT NULL
-                AND base."cmp_scroll.cda_name" = 'CDA- Main Office Jabalpur'
-                AND NOT EXISTS (
-                    SELECT 1
-                    FROM {_source_table_ref_no_alias("ecs")} e
-                    WHERE e.payment_reference_no = base."cmp_scroll.payment_reference_no"
+        if "payment_reference_no" in table_cols("ecs"):
+            if not ecs_payment_refs_cte_added:
+                ctes.append(
+                    f"""
+                    ecs_payment_refs AS (
+                        SELECT DISTINCT payment_reference_no
+                        FROM {_source_table_ref_no_alias("ecs")}
+                        WHERE payment_reference_no IS NOT NULL
+                    )
+                    """
                 )
+                ecs_payment_refs_cte_added = True
+            outer_joins.append(
+                """
+                LEFT JOIN ecs_payment_refs
+                    ON ecs_payment_refs.payment_reference_no = base."cmp_scroll.payment_reference_no"
+                """
             )
-            """,
-            "CMP scroll has payment_reference_no but not found in ECS",
-        ))
+            conditions.append((
+                f"""
+                (
+                    base."cmp_scroll.payment_reference_no" IS NOT NULL
+                    AND base."cmp_scroll.cda_name" = 'CDA- Main Office Jabalpur'
+                    AND ecs_payment_refs.payment_reference_no IS NULL
+                )
+                """,
+                "CMP scroll has payment_reference_no but not found in ECS",
+            ))
 
     # cheque_slip ECS mode = 1 but ECS record exists
     if has_table("cheque_slip") and has_table("ecs"):
-        conditions.append((
-            f"""
-            (
-                base."cheque_slip.fk_ecs_payment_mode" = 1
-                AND base."cheque_slip.fk_dak" IS NOT NULL
-                AND EXISTS (
-                    SELECT 1
-                    FROM {_source_table_ref_no_alias("ecs")} e
-                    WHERE e.fk_dak = base."cheque_slip.fk_dak"
+        if "fk_dak" in table_cols("ecs"):
+            if not ecs_by_dak_cte_added:
+                ctes.append(
+                    f"""
+                    ecs_by_dak AS (
+                        SELECT
+                            fk_dak,
+                            COUNT(*) AS ecs_count
+                        FROM {_source_table_ref_no_alias("ecs")}
+                        WHERE fk_dak IS NOT NULL
+                        GROUP BY fk_dak
+                    )
+                    """
                 )
+                ecs_by_dak_cte_added = True
+            outer_joins.append(
+                """
+                LEFT JOIN ecs_by_dak
+                    ON ecs_by_dak.fk_dak = base."cheque_slip.fk_dak"
+                """
             )
-            """,
-            "Cheque slip ECS mode=1 but ECS record exists",
-        ))
+            conditions.append((
+                f"""
+                (
+                    base."cheque_slip.fk_ecs_payment_mode" = 1
+                    AND base."cheque_slip.fk_dak" IS NOT NULL
+                    AND COALESCE(ecs_by_dak.ecs_count, 0) > 0
+                )
+                """,
+                "Cheque slip ECS mode=1 but ECS record exists",
+            ))
 
     # Cheque slip + schedule3 rules
     if has_table("cheque_slip") and has_table("schedule3"):
@@ -1064,7 +1165,9 @@ def _build_join_sql(
     joined_aliases: set[str] = {first_table}
     used_tables: set[str] = {first_table}
     select_clause = _build_join_select_list(selected_tables, source_columns)
-    first_source_ref = _build_source_table_ref(first_table)
+    source_prefilter_ctes, pushed_down_source_refs, prefilter_warnings = _build_source_prefilter_ctes(payload, source_columns)
+    warnings.extend(prefilter_warnings)
+    first_source_ref = pushed_down_source_refs.get(first_table, _build_source_table_ref(first_table))
     from_clause = f"FROM {first_source_ref}"
 
     join_clauses: list[str] = []
@@ -1098,7 +1201,7 @@ def _build_join_sql(
         )
         join_mode = "raw_equal"
 
-        right_source_ref = _build_source_table_ref(right_table)
+        right_source_ref = pushed_down_source_refs.get(right_table, _build_source_table_ref(right_table))
         join_keyword = _sql_join_keyword(join.join_type)
         join_clause = f"{join_keyword} {right_source_ref} ON {join_condition}"
         join_clauses.append(join_clause)
@@ -1130,14 +1233,7 @@ def _build_join_sql(
     if join_clauses:
         base_sql += "\n" + "\n".join(join_clauses)
 
-    filters = []
-    list_date_filter = _list_date_filter_sql(payload, source_columns)
-    if list_date_filter:
-        filters.append(list_date_filter)
-
     sql = base_sql
-    if filters:
-        sql += "\nWHERE " + "\n  AND ".join(f"({item})" for item in filters)
 
     if row_limit and row_limit > 0:
         safe_limit = max(1, int(row_limit))
@@ -1163,7 +1259,7 @@ def _build_join_sql(
             + ", ".join(anomaly_reason_parts)
             + "]::text[], NULL), ', ')"
         )
-        cte_sql = [f"joined_base AS (\n{sql}\n)"]
+        cte_sql = [*source_prefilter_ctes, f"joined_base AS (\n{sql}\n)"]
         cte_sql.extend(anomaly_ctes)
         cte_sql_text = ",\n".join(cte_sql)
         outer_join_sql = "\n".join(anomaly_outer_joins)
@@ -1174,6 +1270,10 @@ SELECT base.*,
 FROM joined_base base"""
         if outer_join_sql:
             sql += "\n" + outer_join_sql
+
+    elif source_prefilter_ctes:
+        cte_sql_text = ",\n".join([*source_prefilter_ctes, f"joined_base AS (\n{sql}\n)"])
+        sql = f"WITH {cte_sql_text}\nSELECT *\nFROM joined_base"
 
     return sql, join_debug, warnings
 
