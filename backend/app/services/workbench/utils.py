@@ -21,10 +21,7 @@ def _is_identifier_like_column(column_name: str) -> bool:
     plain_name = str(column_name).strip().lower().split(".")[-1]
     return (
         plain_name == "id"
-        or plain_name.endswith("_id")
-        or plain_name.startswith("fk_")
-        or plain_name.endswith("_no")
-        or plain_name.endswith("_number")
+        or plain_name == "fk_dak"
     )
 
 def _safe_rule_name(name: str | None, prefix: str) -> str:
@@ -51,18 +48,19 @@ def _safe_json(value):
             return str(value)
     return value
 
-def _safe_numeric_scalar(value: Any, default: Any = 0.0) -> float | None:
+
+def _safe_numeric_scalar(
+    value: Any,
+    default: Any = 0.0,
+) -> float | None:
     try:
-        numeric = pd.to_numeric(pd.Series([value]), errors="coerce").iloc[0]
-        if pd.isna(numeric):
-            if default is None:
-                return None
-            return float(default)
-        return float(numeric)
-    except Exception:
-        if default is None:
-            return None
-        return float(default)
+        if value is None:
+            return None if default is None else float(default)
+
+        return float(value)
+
+    except (TypeError, ValueError):
+        return None if default is None else float(default)
 
 def _slug_token(value: str) -> str:
     token = re.sub(r"[^a-z0-9]+", "_", str(value).strip().lower()).strip("_")

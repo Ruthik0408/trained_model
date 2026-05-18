@@ -6,17 +6,17 @@ logger = logging.getLogger(__name__)
 PREVIEW_ROW_LIMIT = 50
 ENABLE_EXPENSIVE_JOIN_DEBUG = False
 DATE_SEQUENCE_STAGE_ALIASES = [
-    ("invoice_date"),
-    ("bill_date"),
-    ("reference_date"),
-    ("list_date"),
+    ("invoice_date", ["invoice_date"]),
+    ("bill_date", ["bill_date"]),
+    ("reference_date", ["reference_date"]),
+    ("list_date", ["list_date"]),
     ("auditor_stage", ["auditor_date", "aud_date", "auditor_disposal_date"]),
     ("aao_stage", ["aao_date", "aao_disposal_date"]),
     ("ao_stage", ["ao_date", "ao_disposal_date"]),
-    ("go_date"),
-    ("dp_sheet_date"),
-    ("cmp_date", ["cmp_date", "cmp_batch_date","cmp_file_gen_date"]),
-    ("disposal_date"),
+    ("go_date", ["go_date"]),
+    ("dp_sheet_date", ["dp_sheet_date"]),
+    ("cmp_date", ["cmp_date", "cmp_batch_date", "cmp_file_gen_date"]),
+    ("disposal_date", ["disposal_date"]),
 ]
 SAME_TABLE_DATE_SEQUENCE_STAGES = {
     "auditor_stage",

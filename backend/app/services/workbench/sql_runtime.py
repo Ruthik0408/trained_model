@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 import time
 from typing import Any
 from uuid import uuid4
@@ -136,36 +136,10 @@ def _same_table_date_sequence_pair(left_stage_name: str, right_stage_name: str) 
         and right_stage_name in SAME_TABLE_DATE_SEQUENCE_STAGES
     )
 
-
-def _normalized_date_sequence_stage_aliases() -> list[tuple[str, list[str]]]:
-    normalized: list[tuple[str, list[str]]] = []
-    for item in DATE_SEQUENCE_STAGE_ALIASES:
-        if isinstance(item, str):
-            stage_name = item
-            aliases = [item]
-        elif isinstance(item, (tuple, list)):
-            if len(item) == 1:
-                stage_name = str(item[0])
-                aliases = [str(item[0])]
-            elif len(item) == 2:
-                stage_name = str(item[0])
-                raw_aliases = item[1]
-                if isinstance(raw_aliases, str):
-                    aliases = [raw_aliases]
-                else:
-                    aliases = [str(alias) for alias in raw_aliases]
-            else:
-                raise ValueError(f"Invalid DATE_SEQUENCE_STAGE_ALIASES entry: {item!r}")
-        else:
-            raise ValueError(f"Invalid DATE_SEQUENCE_STAGE_ALIASES entry: {item!r}")
-        normalized.append((stage_name, aliases))
-    return normalized
-
-
 def _build_dynamic_date_gap_rules(available: dict[str, str]) -> list[dict]:
     matches_by_alias = _builtin_stage_column_matches(available)
     stage_columns: list[tuple[str, list[str]]] = []
-    for stage_name, aliases in _normalized_date_sequence_stage_aliases():
+    for stage_name, aliases in DATE_SEQUENCE_STAGE_ALIASES:
         matched_columns: list[str] = []
         for alias in aliases:
             matched_columns.extend(matches_by_alias.get(alias, []))
@@ -372,9 +346,19 @@ def _sql_numeric_or_text_comparison(first_expr: str, second_expr: str, operator:
 
 def _sql_safe_timestamp(expr: str, data_type: str | None = None) -> str:
     text_expr = f"btrim(CAST({expr} AS text))"
+    if _type_family(data_type) == "datetime":
+        return (
+            "CASE "
+            f"WHEN {expr} IS NULL THEN NULL::timestamp "
+            f"WHEN lower({text_expr}) IN ('', 'nan', 'none', 'null', '<na>', 'nat') THEN NULL::timestamp "
+            f"ELSE REPLACE({text_expr}, 'T', ' ')::timestamp "
+            "END"
+        )
     return (
         "CASE "
         f"WHEN {expr} IS NULL THEN NULL::timestamp "
+        f"WHEN lower({text_expr}) IN ('', 'nan', 'none', 'null', '<na>', 'nat') THEN NULL::timestamp "
+        f"WHEN {text_expr} ~ '^\\d{{4}}-\\d{{2}}-\\d{{2}}(?:[ tT]\\d{{2}}:\\d{{2}}(?::\\d{{2}}(?:\\.\\d+)?)?(?:[+-]\\d{{2}}(?::?\\d{{2}})?|Z)?)?$' THEN REPLACE({text_expr}, 'T', ' ')::timestamp "
         f"WHEN {text_expr} ~ '^\\d{{4}}-\\d{{2}}-\\d{{2}}' THEN left({text_expr}, 10)::date::timestamp "
         "ELSE NULL::timestamp "
         "END"
@@ -467,6 +451,48 @@ def _feature_rule_aliases(rules: list[FeatureRuleInput]) -> list[str]:
         aliases.append(column_alias)
     return aliases
 
+
+def _is_datetime_meta(meta: dict[str, Any] | None) -> bool:
+    return _type_family((meta or {}).get("data_type")) == "datetime"
+
+
+def _parse_rule_timestamp_literal(value: Any) -> str:
+    text_value = str(value or "").strip()
+    if not text_value:
+        raise ValueError("Rule value is missing.")
+
+    normalized = text_value.replace("Z", "+00:00")
+    try:
+        return datetime.fromisoformat(normalized).isoformat(sep=" ")
+    except ValueError:
+        pass
+
+    try:
+        return date.fromisoformat(normalized[:10]).isoformat()
+    except ValueError as exc:
+        raise ValueError(f"Rule value '{value}' is not a valid date or timestamp.") from exc
+
+
+def _sql_datetime_comparison(
+    first_expr: str,
+    first_meta: dict[str, Any] | None,
+    operator: str,
+    params: dict[str, Any],
+    *,
+    second_expr: str | None = None,
+    second_meta: dict[str, Any] | None = None,
+    rule_value: Any = None,
+) -> str:
+    left_ts = _sql_safe_timestamp(first_expr, (first_meta or {}).get("data_type"))
+
+    if second_expr is not None:
+        right_ts = _sql_safe_timestamp(second_expr, (second_meta or {}).get("data_type"))
+        return f"({left_ts} {operator} {right_ts})"
+
+    param_name = _next_param_name(params, "rule_ts")
+    params[param_name] = _parse_rule_timestamp_literal(rule_value)
+    return f"({left_ts} {operator} CAST(:{param_name} AS timestamp))"
+
 def _build_sql_outlier_predicate(
     selected_tables: list[str],
     source_columns: dict[str, list[dict]],
@@ -475,15 +501,26 @@ def _build_sql_outlier_predicate(
     *,
     alias: str,
 ) -> str:
-    first_name, _ = _joined_column_meta(selected_tables, source_columns, rule.first_column)
+    first_name, first_meta = _joined_column_meta(selected_tables, source_columns, rule.first_column)
     first_expr = _joined_column_expr(first_name, alias)
+    second_meta: dict[str, Any] | None = None
     second_expr: str | None = None
     if rule.second_column:
-        second_name, _ = _joined_column_meta(selected_tables, source_columns, rule.second_column)
+        second_name, second_meta = _joined_column_meta(selected_tables, source_columns, rule.second_column)
         second_expr = _joined_column_expr(second_name, alias)
 
     operator = str(rule.operator or "").strip().lower()
     if operator in {">", ">=", "<", "<="}:
+        if _is_datetime_meta(first_meta) or _is_datetime_meta(second_meta):
+            return _sql_datetime_comparison(
+                first_expr,
+                first_meta,
+                operator,
+                params,
+                second_expr=second_expr,
+                second_meta=second_meta,
+                rule_value=rule.value,
+            )
         left_num = _sql_safe_numeric(first_expr)
         if second_expr is not None:
             right_num = _sql_safe_numeric(second_expr)
@@ -499,6 +536,17 @@ def _build_sql_outlier_predicate(
     if operator == "not null":
         return f"({first_expr} IS NOT NULL)"
     if operator in {"=", "!="}:
+        if _is_datetime_meta(first_meta) or _is_datetime_meta(second_meta):
+            comparator = "=" if operator == "=" else "<>"
+            return _sql_datetime_comparison(
+                first_expr,
+                first_meta,
+                comparator,
+                params,
+                second_expr=second_expr,
+                second_meta=second_meta,
+                rule_value=rule.value,
+            )
         if second_expr is not None:
             return _sql_numeric_or_text_comparison(first_expr, second_expr, operator)
         param_name = _next_param_name(params, "rule_value")
@@ -589,7 +637,7 @@ def _build_source_table_ref(table_name: str) -> str:
     quoted_table = _quote(table_name)
     return f"{schema}.{quoted_table} AS {quoted_table}"
 
-def _source_table_ref_no_alias(table_name: str) -> str:
+def _source_table_only_ref(table_name: str) -> str:
     _validate_identifier(table_name, "table_name")
     return f"{_quote(settings.source_db_schema)}.{_quote(table_name)}"
 
@@ -684,50 +732,6 @@ def _list_date_filter_sql(payload: WorkbenchRunRequest, source_columns: dict[str
         from_date=from_date,
         to_date=to_date,
     )
-
-
-def _filtered_source_cte_name(table_name: str) -> str:
-    _validate_identifier(table_name, "table_name")
-    return f"filtered_{table_name}"
-
-
-def _build_source_prefilter_ctes(
-    payload: WorkbenchRunRequest,
-    source_columns: dict[str, list[dict]],
-) -> tuple[list[str], dict[str, str], list[str]]:
-    from_date = _safe_date_literal(getattr(payload, "from_date", None))
-    to_date = _safe_date_literal(getattr(payload, "to_date", None))
-    if not from_date and not to_date:
-        return [], {}, []
-    if from_date and to_date and from_date > to_date:
-        return [], {}, []
-
-    target = _preferred_date_filter_target(payload, source_columns)
-    if target is None:
-        return [], {}, []
-
-    table_name, column = target
-    filter_sql = _date_range_filter_sql(
-        table_name,
-        column,
-        from_date=from_date,
-        to_date=to_date,
-    )
-    cte_name = _filtered_source_cte_name(table_name)
-    cte_sql = f"""
-    {cte_name} AS (
-        SELECT *
-        FROM {_build_source_table_ref(table_name)}
-        WHERE {filter_sql}
-    )
-    """
-    source_refs = {
-        table_name: f"{_quote(cte_name)} AS {_quote(table_name)}",
-    }
-    warnings = [
-        f"Applied date filter pushdown on {table_name}.{column['column_name']} before joining source tables."
-    ]
-    return [cte_sql], source_refs, warnings
 
 def _validate_join_payload_tables(payload: WorkbenchRunRequest, source_columns: dict[str, list[dict]]) -> None:
     _validate_selected_tables(payload.selected_tables, source_columns)
@@ -844,7 +848,7 @@ def _build_date_sequence_anomaly_conditions(
 ) -> list[tuple[str, str]]:
     stage_exprs: list[tuple[str, list[tuple[str, str]]]] = []
 
-    for stage_name, aliases in _normalized_date_sequence_stage_aliases():
+    for stage_name, aliases in DATE_SEQUENCE_STAGE_ALIASES:
         exprs: list[tuple[str, str]] = []
 
         for table_name in joined_tables:
@@ -939,115 +943,58 @@ def _build_sql_anomaly_expressions(
         if not required_cols.issubset(cols):
             continue
 
-        cte_name = f"{table_name}_invoice_dupes"
-        invoice_column_q = _quote(invoice_column)
-        record_status_q = _quote("record_status")
-        invoice_date_q = _quote("invoice_date")
-        source_invoice_date_expr = _safe_sql_date_expr(invoice_date_q)
-        base_invoice_date_expr = _safe_sql_date_expr(f'base."{table_name}.invoice_date"')
-
-        ctes.append(
-            f"""
-            {cte_name} AS (
-                SELECT
-                    {invoice_column_q} AS invoice_value,
-                    {source_invoice_date_expr} AS invoice_date_value,
-                    COUNT(*) AS duplicate_count
-                FROM {_source_table_ref_no_alias(table_name)}
-                WHERE {record_status_q} = 'V'
-                  AND {invoice_column_q} IS NOT NULL
-                  AND {invoice_date_q} IS NOT NULL
-                GROUP BY {invoice_column_q}, {source_invoice_date_expr}
-            )
-            """
-        )
-        outer_joins.append(
-            f"""
-            LEFT JOIN {cte_name}
-                ON {cte_name}.invoice_value = base."{table_name}.{invoice_column}"
-               AND {cte_name}.invoice_date_value = {base_invoice_date_expr}
-            """
-        )
-
         conditions.append((
             f"""
             (
                 base."{table_name}.record_status" = 'V'
                 AND base."{table_name}.{invoice_column}" IS NOT NULL
                 AND base."{table_name}.invoice_date" IS NOT NULL
-                AND COALESCE({cte_name}.duplicate_count, 0) > 1
+                AND (
+                    SELECT COUNT(*)
+                    FROM {_source_table_only_ref(table_name)} b2
+                    WHERE b2.record_status = 'V'
+                      AND b2.{invoice_column} = base."{table_name}.{invoice_column}"
+                      AND {_safe_sql_date_expr(f'b2.invoice_date')}
+                          = {_safe_sql_date_expr(f'base."{table_name}.invoice_date"')}
+                ) > 1
             )
             """,
             f"{table_name} has duplicate valid invoice number + invoice_date",
         ))
 
-    ecs_payment_refs_cte_added = False
-    ecs_by_dak_cte_added = False
-
     # CMP scroll payment_reference_no must exist in ECS
     if has_table("cmp_scroll") and has_table("ecs"):
-        if "payment_reference_no" in table_cols("ecs"):
-            if not ecs_payment_refs_cte_added:
-                ctes.append(
-                    f"""
-                    ecs_payment_refs AS (
-                        SELECT DISTINCT payment_reference_no
-                        FROM {_source_table_ref_no_alias("ecs")}
-                        WHERE payment_reference_no IS NOT NULL
-                    )
-                    """
+        conditions.append((
+            f"""
+            (
+                base."cmp_scroll.payment_reference_no" IS NOT NULL
+                AND base."cmp_scroll.cda_name" = 'CDA- Main Office Jabalpur'
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM {_source_table_only_ref("ecs")} e
+                    WHERE e.payment_reference_no = base."cmp_scroll.payment_reference_no"
                 )
-                ecs_payment_refs_cte_added = True
-            outer_joins.append(
-                """
-                LEFT JOIN ecs_payment_refs
-                    ON ecs_payment_refs.payment_reference_no = base."cmp_scroll.payment_reference_no"
-                """
             )
-            conditions.append((
-                f"""
-                (
-                    base."cmp_scroll.payment_reference_no" IS NOT NULL
-                    AND base."cmp_scroll.cda_name" = 'CDA- Main Office Jabalpur'
-                    AND ecs_payment_refs.payment_reference_no IS NULL
-                )
-                """,
-                "CMP scroll has payment_reference_no but not found in ECS",
-            ))
+            """,
+            "CMP scroll has payment_reference_no but not found in ECS",
+        ))
 
     # cheque_slip ECS mode = 1 but ECS record exists
     if has_table("cheque_slip") and has_table("ecs"):
-        if "fk_dak" in table_cols("ecs"):
-            if not ecs_by_dak_cte_added:
-                ctes.append(
-                    f"""
-                    ecs_by_dak AS (
-                        SELECT
-                            fk_dak,
-                            COUNT(*) AS ecs_count
-                        FROM {_source_table_ref_no_alias("ecs")}
-                        WHERE fk_dak IS NOT NULL
-                        GROUP BY fk_dak
-                    )
-                    """
+        conditions.append((
+            f"""
+            (
+                base."cheque_slip.fk_ecs_payment_mode" = 1
+                AND base."cheque_slip.fk_dak" IS NOT NULL
+                AND EXISTS (
+                    SELECT 1
+                    FROM {_source_table_only_ref("ecs")} e
+                    WHERE e.fk_dak = base."cheque_slip.fk_dak"
                 )
-                ecs_by_dak_cte_added = True
-            outer_joins.append(
-                """
-                LEFT JOIN ecs_by_dak
-                    ON ecs_by_dak.fk_dak = base."cheque_slip.fk_dak"
-                """
             )
-            conditions.append((
-                f"""
-                (
-                    base."cheque_slip.fk_ecs_payment_mode" = 1
-                    AND base."cheque_slip.fk_dak" IS NOT NULL
-                    AND COALESCE(ecs_by_dak.ecs_count, 0) > 0
-                )
-                """,
-                "Cheque slip ECS mode=1 but ECS record exists",
-            ))
+            """,
+            "Cheque slip ECS mode=1 but ECS record exists",
+        ))
 
     # Cheque slip + schedule3 rules
     if has_table("cheque_slip") and has_table("schedule3"):
@@ -1058,7 +1005,7 @@ def _build_sql_anomaly_expressions(
                     fk_dak,
                     COUNT(*) AS schedule3_total_count,
                     COUNT(*) FILTER (WHERE record_status IN ('P', 'V')) AS schedule3_pv_count
-                FROM {_source_table_ref_no_alias("schedule3")}
+                FROM {_source_table_only_ref("schedule3")}
                 WHERE fk_dak IS NOT NULL
                 GROUP BY fk_dak
             )
@@ -1070,7 +1017,7 @@ def _build_sql_anomaly_expressions(
                 SELECT
                     fk_dak,
                     COUNT(*) FILTER (WHERE record_status = 'V' AND approved = true) AS cheque_slip_v_approved_count
-                FROM {_source_table_ref_no_alias("cheque_slip")}
+                FROM {_source_table_only_ref("cheque_slip")}
                 WHERE fk_dak IS NOT NULL
                 GROUP BY fk_dak
             )
@@ -1165,9 +1112,7 @@ def _build_join_sql(
     joined_aliases: set[str] = {first_table}
     used_tables: set[str] = {first_table}
     select_clause = _build_join_select_list(selected_tables, source_columns)
-    source_prefilter_ctes, pushed_down_source_refs, prefilter_warnings = _build_source_prefilter_ctes(payload, source_columns)
-    warnings.extend(prefilter_warnings)
-    first_source_ref = pushed_down_source_refs.get(first_table, _build_source_table_ref(first_table))
+    first_source_ref = _build_source_table_ref(first_table)
     from_clause = f"FROM {first_source_ref}"
 
     join_clauses: list[str] = []
@@ -1201,7 +1146,7 @@ def _build_join_sql(
         )
         join_mode = "raw_equal"
 
-        right_source_ref = pushed_down_source_refs.get(right_table, _build_source_table_ref(right_table))
+        right_source_ref = _build_source_table_ref(right_table)
         join_keyword = _sql_join_keyword(join.join_type)
         join_clause = f"{join_keyword} {right_source_ref} ON {join_condition}"
         join_clauses.append(join_clause)
@@ -1233,7 +1178,14 @@ def _build_join_sql(
     if join_clauses:
         base_sql += "\n" + "\n".join(join_clauses)
 
+    filters = []
+    list_date_filter = _list_date_filter_sql(payload, source_columns)
+    if list_date_filter:
+        filters.append(list_date_filter)
+
     sql = base_sql
+    if filters:
+        sql += "\nWHERE " + "\n  AND ".join(f"({item})" for item in filters)
 
     if row_limit and row_limit > 0:
         safe_limit = max(1, int(row_limit))
@@ -1259,7 +1211,7 @@ def _build_join_sql(
             + ", ".join(anomaly_reason_parts)
             + "]::text[], NULL), ', ')"
         )
-        cte_sql = [*source_prefilter_ctes, f"joined_base AS (\n{sql}\n)"]
+        cte_sql = [f"joined_base AS (\n{sql}\n)"]
         cte_sql.extend(anomaly_ctes)
         cte_sql_text = ",\n".join(cte_sql)
         outer_join_sql = "\n".join(anomaly_outer_joins)
@@ -1270,10 +1222,6 @@ SELECT base.*,
 FROM joined_base base"""
         if outer_join_sql:
             sql += "\n" + outer_join_sql
-
-    elif source_prefilter_ctes:
-        cte_sql_text = ",\n".join([*source_prefilter_ctes, f"joined_base AS (\n{sql}\n)"])
-        sql = f"WITH {cte_sql_text}\nSELECT *\nFROM joined_base"
 
     return sql, join_debug, warnings
 
@@ -1297,8 +1245,11 @@ def _enrich_sql_join_debug(
     for item in join_debug:
         left_table = item["left_table"]
         right_table = item["right_table"]
-        left_col = item["left_key"].split(".", 1)[1]
-        right_col = item["right_key"].split(".", 1)[1]
+        # Safely extract column name from "table.column" format
+        left_parts = item["left_key"].split(".", 1)
+        right_parts = item["right_key"].split(".", 1)
+        left_col = left_parts[1] if len(left_parts) > 1 else left_parts[0]
+        right_col = right_parts[1] if len(right_parts) > 1 else right_parts[0]
 
         try:
             common_count = _sql_common_key_count(conn, left_table, left_col, right_table, right_col)
@@ -1427,6 +1378,8 @@ def _materialize_workbench_temp_table(conn, workbench_sql: str, params: dict[str
     conn.execute(
         text(
             f"""
+            -- This staging table is intentionally transaction-scoped.
+            -- Callers must read it before the surrounding source transaction commits.
             CREATE TEMP TABLE {temp_ref}
             ON COMMIT DROP
             AS
@@ -1458,6 +1411,44 @@ def _temp_table_columns(conn, temp_table: str) -> list[str]:
     result = conn.execute(text(f"SELECT * FROM {_workbench_temp_table_ref(temp_table)} LIMIT 0"))
     return [str(column) for column in result.keys()]
 
+
+def _temp_table_column_presence_ratios(
+    conn,
+    temp_table: str,
+    candidate_columns: list[str],
+) -> tuple[int, dict[str, float]]:
+    if not candidate_columns:
+        return 0, {}
+
+    select_parts = ["COUNT(*) AS total_rows"]
+    alias_by_column: dict[str, str] = {}
+
+    for index, column_name in enumerate(candidate_columns):
+        alias = f"present_{index}"
+        alias_by_column[column_name] = alias
+        select_parts.append(f"COUNT({_quote(column_name)}) AS {_quote(alias)}")
+
+    row = conn.execute(
+        text(
+            f"""
+            SELECT {", ".join(select_parts)}
+            FROM {_workbench_temp_table_ref(temp_table)}
+            """
+        )
+    ).mappings().first()
+
+    total_rows = int((row or {}).get("total_rows") or 0)
+    ratios: dict[str, float] = {}
+
+    for column_name in candidate_columns:
+        present_count = int((row or {}).get(alias_by_column[column_name]) or 0)
+        if total_rows <= 0:
+            ratios[column_name] = 0.0
+            continue
+        ratios[column_name] = present_count / total_rows
+
+    return total_rows, ratios
+
 def _log_workbench_query_plan(conn, workbench_sql: str, params: dict[str, Any]) -> None:
     explain_mode = "ANALYZE, BUFFERS, FORMAT TEXT" if settings.workbench_explain_analyze else "FORMAT TEXT"
     started_at = time.monotonic()
@@ -1480,18 +1471,60 @@ def _read_temp_scoring_frame(
     temp_table: str,
     payload: WorkbenchRunRequest,
 ) -> pd.DataFrame:
-    available = set(_temp_table_columns(conn, temp_table))
-    requested_columns = [
+    del payload
+
+    available_columns = _temp_table_columns(conn, temp_table)
+    required_columns = [
         TEMP_ROW_ID_COLUMN,
         USER_RULE_FLAG_COLUMN,
         USER_RULE_REASONS_COLUMN,
         SQL_RULE_FLAG_COLUMN,
         SQL_RULE_REASONS_COLUMN,
     ]
-    requested_columns.extend(_feature_rule_aliases(payload.feature_rules))
-    selected_columns = [column for column in requested_columns if column in available]
-    if TEMP_ROW_ID_COLUMN not in selected_columns:
-        selected_columns.insert(0, TEMP_ROW_ID_COLUMN)
+    candidate_columns = [
+        column
+        for column in available_columns
+        if column not in required_columns
+    ]
+    _total_rows, present_ratios = _temp_table_column_presence_ratios(
+        conn,
+        temp_table,
+        candidate_columns,
+    )
+    min_present_ratio = max(0.0, min(float(settings.anomaly_feature_min_present_ratio), 1.0))
+    kept_candidate_columns = [
+        column
+        for column in candidate_columns
+        if present_ratios.get(column, 0.0) >= min_present_ratio
+    ]
+    dropped_sparse_columns = [
+        column
+        for column in candidate_columns
+        if column not in kept_candidate_columns
+    ]
+
+    if dropped_sparse_columns:
+        logger.info(
+            "Skipped %d sparse scoring columns from temp table %s with present ratio below %.2f: %s",
+            len(dropped_sparse_columns),
+            temp_table,
+            min_present_ratio,
+            [
+                {
+                    "column": column,
+                    "present_ratio": round(float(present_ratios.get(column, 0.0)), 3),
+                }
+                for column in dropped_sparse_columns[:20]
+            ],
+        )
+
+    selected_columns = [
+        column
+        for column in required_columns
+        if column in available_columns and column != TEMP_ROW_ID_COLUMN
+    ]
+    selected_columns.extend(kept_candidate_columns)
+    selected_columns.insert(0, TEMP_ROW_ID_COLUMN)
     select_sql = ", ".join(_quote(column) for column in selected_columns)
     df = pd.read_sql_query(
         text(

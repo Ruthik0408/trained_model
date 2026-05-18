@@ -632,8 +632,6 @@ const allColumnCard = {
 };
 const allColumnKey = {
     fontSize: 11,
-    textTransform: "uppercase",
-    letterSpacing: "0.08em",
     color: "#9a3412",
     fontWeight: 700,
     marginBottom: 6,

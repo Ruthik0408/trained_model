@@ -1,12 +1,12 @@
 from dataclasses import dataclass
+import re
 
 import pandas as pd
 import numpy as np
 
-from app.core.config import settings
 from app.core.errors import WorkbenchValidationError
 from app.services.workbench.constants import logger
-from app.services.workbench.utils import _is_amount_like_column
+from app.services.workbench.utils import _is_amount_like_column, _is_identifier_like_column
 
 
 @dataclass(frozen=True)
@@ -15,13 +15,143 @@ class FeatureSelectionResult:
     selected_columns: list[str]
     dropped_all_missing_columns: list[str]
     dropped_constant_columns: list[str]
-    dropped_low_score_columns: list[str]
-    feature_scores: dict[str, float]
+
+
+def _is_datetime_like_column_name(column_name: str) -> bool:
+    normalized = str(column_name).strip().lower()
+    return any(
+        token in normalized
+        for token in (
+            "date",
+            "time",
+            "timestamp",
+            "created_at",
+            "updated_at",
+            "disposed_at",
+        )
+    )
+
+
+def _is_frequency_encoded_column(column_name: str) -> bool:
+    plain_name = str(column_name).strip().lower().split(".")[-1]
+    return (
+        plain_name.startswith("fk_")
+        or plain_name.endswith("_no")
+        or plain_name.endswith("_number")
+    )
+
+
+def _safe_encoded_feature_name(column_name: str, value: object) -> str:
+    value_text = "missing" if pd.isna(value) else str(value)
+    value_token = re.sub(r"[^a-zA-Z0-9]+", "_", value_text).strip("_").lower()
+    if not value_token:
+        value_token = "blank"
+    if len(value_token) > 48:
+        value_token = value_token[:48].rstrip("_") or "value"
+    return f"{column_name}::{value_token}"
+
+
+def _datetime_series_to_numeric(series: pd.Series) -> pd.Series:
+    dt_series = pd.to_datetime(series, errors="coerce", utc=True)
+    numeric = pd.Series(np.nan, index=series.index, dtype=float)
+    valid = dt_series.notna()
+    if valid.any():
+        numeric.loc[valid] = (
+            dt_series.loc[valid].astype("int64") / 1_000_000_000.0
+        )
+    return numeric
+
+
+def _frequency_encode_series(series: pd.Series) -> pd.Series:
+    encoded = pd.Series(np.nan, index=series.index, dtype=float)
+    non_missing = series.notna()
+    if non_missing.any():
+        frequencies = series.loc[non_missing].astype("string").value_counts(normalize=True)
+        encoded.loc[non_missing] = (
+            series.loc[non_missing]
+            .astype("string")
+            .map(frequencies)
+            .astype(float)
+        )
+    return encoded
+
+
+def _one_hot_encode_series(series: pd.Series, column_name: str) -> pd.DataFrame:
+    if series.notna().sum() == 0:
+        return pd.DataFrame(index=series.index)
+
+    text_series = series.astype("string")
+    dummies = pd.get_dummies(text_series, dummy_na=False, dtype=float)
+    dummies = dummies.rename(
+        columns={
+            value: _safe_encoded_feature_name(column_name, value)
+            for value in dummies.columns
+        }
+    )
+    return dummies
+
+
+def _coerce_joined_feature_series(series: pd.Series, column_name: str) -> pd.Series | pd.DataFrame:
+    if _is_frequency_encoded_column(column_name):
+        return _frequency_encode_series(series)
+
+    if pd.api.types.is_bool_dtype(series):
+        return _one_hot_encode_series(series, column_name)
+
+    if pd.api.types.is_numeric_dtype(series):
+        return pd.to_numeric(series, errors="coerce")
+
+    if pd.api.types.is_datetime64_any_dtype(series):
+        return _datetime_series_to_numeric(series)
+
+    non_missing = int(series.notna().sum())
+    if non_missing == 0:
+        return pd.Series(np.nan, index=series.index, dtype=float)
+
+    numeric_series = pd.to_numeric(series, errors="coerce")
+    numeric_ratio = float(numeric_series.notna().sum()) / float(non_missing)
+
+    datetime_like_name = _is_datetime_like_column_name(column_name)
+    if datetime_like_name:
+        datetime_series = _datetime_series_to_numeric(series)
+        datetime_ratio = float(datetime_series.notna().sum()) / float(non_missing)
+    else:
+        datetime_series = pd.Series(np.nan, index=series.index, dtype=float)
+        datetime_ratio = 0.0
+
+    if numeric_ratio >= 0.80 and numeric_ratio >= datetime_ratio:
+        return numeric_series.astype(float)
+
+    if datetime_like_name or datetime_ratio >= 0.80:
+        return datetime_series
+
+    return _one_hot_encode_series(series, column_name)
+
+
+def _build_auto_feature_frame(
+    joined: pd.DataFrame,
+    *,
+    excluded_columns: set[str] | None = None,
+) -> pd.DataFrame:
+    excluded = {str(column) for column in (excluded_columns or set())}
+    features = pd.DataFrame(index=joined.index)
+
+    for column in joined.columns:
+        column_name = str(column)
+        if column_name in excluded or _is_identifier_like_column(column_name):
+            continue
+        encoded = _coerce_joined_feature_series(joined[column], column_name)
+        if isinstance(encoded, pd.DataFrame):
+            features = pd.concat([features, encoded], axis=1)
+        else:
+            features[column_name] = encoded
+
+    return features
 
 def _add_statistical_outlier_signals(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
     numeric_cols = [column for column in out.columns if _is_amount_like_column(str(column))]
-    for column in numeric_cols[:20]:
+    for column in numeric_cols[:]:
         series = pd.to_numeric(out[column], errors="coerce")
         if pd.api.types.is_bool_dtype(series):
             series = series.astype(float)
@@ -45,8 +175,6 @@ def _prepare_isolation_forest_feature_frame(features: pd.DataFrame) -> FeatureSe
             selected_columns=[],
             dropped_all_missing_columns=[],
             dropped_constant_columns=[],
-            dropped_low_score_columns=[],
-            feature_scores={},
         )
 
     all_missing_cols = feature_frame.columns[~feature_frame.notna().any(axis=0)].tolist()
@@ -64,8 +192,6 @@ def _prepare_isolation_forest_feature_frame(features: pd.DataFrame) -> FeatureSe
             selected_columns=[],
             dropped_all_missing_columns=[str(column) for column in all_missing_cols],
             dropped_constant_columns=[],
-            dropped_low_score_columns=[],
-            feature_scores={},
         )
 
     variance = feature_frame.var(numeric_only=True).fillna(0.0)
@@ -84,25 +210,17 @@ def _prepare_isolation_forest_feature_frame(features: pd.DataFrame) -> FeatureSe
             selected_columns=[],
             dropped_all_missing_columns=[str(column) for column in all_missing_cols],
             dropped_constant_columns=[str(column) for column in zero_var_cols],
-            dropped_low_score_columns=[],
-            feature_scores={},
         )
 
-    feature_scores = _score_feature_columns(feature_frame)
-    selected_columns, dropped_low_score_columns = _select_feature_columns(feature_scores)
-    selected_frame = feature_frame.loc[:, selected_columns].copy()
     logger.info(
-        "Selected %d/%d IF feature columns after scoring",
-        len(selected_columns),
-        len(feature_scores),
+        "Keeping %d IF feature columns after dropping missing/constant columns",
+        len(feature_frame.columns),
     )
     return FeatureSelectionResult(
-        feature_frame=selected_frame,
-        selected_columns=selected_columns,
+        feature_frame=feature_frame.copy(),
+        selected_columns=[str(column) for column in feature_frame.columns],
         dropped_all_missing_columns=[str(column) for column in all_missing_cols],
         dropped_constant_columns=[str(column) for column in zero_var_cols],
-        dropped_low_score_columns=dropped_low_score_columns,
-        feature_scores=feature_scores,
     )
 
 
@@ -141,55 +259,3 @@ def _validate_isolation_forest_feature_frame(feature_frame: pd.DataFrame) -> pd.
         )
 
     return feature_frame
-
-
-def _score_feature_columns(feature_frame: pd.DataFrame) -> dict[str, float]:
-    non_missing_ratio = feature_frame.notna().mean(axis=0)
-    non_missing_counts = feature_frame.notna().sum(axis=0)
-    unique_counts = feature_frame.nunique(dropna=True)
-    variance = feature_frame.var(numeric_only=True).reindex(feature_frame.columns).fillna(0.0)
-
-    positive_variance = variance[variance > 0]
-    if positive_variance.empty:
-        variance_rank = pd.Series(0.0, index=feature_frame.columns, dtype=float)
-    else:
-        variance_rank = variance.rank(pct=True).reindex(feature_frame.columns).fillna(0.0)
-
-    uniqueness_ratio = pd.Series(0.0, index=feature_frame.columns, dtype=float)
-    valid_unique_mask = non_missing_counts > 1
-    uniqueness_ratio.loc[valid_unique_mask] = (
-        (unique_counts.loc[valid_unique_mask] - 1).clip(lower=0)
-        / (non_missing_counts.loc[valid_unique_mask] - 1).clip(lower=1)
-    ).clip(lower=0.0, upper=1.0)
-
-    scores = (
-        (non_missing_ratio * 0.45)
-        + (variance_rank * 0.35)
-        + (uniqueness_ratio * 0.20)
-    ).fillna(0.0)
-    return {
-        str(column): float(scores.loc[column])
-        for column in feature_frame.columns
-    }
-
-
-def _select_feature_columns(feature_scores: dict[str, float]) -> tuple[list[str], list[str]]:
-    if not feature_scores:
-        return [], []
-
-    ordered = sorted(feature_scores.items(), key=lambda item: (-item[1], item[0]))
-    if len(ordered) <= settings.anomaly_feature_max_columns:
-        selected = [column for column, score in ordered if score >= settings.anomaly_feature_min_score]
-    else:
-        selected = [
-            column
-            for column, score in ordered[:settings.anomaly_feature_max_columns]
-            if score >= settings.anomaly_feature_min_score
-        ]
-
-    if not selected:
-        selected = [ordered[0][0]]
-
-    selected_set = set(selected)
-    dropped = [column for column, _score in ordered if column not in selected_set]
-    return selected, dropped

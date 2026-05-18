@@ -21,10 +21,15 @@ from app.services.workbench.constants import PREVIEW_ROW_LIMIT, RESULT_TABLE, lo
 from app.services.workbench.ml_pipeline import (
     FeatureSelectionResult,
     _add_statistical_outlier_signals,
+    _build_auto_feature_frame,
     _prepare_isolation_forest_feature_frame,
     _validate_isolation_forest_feature_frame,
 )
-from app.services.workbench.result_store import DatasetBuildInputs, _build_dataset_frame, _write_dataset_to_result
+from app.services.workbench.result_store import (
+    DatasetBuildInputs,
+    _build_dataset_frame,
+    _write_dataset_to_result,
+)
 from app.services.workbench.source_db import _next_dataset_run_id, _source_begin
 from app.services.workbench.sql_runtime import (
     _execute_sql_joined_frame,
@@ -76,8 +81,17 @@ class IsolationForestState:
 
 
 def preview_workbench(payload: WorkbenchRunRequest) -> dict:
-    joined, source_row_counts, join_debug, warnings, executed_sql = _execute_sql_joined_frame(payload, for_preview=True)
-    preview_rows = joined.head(PREVIEW_ROW_LIMIT).replace({np.nan: None}).to_dict(orient="records")
+    joined, source_row_counts, join_debug, warnings, executed_sql = _execute_sql_joined_frame(
+        payload,
+        for_preview=True,
+    )
+
+    preview_rows = (
+        joined.head(PREVIEW_ROW_LIMIT)
+        .replace({np.nan: None})
+        .to_dict(orient="records")
+    )
+
     return {
         "mode": "preview",
         "total_rows_previewed": int(len(joined)),
@@ -102,8 +116,13 @@ def run_workbench(db: Session, payload: WorkbenchRunRequest) -> dict:
         len(payload.feature_rules),
         len(payload.outlier_rules),
     )
+
+    # Keep all temp-table reads inside this single source transaction.
+    # The workbench staging table is created with ON COMMIT DROP, so it is
+    # only valid until this _source_begin() context exits.
     with _source_begin() as source_conn:
         execution = _execute_workbench(payload, source_conn)
+
         if execution.joined.empty:
             return _persist_empty_run(db, payload, execution)
 
@@ -111,7 +130,9 @@ def run_workbench(db: Session, payload: WorkbenchRunRequest) -> dict:
         model_state = _run_isolation_forest(payload, execution, source_conn, rule_flags)
 
     amount_total = _calculate_amount_total(payload, model_state.filtered_joined)
+
     run = _create_run_record(db, payload, execution, rule_flags, model_state)
+
     dataset_frame = _build_dataset_frame(
         DatasetBuildInputs(
             joined=execution.joined,
@@ -131,15 +152,29 @@ def run_workbench(db: Session, payload: WorkbenchRunRequest) -> dict:
             explanation_signals_override=model_state.explanation_signals,
         )
     )
+
     dataset_storage = _write_dataset_to_result(dataset_frame, execution.dataset_table)
-    builtin_reason_by_record_id = _build_builtin_reason_lookup(rule_flags, model_state, dataset_storage)
+
+    builtin_reason_by_record_id = _build_builtin_reason_lookup(
+        rule_flags,
+        model_state,
+        dataset_storage,
+    )
+
     logger.info(
         "Appended rows into dataset table %s; total rows now %s",
         execution.dataset_table,
         dataset_storage["row_count"],
     )
 
-    run.metrics_json = _build_persisted_metrics(payload, execution, model_state, dataset_frame, dataset_storage, builtin_reason_by_record_id)
+    run.metrics_json = _build_persisted_metrics(
+        payload,
+        execution,
+        model_state,
+        dataset_frame,
+        dataset_storage,
+        builtin_reason_by_record_id,
+    )
 
     db.commit()
     db.refresh(run)
@@ -164,8 +199,15 @@ def _execute_workbench(payload: WorkbenchRunRequest, source_conn) -> WorkbenchEx
         applied_outlier_rule_count,
         staging_table,
     ) = _execute_sql_workbench_frame(payload, source_conn)
+
     warnings = [*join_warnings, *sql_pushdown_warnings]
-    logger.info("Joined %d rows from %d tables", len(joined), len(payload.selected_tables))
+
+    logger.info(
+        "Joined %d rows from %d tables",
+        len(joined),
+        len(payload.selected_tables),
+    )
+
     return WorkbenchExecutionState(
         joined=joined,
         source_row_counts=source_row_counts,
@@ -182,7 +224,11 @@ def _execute_workbench(payload: WorkbenchRunRequest, source_conn) -> WorkbenchEx
     )
 
 
-def _persist_empty_run(db: Session, payload: WorkbenchRunRequest, execution: WorkbenchExecutionState) -> dict:
+def _persist_empty_run(
+    db: Session,
+    payload: WorkbenchRunRequest,
+    execution: WorkbenchExecutionState,
+) -> dict:
     run = WorkbenchRun(
         run_name=payload.run_name,
         source_tables_json=payload.selected_tables,
@@ -198,21 +244,35 @@ def _persist_empty_run(db: Session, payload: WorkbenchRunRequest, execution: Wor
         metrics_json=_base_metrics(payload, execution),
         status="COMPLETED",
     )
+
     db.add(run)
     db.commit()
     db.refresh(run)
+
     return _build_run_response(run, amount_total=0.0)
 
 
 def _extract_rule_flags(joined: pd.DataFrame) -> RuleFlagState:
     user_rule_flag = _pop_rule_flag(joined, "__ml_sql_rule_flag")
     builtin_rule_flag = _pop_rule_flag(joined, "sql_rule_flag")
-    human_reason_series = joined.pop("__ml_sql_rule_reasons") if "__ml_sql_rule_reasons" in joined.columns else None
-    builtin_reason_series = joined.pop("sql_rule_reasons") if "sql_rule_reasons" in joined.columns else None
+
+    human_reason_series = (
+        joined.pop("__ml_sql_rule_reasons")
+        if "__ml_sql_rule_reasons" in joined.columns
+        else None
+    )
+
+    builtin_reason_series = (
+        joined.pop("sql_rule_reasons")
+        if "sql_rule_reasons" in joined.columns
+        else None
+    )
+
     if builtin_rule_flag.any() and builtin_reason_series is None:
         builtin_reason_series = builtin_rule_flag.map(
             lambda flag: "OUTLIER::Built-in SQL anomaly rule" if bool(flag) else None
         )
+
     return RuleFlagState(
         user_rule_flag=user_rule_flag,
         builtin_rule_flag=builtin_rule_flag,
@@ -225,30 +285,88 @@ def _extract_rule_flags(joined: pd.DataFrame) -> RuleFlagState:
 def _pop_rule_flag(joined: pd.DataFrame, column_name: str) -> pd.Series:
     if column_name not in joined.columns:
         return pd.Series(False, index=joined.index, dtype=bool)
-    return joined.pop(column_name).map(lambda value: bool(value) if pd.notna(value) else False)
+
+    return joined.pop(column_name).map(
+        lambda value: bool(value) if pd.notna(value) else False
+    )
 
 
-def _build_feature_frame(joined: pd.DataFrame, payload: WorkbenchRunRequest) -> tuple[pd.DataFrame, FeatureSelectionResult]:
-    features = pd.DataFrame(index=joined.index)
-    sql_feature_cols = [column for column in _feature_rule_aliases(payload.feature_rules) if column in joined.columns]
+def _build_feature_frame(
+    joined: pd.DataFrame,
+    payload: WorkbenchRunRequest,
+) -> tuple[pd.DataFrame, FeatureSelectionResult]:
+    sql_feature_cols = [
+        column
+        for column in _feature_rule_aliases(payload.feature_rules)
+        if column in joined.columns
+    ]
+
+    excluded_columns = {
+        "__ml_sql_rule_flag",
+        "__ml_sql_rule_reasons",
+        "sql_rule_flag",
+        "sql_rule_reasons",
+        *sql_feature_cols,
+    }
+
+    features = _build_auto_feature_frame(
+        joined,
+        excluded_columns=excluded_columns,
+    )
+
+    logger.info(
+        "Added %d auto-selected non-identifier source columns to IF input",
+        len(features.columns),
+    )
+
     if sql_feature_cols:
         extra = joined[sql_feature_cols].apply(pd.to_numeric, errors="coerce")
         features = pd.concat([features, extra], axis=1)
-        logger.info("Added %d explicit feature-rule columns to IF input", len(sql_feature_cols))
+        logger.info(
+            "Added %d explicit feature-rule columns to IF input",
+            len(sql_feature_cols),
+        )
+
     features = _add_statistical_outlier_signals(features)
-    logger.info("Feature set has %d columns after statistical signals", len(features.columns))
+
+    logger.info(
+        "Feature set has %d columns after statistical signals",
+        len(features.columns),
+    )
+
     selection_result = _prepare_isolation_forest_feature_frame(features)
-    feature_frame = _validate_isolation_forest_feature_frame(selection_result.feature_frame)
-    logger.info("Feature frame has %d rows and %d columns", len(feature_frame), len(feature_frame.columns))
+    feature_frame = _validate_isolation_forest_feature_frame(
+        selection_result.feature_frame
+    )
+
+    logger.info(
+        "Feature frame has %d rows and %d columns",
+        len(feature_frame),
+        len(feature_frame.columns),
+    )
+
     return feature_frame, selection_result
 
 
 def _build_isolation_forest_pipeline(contamination: float | str) -> Pipeline:
     return Pipeline(
         steps=[
-            ("imputer", SimpleImputer(strategy="median", add_indicator=True, keep_empty_features=True)),
+            (
+                "imputer",
+                SimpleImputer(
+                    strategy="median",
+                    add_indicator=True,
+                    keep_empty_features=True,
+                ),
+            ),
             ("scaler", StandardScaler()),
-            ("model", IsolationForest(contamination=contamination, random_state=settings.random_state)),
+            (
+                "model",
+                IsolationForest(
+                    contamination=contamination,
+                    random_state=settings.random_state,
+                ),
+            ),
         ]
     )
 
@@ -263,7 +381,10 @@ def _fit_and_score_isolation_forest(
     except Exception as exc:
         raise WorkbenchValidationError(
             "Isolation Forest training failed on the engineered feature set.",
-            suggestion="Reduce unstable feature rules, inspect missing-value-heavy columns, and retry with a simpler feature set.",
+            suggestion=(
+                "Reduce unstable feature rules, inspect missing-value-heavy columns, "
+                "and retry with a simpler feature set."
+            ),
             details={
                 "feature_count": int(feature_frame.shape[1]),
                 "row_count": int(len(feature_frame.index)),
@@ -272,31 +393,58 @@ def _fit_and_score_isolation_forest(
         ) from exc
 
     try:
-        transformed = pipeline.named_steps["scaler"].transform(
-            pipeline.named_steps["imputer"].transform(feature_frame)
-        )
+        imputed = pipeline.named_steps["imputer"].transform(feature_frame)
+        transformed = pipeline.named_steps["scaler"].transform(imputed)
+
         isolation_scores = -pipeline.named_steps["model"].score_samples(transformed)
+
         ml_flag = pd.Series(
             pipeline.named_steps["model"].predict(transformed) == -1,
             index=joined_index,
+            dtype=bool,
         )
+
     except Exception as exc:
         raise WorkbenchValidationError(
             "Isolation Forest scoring failed.",
-            suggestion="Verify the engineered feature set still has consistent numeric columns after preprocessing.",
+            suggestion=(
+                "Verify the engineered feature set still has consistent numeric columns "
+                "after preprocessing."
+            ),
             details={
                 "feature_count": int(feature_frame.shape[1]),
                 "row_count": int(len(feature_frame.index)),
                 "original_error": str(exc),
             },
         ) from exc
+
     return transformed, isolation_scores, ml_flag
 
 
-def _resolve_ml_threshold(contamination: float | str, model: IsolationForest, isolation_scores: np.ndarray) -> float:
+def _resolve_ml_threshold(
+    contamination: float | str,
+    model: IsolationForest,
+    isolation_scores: np.ndarray,
+) -> float:
     if contamination == "auto":
         return float(-model.offset_)
-    return float(np.quantile(isolation_scores, max(0.0, min(1.0, 1.0 - contamination))))
+
+    contamination_value = float(contamination)
+    quantile = max(0.0, min(1.0, 1.0 - contamination_value))
+
+    return float(np.quantile(isolation_scores, quantile))
+
+
+def _coerce_numeric_row_ids(index_values: list[Any]) -> list[int]:
+    row_ids: list[int] = []
+
+    for row_id in index_values:
+        try:
+            row_ids.append(int(row_id))
+        except (TypeError, ValueError):
+            logger.warning("Skipping non-numeric anomaly row id: %s", row_id)
+
+    return row_ids
 
 
 def _run_isolation_forest(
@@ -306,22 +454,50 @@ def _run_isolation_forest(
     rule_flags: RuleFlagState,
 ) -> IsolationForestState:
     feature_frame, feature_selection = _build_feature_frame(execution.joined, payload)
+
     pipeline = _build_isolation_forest_pipeline(payload.contamination)
+
     transformed, isolation_scores, ml_flag = _fit_and_score_isolation_forest(
-        feature_frame,
-        pipeline,
-        execution.joined.index,
+        feature_frame=feature_frame,
+        pipeline=pipeline,
+        joined_index=feature_frame.index,
     )
-    ml_threshold = _resolve_ml_threshold(payload.contamination, pipeline.named_steps["model"], isolation_scores)
-    final_flag = rule_flags.human_outlier_flag | ml_flag
+
+    ml_threshold = _resolve_ml_threshold(
+        payload.contamination,
+        pipeline.named_steps["model"],
+        isolation_scores,
+    )
+
+    human_outlier_flag = rule_flags.human_outlier_flag.reindex(
+        feature_frame.index,
+        fill_value=False,
+    )
+
+    final_flag = human_outlier_flag | ml_flag
+
+    ml_feature_index = feature_frame.index[ml_flag]
+
     explanation_signals = build_feature_explanation_signals(
         pipeline,
         feature_frame,
         transformed,
-        feature_frame.loc[ml_flag].index,
+        ml_feature_index,
     )
-    anomaly_row_ids = [int(row_id) for row_id in final_flag[final_flag].index.tolist()]
-    filtered_joined = _read_temp_anomaly_payload_frame(source_conn, execution.staging_table, anomaly_row_ids, payload)
+
+    anomaly_index_values = final_flag[final_flag].index.tolist()
+    anomaly_row_ids = _coerce_numeric_row_ids(anomaly_index_values)
+
+    if anomaly_row_ids:
+        filtered_joined = _read_temp_anomaly_payload_frame(
+            source_conn,
+            execution.staging_table,
+            anomaly_row_ids,
+            payload,
+        )
+    else:
+        filtered_joined = execution.joined.iloc[0:0].copy()
+
     return IsolationForestState(
         feature_frame=feature_frame,
         feature_selection=feature_selection,
@@ -336,12 +512,26 @@ def _run_isolation_forest(
     )
 
 
-def _calculate_amount_total(payload: WorkbenchRunRequest, filtered_joined: pd.DataFrame) -> float:
+def _calculate_amount_total(
+    payload: WorkbenchRunRequest,
+    filtered_joined: pd.DataFrame,
+) -> float:
     if not payload.amount_field or filtered_joined.empty:
         return 0.0
-    amount_column = _resolve_column(filtered_joined, payload.amount_field)
-    return float(pd.to_numeric(filtered_joined[amount_column], errors="coerce").fillna(0).sum())
 
+    amount_column = _resolve_column(filtered_joined, payload.amount_field)
+    if amount_column is None or amount_column not in filtered_joined.columns:
+        logger.warning(
+            "Amount field '%s' not found in filtered results. Returning 0.0",
+            payload.amount_field,
+        )
+        return 0.0
+
+    return float(
+        pd.to_numeric(filtered_joined[amount_column], errors="coerce")
+        .fillna(0)
+        .sum()
+    )
 
 
 def _create_run_record(
@@ -368,19 +558,26 @@ def _create_run_record(
             "contamination": payload.contamination,
             "feature_count": int(model_state.feature_frame.shape[1]),
             "selected_feature_columns": model_state.feature_selection.selected_columns,
-            "dropped_all_missing_feature_columns": model_state.feature_selection.dropped_all_missing_columns,
-            "dropped_constant_feature_columns": model_state.feature_selection.dropped_constant_columns,
-            "dropped_low_score_feature_columns": model_state.feature_selection.dropped_low_score_columns,
-            "feature_scores": model_state.feature_selection.feature_scores,
+            "dropped_all_missing_feature_columns": (
+                model_state.feature_selection.dropped_all_missing_columns
+            ),
+            "dropped_constant_feature_columns": (
+                model_state.feature_selection.dropped_constant_columns
+            ),
         },
         status="COMPLETED",
     )
+
     db.add(run)
     db.flush()
+
     return run
 
 
-def _base_metrics(payload: WorkbenchRunRequest, execution: WorkbenchExecutionState) -> dict[str, Any]:
+def _base_metrics(
+    payload: WorkbenchRunRequest,
+    execution: WorkbenchExecutionState,
+) -> dict[str, Any]:
     return {
         "batch_id": execution.batch_id,
         "selected_tables": payload.selected_tables,
@@ -406,13 +603,34 @@ def _build_builtin_reason_lookup(
 ) -> dict[str, str]:
     if rule_flags.builtin_reason_series is None:
         return {}
-    filtered_builtin_reasons = rule_flags.builtin_reason_series.loc[model_state.final_flag]
+
+    # Get reasons aligned to the final_flag rows (preserving original index)
+    filtered_builtin_reasons = rule_flags.builtin_reason_series.reindex(
+        model_state.final_flag.index
+    ).loc[model_state.final_flag]
+
     inserted_ids = dataset_storage.get("inserted_ids") or []
-    return {
-        str(record_id): str(reason).strip()
-        for record_id, reason in zip(inserted_ids, filtered_builtin_reasons)
-        if pd.notna(reason) and str(reason).strip()
-    }
+
+    # Validate that lengths match to avoid silent data loss
+    if len(inserted_ids) != len(filtered_builtin_reasons):
+        logger.warning(
+            "Mismatch: %d inserted IDs but %d reason entries. "
+            "Some anomaly reasons may not be mapped correctly.",
+            len(inserted_ids),
+            len(filtered_builtin_reasons),
+        )
+
+    # Pair inserted_ids with reasons using their aligned indices
+    # filtered_builtin_reasons is indexed by original row indices
+    result = {}
+    for db_id, (row_index, reason) in zip(
+        inserted_ids,
+        filtered_builtin_reasons.items(),
+    ):
+        if pd.notna(reason) and str(reason).strip():
+            result[str(db_id)] = str(reason).strip()
+
+    return result
 
 
 def _build_persisted_metrics(
@@ -428,10 +646,12 @@ def _build_persisted_metrics(
         "contamination": payload.contamination,
         "feature_count": int(model_state.feature_frame.shape[1]),
         "selected_feature_columns": model_state.feature_selection.selected_columns,
-        "dropped_all_missing_feature_columns": model_state.feature_selection.dropped_all_missing_columns,
-        "dropped_constant_feature_columns": model_state.feature_selection.dropped_constant_columns,
-        "dropped_low_score_feature_columns": model_state.feature_selection.dropped_low_score_columns,
-        "feature_scores": model_state.feature_selection.feature_scores,
+        "dropped_all_missing_feature_columns": (
+            model_state.feature_selection.dropped_all_missing_columns
+        ),
+        "dropped_constant_feature_columns": (
+            model_state.feature_selection.dropped_constant_columns
+        ),
         "join_execution_mode": "postgres_sql",
         "new_rows_written": int(len(dataset_frame)),
         "builtin_reason_by_record_id": builtin_reason_by_record_id,
