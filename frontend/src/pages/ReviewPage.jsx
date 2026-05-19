@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Card from "../components/Card";
 import PredictionRow from "../components/PredictionRow";
-import { getWorkbenchDatasets, getWorkbenchReviewRows, submitWorkbenchFeedback, } from "../api/anomalyApi";
+import { generateIsolationReasonsBatch, getWorkbenchDatasets, getWorkbenchReviewRows, submitWorkbenchFeedback, } from "../api/anomalyApi";
 export default function ReviewPage({ latestWorkbenchRun }) {
     const PAGE_SIZE = 50;
     const [datasets, setDatasets] = useState([]);
@@ -12,6 +12,9 @@ export default function ReviewPage({ latestWorkbenchRun }) {
     const [pageOffset, setPageOffset] = useState(0);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState("");
+    const [reasonMap, setReasonMap] = useState({});
+    const [reasonLoadingIds, setReasonLoadingIds] = useState(new Set());
+    const [reasonErrors, setReasonErrors] = useState({});
     const [showTable, setShowTable] = useState(false);
     const [focusedPredictionId, setFocusedPredictionId] = useState(null);
     const [activeSlideIndex, setActiveSlideIndex] = useState(0);
@@ -44,6 +47,9 @@ export default function ReviewPage({ latestWorkbenchRun }) {
     useEffect(() => {
         setActiveSlideIndex(0);
         setFocusedPredictionId(null);
+        setReasonMap({});
+        setReasonLoadingIds(new Set());
+        setReasonErrors({});
         if (slideTrackRef.current) {
             slideTrackRef.current.scrollTo({ left: 0, behavior: "auto" });
         }
@@ -54,27 +60,15 @@ export default function ReviewPage({ latestWorkbenchRun }) {
             setLoadError("");
             try {
                 const preferredRunId = hydratedLatestDataset?.dataset_table === datasetTable ? hydratedLatestDataset.run_id : undefined;
-                const [datasetsResponse, reviewRowsResponse] = await Promise.all([
-                    getWorkbenchDatasets(),
-                    getWorkbenchReviewRows({
-                        datasetTable: datasetTable || undefined,
-                        anomalyFilter,
-                        limit: PAGE_SIZE,
-                        offset: pageOffset,
-                        runId: preferredRunId,
-                    }),
-                ]);
-                const fetchedDatasets = datasetsResponse.data || [];
-                const nextDatasets = [...fetchedDatasets];
-                if (hydratedLatestDataset &&
-                    !nextDatasets.some((item) => item.dataset_table === hydratedLatestDataset.dataset_table &&
-                        String(item.run_id) === hydratedRunIdKey)) {
-                    nextDatasets.unshift(hydratedLatestDataset);
-                }
-                setDatasets(nextDatasets);
+                const reviewRowsResponse = await getWorkbenchReviewRows({
+                    datasetTable: datasetTable || undefined,
+                    anomalyFilter,
+                    limit: PAGE_SIZE,
+                    offset: pageOffset,
+                    runId: preferredRunId,
+                });
                 const responseDataset = reviewRowsResponse.data?.dataset_table ||
                     hydratedLatestDataset?.dataset_table ||
-                    nextDatasets[0]?.dataset_table ||
                     "";
                 if (!datasetTable && responseDataset) {
                     setDatasetTable(responseDataset);
@@ -82,6 +76,22 @@ export default function ReviewPage({ latestWorkbenchRun }) {
                 const nextRows = reviewRowsResponse.data?.rows || [];
                 setPending(nextRows);
                 setTableData(buildReviewTableData(nextRows, reviewRowsResponse.data?.summary, pageOffset));
+                void getWorkbenchDatasets()
+                    .then((datasetsResponse) => {
+                    const fetchedDatasets = datasetsResponse.data || [];
+                    const nextDatasets = [...fetchedDatasets];
+                    if (hydratedLatestDataset &&
+                        !nextDatasets.some((item) => item.dataset_table === hydratedLatestDataset.dataset_table &&
+                            String(item.run_id) === hydratedRunIdKey)) {
+                        nextDatasets.unshift(hydratedLatestDataset);
+                    }
+                    setDatasets(nextDatasets);
+                })
+                    .catch(() => {
+                    if (hydratedLatestDataset) {
+                        setDatasets((current) => current.length > 0 ? current : [hydratedLatestDataset]);
+                    }
+                });
             }
             catch (error) {
                 const detail = error?.response?.data?.detail ||
@@ -96,7 +106,7 @@ export default function ReviewPage({ latestWorkbenchRun }) {
             }
         };
         load();
-    }, [datasetTable, anomalyFilter, hydratedLatestDataset, pageOffset]);
+    }, [datasetTable, anomalyFilter, hydratedLatestDataset, hydratedRunIdKey, pageOffset]);
     const activeDataset = useMemo(() => datasets.find((item) => item.dataset_table === datasetTable &&
         (hydratedLatestDataset?.dataset_table !== datasetTable ||
             hydratedRunIdKey === null ||
@@ -106,6 +116,53 @@ export default function ReviewPage({ latestWorkbenchRun }) {
         hydratedLatestDataset, [datasetTable, datasets, hydratedLatestDataset, hydratedRunIdKey]);
     const activeTables = activeDataset?.selected_tables || [];
     const activeRunId = activeDataset?.run_id;
+    useEffect(() => {
+        const rowsToExplain = pending
+            .filter((item) => shouldBatchExplainRow(item))
+            .filter((item) => !reasonMap[item.prediction_id]);
+        if (rowsToExplain.length === 0) {
+            setReasonLoadingIds(new Set());
+            return;
+        }
+        const controller = new AbortController();
+        const loadingIds = new Set(rowsToExplain.map((item) => item.prediction_id));
+        setReasonLoadingIds(loadingIds);
+        setReasonErrors({});
+        generateIsolationReasonsBatch({
+            rows: rowsToExplain.map((item) => buildBatchReasonPayload(item)),
+        }, controller.signal)
+            .then((response) => {
+            const nextReasons = response?.data?.reasons || {};
+            const nextErrors = response?.data?.errors || {};
+            setReasonMap((current) => ({
+                ...current,
+                ...Object.fromEntries(Object.entries(nextReasons).map(([predictionId, result]) => [
+                    predictionId,
+                    result?.reason || "",
+                ])),
+            }));
+            setReasonErrors(Object.fromEntries(Object.entries(nextErrors).map(([predictionId, detail]) => [
+                predictionId,
+                typeof detail === "string" ? detail : "Unable to generate anomaly explanation right now.",
+            ])));
+        })
+            .catch((error) => {
+            if (error?.name === "CanceledError" || error?.code === "ERR_CANCELED") {
+                return;
+            }
+            const detail = error?.response?.data?.detail ||
+                error?.message ||
+                "Unable to generate anomaly explanations right now.";
+            setReasonErrors(Object.fromEntries(rowsToExplain.map((item) => [
+                item.prediction_id,
+                typeof detail === "string" ? detail : "Unable to generate anomaly explanations right now.",
+            ])));
+        })
+            .finally(() => {
+            setReasonLoadingIds(new Set());
+        });
+        return () => controller.abort();
+    }, [pending, reasonMap]);
     useEffect(() => {
         if (pending.length === 0) {
             setActiveSlideHeight(null);
@@ -289,7 +346,7 @@ export default function ReviewPage({ latestWorkbenchRun }) {
         {pending.map((item, index) => (<div key={item.prediction_id} ref={(node) => {
                 cardRefs.current[item.prediction_id] = node;
             }} style={focusedPredictionId === item.prediction_id ? focusedSlide : slide}>
-            <PredictionRow item={item} onAction={handleFeedback} selectedTables={activeTables} isActive={index === activeSlideIndex}/>
+            <PredictionRow item={item} onAction={handleFeedback} selectedTables={activeTables} llmReason={reasonMap[item.prediction_id] || ""} llmReasonLoading={reasonLoadingIds.has(item.prediction_id)} llmReasonError={reasonErrors[item.prediction_id] || ""}/>
           </div>))}
       </div>
 
@@ -395,4 +452,45 @@ function resolveReviewAmount(payload) {
         }
     }
     return 0;
+}
+
+function shouldBatchExplainRow(item) {
+    const reasons = item?.reasons_json || {};
+    return Boolean(reasons.ml_anomaly_flag && Array.isArray(reasons.ml_feature_signals));
+}
+
+function buildBatchReasonPayload(item) {
+    const reasons = item?.reasons_json || {};
+    const payload = item?.row_payload_json || {};
+    const baseReasons = Array.isArray(reasons.reason_list)
+        ? reasons.reason_list.filter(Boolean)
+        : item?.rule_codes
+            ? [item.rule_codes]
+            : [];
+    return {
+        prediction_id: item?.prediction_id,
+        dataset_table: item?.dataset_table,
+        review_key: String(payload.review_key || ""),
+        if_score: toNullableNumber(firstDefined(reasons.if_score, payload.if_score, reasons.isolation_score, item.raw_ml_score, item.ml_score)),
+        ml_threshold: toNullableNumber(firstDefined(reasons.ml_threshold, payload.ml_threshold, item.ml_threshold)),
+        rule_anomaly: Boolean(reasons.rule_anomaly ?? payload.rule_anomaly ?? item.rule_flag ?? reasons.human_outlier_flag ?? false),
+        rule_count: Number(reasons.rule_count ?? payload.rule_count ?? baseReasons.length ?? 0),
+        existing_reasons: baseReasons,
+        feature_signals: Array.isArray(reasons.ml_feature_signals) ? reasons.ml_feature_signals : [],
+        row_payload: payload,
+    };
+}
+
+function firstDefined(...values) {
+    for (const value of values) {
+        if (value !== undefined && value !== null && value !== "") {
+            return value;
+        }
+    }
+    return undefined;
+}
+
+function toNullableNumber(value) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : null;
 }

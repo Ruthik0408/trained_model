@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Card from "../components/Card";
-import { getWorkbenchDefaultFeatureRules, getWorkbenchTables, previewWorkbench, runWorkbench, } from "../api/anomalyApi";
+import { clearApiCache, getWorkbenchDefaultFeatureRules, getWorkbenchTables, previewWorkbench, runWorkbench, } from "../api/anomalyApi";
 const INITIAL_TABLE_LOAD_RETRIES = 6;
 const INITIAL_TABLE_LOAD_DELAY_MS = 1000;
 const DEFAULT_OUTLIER_RULE = (index) => ({
@@ -317,6 +317,7 @@ export default function WorkbenchPage({ onRunComplete }) {
         try {
             const response = await runWorkbench(buildWorkbenchPayload());
             const data = response.data;
+            clearApiCache();
             setResult(data);
             onRunComplete?.({
                 runId: data.run_id,

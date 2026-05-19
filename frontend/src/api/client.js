@@ -2,7 +2,7 @@ import axios from "axios";
 // API client with enhanced error handling and interceptors
 export const api = axios.create({
     baseURL: import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000",
-    timeout: 30000, // 30 second timeout for all requests
+    timeout: 300000, // 30 second timeout for all requests
 });
 // Request interceptor - add request logging
 api.interceptors.request.use((config) => {

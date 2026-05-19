@@ -90,3 +90,11 @@ def test_adaptive_timeout_grows_with_prompt_length_and_failure_count() -> None:
     assert loaded_timeout > short_timeout
     assert loaded_timeout <= llm_reason_service.settings.anomaly_reason_timeout_seconds
     llm_reason_service.ANOMALY_REASON_CIRCUIT.record_success()
+
+
+def test_clean_reason_rejects_prompt_instruction_echo() -> None:
+    cleaned = llm_reason_service._clean_reason(
+        "We are given a bill/invoice anomaly to explain in one business sentence (max 32 words)."
+    )
+
+    assert cleaned == ""

@@ -47,13 +47,6 @@ def test_build_dataset_frame_keeps_only_anomalies_and_preserves_reason_fields() 
             final_flag=pd.Series([False, True], index=joined.index),
             filtered_joined_override=joined.loc[[11]],
             explanation_signals_override={11: [{"feature": "amount_delta", "impact": 0.7}]},
-            llm_if_reasons_override={
-                11: {
-                    "reason": "The claimed amount is unusually high for this vendor.",
-                    "model": "local-test-model",
-                    "fallback": False,
-                }
-            },
         )
     )
 
@@ -67,4 +60,4 @@ def test_build_dataset_frame_keeps_only_anomalies_and_preserves_reason_fields() 
     assert row["review_payload_json"]["bill_no"] == "A-2"
     assert row["feature_values_json"]["amount_delta"] == 2.5
     assert "__ml_explanation_signals" in row["feature_values_json"]
-    assert row["feature_values_json"]["__ml_llm_if_reason_model"] == "local-test-model"
+    assert "__ml_llm_if_reason" not in row["feature_values_json"]

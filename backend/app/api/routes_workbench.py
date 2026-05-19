@@ -9,6 +9,8 @@ from app.core.errors import WorkbenchValidationError
 from app.schemas.workbench_schema import (
     BuiltinRuleRequest,
     DatasetFeedbackRequest,
+    IsolationReasonBatchRequest,
+    IsolationReasonBatchResponse,
     IsolationReasonRequest,
     IsolationReasonResponse,
     ReportResponse,
@@ -281,6 +283,31 @@ def isolation_reason_route(payload: IsolationReasonRequest, request: Request):
     except Exception:
         logger.exception("Error generating Isolation Forest reason")
         raise HTTPException(status_code=500, detail="Failed to generate Isolation Forest reason")
+
+
+@router.post(
+    "/isolation-reasons-batch",
+    response_model=IsolationReasonBatchResponse,
+    summary="Explain a page of Isolation Forest anomalies",
+)
+def isolation_reasons_batch_route(payload: IsolationReasonBatchRequest, request: Request):
+    """Generate IF explanations for the current review page in one API call."""
+    reasons: dict[int, dict] = {}
+    errors: dict[int, str] = {}
+
+    for row in payload.rows[:50]:
+        prediction_id = row.prediction_id
+        if prediction_id is None:
+            continue
+        try:
+            result = explain_isolation_anomaly(row)
+            reasons[int(prediction_id)] = result
+        except Exception as exc:
+            logger.warning("Failed to generate IF reason for prediction %s", prediction_id, exc_info=True)
+            errors[int(prediction_id)] = str(exc) or "Failed to generate reason"
+
+    _log_request(request, f"Generated batch IF reasons for {len(reasons)} rows")
+    return {"reasons": reasons, "errors": errors}
 
 @router.get("/report", response_model=ReportResponse, summary="Get run report")
 def report_route(

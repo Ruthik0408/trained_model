@@ -97,6 +97,10 @@ class Settings(BaseModel):
     random_state: int = 42
     ollama_base_url: str = str(os.getenv("TULIP_OLLAMA_BASE_URL", "http://localhost:11434")).rstrip("/")
     anomaly_reason_model: str = str(os.getenv("TULIP_ANOMALY_REASON_MODEL", "qwen3:4b")).strip()
+    anomaly_reason_keep_alive: str = str(os.getenv("TULIP_ANOMALY_REASON_KEEP_ALIVE", "30m")).strip()
+    anomaly_reason_num_predict: int = int(str(os.getenv("TULIP_ANOMALY_REASON_NUM_PREDICT", "120")))
+    anomaly_reason_max_signals: int = int(str(os.getenv("TULIP_ANOMALY_REASON_MAX_SIGNALS", "5")))
+    anomaly_reason_max_row_facts: int = int(str(os.getenv("TULIP_ANOMALY_REASON_MAX_ROW_FACTS", "12")))
     anomaly_reason_timeout_seconds: float = float(str(os.getenv("TULIP_ANOMALY_REASON_TIMEOUT_SECONDS", "60")))
     anomaly_reason_timeout_min_seconds: float = float(str(os.getenv("TULIP_ANOMALY_REASON_TIMEOUT_MIN_SECONDS", "15")))
     anomaly_reason_timeout_per_1k_chars_seconds: float = float(

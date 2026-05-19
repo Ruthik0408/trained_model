@@ -295,6 +295,7 @@ class IsolationReasonRequest(BaseModel):
     )
 
     prediction_id: int | None = None
+    dataset_table: str | None = None
     review_key: str | None = None
     if_score: float | None = None
     ml_threshold: float | None = None
@@ -309,3 +310,12 @@ class IsolationReasonResponse(BaseModel):
     reason: str
     model: str
     fallback: bool = False
+
+
+class IsolationReasonBatchRequest(BaseModel):
+    rows: list[IsolationReasonRequest] = Field(default_factory=list, max_length=50)
+
+
+class IsolationReasonBatchResponse(BaseModel):
+    reasons: dict[int, IsolationReasonResponse] = Field(default_factory=dict)
+    errors: dict[int, str] = Field(default_factory=dict)

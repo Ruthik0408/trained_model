@@ -16,6 +16,16 @@ from app.schemas.workbench_schema import IsolationReasonRequest
 
 logger = logging.getLogger(__name__)
 
+INSTRUCTION_ECHO_PATTERNS = (
+    "we are given",
+    "given a row of data",
+    "bill/invoice anomaly to explain",
+    "max 32 words",
+    "one business sentence",
+    "return only",
+    "listed signals",
+)
+
 # Keyword filter used when selecting which row fields to show the LLM
 
 IMPORTANT_KEYWORDS = (
@@ -36,14 +46,8 @@ IMPORTANT_KEYWORDS = (
 
 NOISY_TEXT_FEATURE_KEYWORDS = (
     "subject",
-    "payment_detail",
     "payment detail",
-    "remarks",
-    "reason",
-    "description",
-    "narration",
-    "batch",
-    "name",
+    "remarks"
 )
 
 
@@ -70,7 +74,7 @@ def build_feature_explanation_signals(
     Strategy: rank the StandardScaler-transformed features by absolute value.
     A large absolute scaled value means that feature was far from the training
     median in standard-deviation units — exactly what causes IF to assign a
-    short path length (= anomaly). No SHAP needed; the scaled matrix is already
+    short path length (= anomaly).the scaled matrix is already
     computed by the pipeline and passed in as `transformed`.
 
     Args:
@@ -113,7 +117,6 @@ def build_feature_explanation_signals(
 def explain_isolation_anomaly(payload: IsolationReasonRequest) -> dict[str, Any]:
     """
     Return a short human-readable explanation for one anomaly row.
-
     Order of operations:
       1. Cache hit → return immediately.
       2. Build pre-translated signal clauses from feature_signals.
@@ -268,7 +271,7 @@ def _translate_signals_to_clauses(
         return []
 
     clauses: list[str] = []
-    for signal in feature_signals[:5]:
+    for signal in feature_signals[:settings.anomaly_reason_max_signals]:
         if not isinstance(signal, dict):
             continue
         clause = _translate_one_signal(signal)
@@ -457,7 +460,6 @@ def _is_datetime_like_feature(feature_name: str) -> bool:
             "timestamp",
             "created_at",
             "updated_at",
-            "disposed_at",
         )
     )
 
@@ -620,9 +622,11 @@ def _generate_reason_with_retry(prompt: str) -> str:
                     "stream": False,
                     "think": False,
                     "format": "json",
+                    "keep_alive": settings.anomaly_reason_keep_alive,
                     "options": {
                         "temperature": 0.1,
-                        "num_predict": 120,
+                        "num_predict": settings.anomaly_reason_num_predict,
+                        "num_ctx": 2048,
                     },
                 },
                 timeout=timeout_seconds,
@@ -640,6 +644,15 @@ def _generate_reason_with_retry(prompt: str) -> str:
     if last_error is not None:
         raise last_error
     return ""
+
+
+def is_instruction_echo_reason(value: Any) -> bool:
+    text = re.sub(r"\s+", " ", str(value or "")).strip().lower()
+    if not text:
+        return False
+    if any(pattern in text for pattern in INSTRUCTION_ECHO_PATTERNS):
+        return True
+    return text.startswith(("1.", "2.", "3."))
 
 
 def _adaptive_reason_timeout_seconds(prompt: str) -> float:
@@ -685,6 +698,8 @@ def _clean_reason(value: Any) -> str:
     text = _remove_score_language(text)
     sentences = re.split(r"(?<=[.!?])\s+", text)
     cleaned = sentences[0].strip() if sentences else text
+    if is_instruction_echo_reason(cleaned):
+        return ""
     words = cleaned.split()
     if len(words) > 35:
         cleaned = " ".join(words[:35]).rstrip(",;:")
@@ -774,20 +789,11 @@ def _compact_row_facts(row_payload: dict[str, Any]) -> str:
             if v not in (None, "")
         ]
     parts: list[str] = []
-    for key, value in selected[:16]:
+    for key, value in selected[:settings.anomaly_reason_max_row_facts]:
         plain_key = _readable_feature(key).strip()
         if plain_key:  # Only include if key name is meaningful
             parts.append(f"{plain_key}={_format_raw_value(value)}")
     return "; ".join(parts)
-
-
-def _format_number(value: float | None) -> str:
-    if value is None:
-        return "unknown"
-    try:
-        return f"{float(value):.2f}"
-    except (TypeError, ValueError):
-        return "unknown"
 
 
 def _safe_float(value: Any) -> float | None:

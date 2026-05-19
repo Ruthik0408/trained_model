@@ -441,3 +441,4 @@ def _update_dataset_row(dataset_table: str, record_id: int, assignments: dict[st
         result = conn.execute(sql, params)
         if result.rowcount == 0:
             raise ValueError(f"Record {record_id} was not found in dataset {dataset_table}.")
+

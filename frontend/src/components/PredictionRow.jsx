@@ -23,17 +23,18 @@ const FIELD_ALIASES = {
     amount_disallowed: ["amount_disallowed"],
     record_status: ["record_status"],
 };
-export default function PredictionRow({ item, onAction, selectedTables = [], isActive = false, }) {
+export default function PredictionRow({ item, onAction, selectedTables = [], llmReason = "", llmReasonLoading = false, llmReasonError = "", }) {
     const payload = item?.row_payload_json ?? {};
     const reasons = item?.reasons_json ?? {};
     const businessSections = useMemo(() => getBusinessSections(payload, selectedTables), [payload, selectedTables]);
     const businessDetails = useMemo(() => businessSections.flatMap((section) => section.rows), [businessSections]);
     const metrics = useMemo(() => getReviewMetrics(item, payload, reasons), [item, payload, reasons]);
-    const reasonList = useMemo(() => getReasonList(item, reasons), [item, reasons]);
+    const baseReasonList = useMemo(() => getBaseReasonList(item, reasons), [item, reasons]);
     const [saving, setSaving] = useState(null);
     const [showAllColumns, setShowAllColumns] = useState(false);
     const [columnSearch, setColumnSearch] = useState("");
     const activeFeedback = typeof item?.feedback === "string" ? item.feedback.toLowerCase() : "";
+    const canGenerateIsolationReason = Boolean(reasons.ml_anomaly_flag);
     const sortedColumns = useMemo(() => Object.entries(payload).sort(([left], [right]) => left.localeCompare(right)), [payload]);
     const visibleColumns = useMemo(() => sortedColumns.filter(([key]) => isVisiblePayloadKey(key, selectedTables)), [sortedColumns, selectedTables]);
     const defaultSelectedColumns = useMemo(() => {
@@ -109,9 +110,19 @@ export default function PredictionRow({ item, onAction, selectedTables = [], isA
             </div>
           </div>
 
-          {reasonList.length > 0 ? (<div style={reasonBox}>
+          {baseReasonList.length > 0 ? (<div style={reasonBox}>
               <div style={reasonTitle}>Why anomaly</div>
-              {reasonList.map((reason) => (<div key={reason} style={reasonItem}>{formatReason(reason)}</div>))}
+              {baseReasonList.map((reason) => (<div key={reason} style={reasonItem}>{formatReason(reason)}</div>))}
+              {canGenerateIsolationReason && llmReasonLoading ? <div style={reasonMuted}>Generating explanation...</div> : null}
+              {canGenerateIsolationReason && !llmReasonLoading && llmReason ? <div style={reasonItem}>{formatReason(llmReason)}</div> : null}
+              {canGenerateIsolationReason && llmReasonError ? <div style={reasonError}>{llmReasonError}</div> : null}
+            </div>) : null}
+          {baseReasonList.length === 0 && canGenerateIsolationReason ? (<div style={reasonBox}>
+              <div style={reasonTitle}>Why anomaly</div>
+              {llmReasonLoading ? <div style={reasonMuted}>Generating explanation...</div> : null}
+              {!llmReasonLoading && llmReason ? <div style={reasonItem}>{formatReason(llmReason)}</div> : null}
+              {!llmReasonLoading && !llmReason && !llmReasonError ? <div style={reasonMuted}>No generated explanation available for this row.</div> : null}
+              {llmReasonError ? <div style={reasonError}>{llmReasonError}</div> : null}
             </div>) : null}
 
           <div style={toolbarRow}>
@@ -157,17 +168,17 @@ export default function PredictionRow({ item, onAction, selectedTables = [], isA
       </div>
 
       <section style={detailsPanel}>
-        <div style={sectionTitle}>Joined Table Details</div>
-        <div style={businessSectionsGrid}>
-          {businessSections.map((section) => (<div key={section.tableName} style={businessSectionBlock}>
-              <div style={tableSectionTitle}>{section.label}</div>
-              {section.rows.map(([key, label, value]) => (<div key={key} style={fieldRow}>
-                  <span style={fieldLabel}>{label}</span>
-                  <span style={fieldValue}>{displayValue(value)}</span>
-                </div>))}
-            </div>))}
-        </div>
-      </section>
+          <div style={sectionTitle}>Anomaly Details</div>
+          <div style={businessSectionsGrid}>
+            {businessSections.map((section) => (<div key={section.tableName} style={businessSectionBlock}>
+                <div style={tableSectionTitle}>{section.label}</div>
+                {section.rows.map(([key, label, value]) => (<div key={key} style={fieldRow}>
+                    <span style={fieldLabel}>{label}</span>
+                    <span style={fieldValue}>{displayValue(value)}</span>
+                  </div>))}
+              </div>))}
+          </div>
+        </section>
 
       {showAllColumns ? (<section style={allColumnsPanel}>
           <div style={allColumnsHeader}>
@@ -225,7 +236,7 @@ function getReviewMetrics(item, payload, reasons) {
     const ensembleScore = firstDefined(reasons.ensemble_score, payload.ensemble_score, item.ml_score, item.final_score);
     return { ruleAnomaly, ruleCount, ifScore, mlThreshold, ensembleScore };
 }
-function getReasonList(item, reasons) {
+function getBaseReasonList(item, reasons) {
     const rawReasons = Array.isArray(reasons.reason_list)
         ? reasons.reason_list
         : item?.rule_codes
@@ -235,11 +246,11 @@ function getReasonList(item, reasons) {
         .flatMap((reason) => String(reason || "").split(","))
         .map((reason) => reason.trim())
         .filter(Boolean);
-    if (reasons.ml_anomaly_flag && reasons.llm_if_reason) {
-        splitReasons.push(reasons.llm_if_reason);
-    }
+    return dedupeReasons(splitReasons);
+}
+function dedupeReasons(reasons) {
     const seen = new Set();
-    return splitReasons.filter((reason) => {
+    return reasons.filter((reason) => {
         const normalized = normalizeReasonText(reason);
         if (!normalized || seen.has(normalized)) {
             return false;

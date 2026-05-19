@@ -9,7 +9,6 @@ from sqlalchemy import text
 from sqlalchemy.orm import Session
 
 from app.core.models import WorkbenchRun
-from app.services.llm_reason_service import build_deterministic_isolation_reason
 from app.services.workbench.constants import (
     FEATURE_NAME_COLUMN,
     FEATURE_VALUES_COLUMN,
@@ -187,6 +186,8 @@ def review_rows_data(
         run_id=selected_ml_run_id,
     )
     rows = [_dataset_row_to_prediction(row, builtin_reason_by_record_id) for _, row in df.iterrows()]
+    for row in rows:
+        row["dataset_table"] = selected_dataset
     rows = _enrich_payload_rows(rows)
     total_amount = sum(_payload_amount(row["row_payload_json"]) for row in rows)
     logger.info(
@@ -474,13 +475,13 @@ def _dataset_row_to_prediction(
     payload = _dataset_payload(row)
     feature_payload = _parse_json_text(row.get(FEATURE_VALUES_COLUMN), {})
     ml_feature_signals = []
-    llm_if_reason = None
-    llm_if_reason_model = None
-    llm_if_reason_fallback = False
     if isinstance(feature_payload, dict):
         raw_signals = feature_payload.get("__ml_explanation_signals")
         if isinstance(raw_signals, list):
             ml_feature_signals = [item for item in raw_signals if isinstance(item, dict)]
+    llm_if_reason = None
+    llm_if_reason_model = None
+    llm_if_reason_fallback = False
     payload["review_key"] = row.get(FEATURE_NAME_COLUMN)
     human_rule = bool(row.get(HUMAN_RULE_COLUMN))
     isolation_rule = bool(row.get(ISOLATION_RULE_COLUMN))
@@ -501,11 +502,6 @@ def _dataset_row_to_prediction(
         builtin_reason = builtin_reason_by_record_id.get(str(int(record_id))) if record_id is not None else None
         if builtin_reason and builtin_reason not in reason_list:
             reason_list.append(builtin_reason)
-    deterministic_reason = build_deterministic_isolation_reason(ml_feature_signals, payload)
-    if isolation_rule and deterministic_reason:
-        llm_if_reason = deterministic_reason
-        llm_if_reason_model = "deterministic"
-        llm_if_reason_fallback = False
     return {
         "prediction_id": int(record_id),
         "source_record_id": int(record_id),
