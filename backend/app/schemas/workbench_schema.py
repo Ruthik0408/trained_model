@@ -304,18 +304,3 @@ class IsolationReasonRequest(BaseModel):
     existing_reasons: list[str] = Field(default_factory=list)
     feature_signals: list[dict] = Field(default_factory=list)
     row_payload: dict = Field(default_factory=dict)
-
-
-class IsolationReasonResponse(BaseModel):
-    reason: str
-    model: str
-    fallback: bool = False
-
-
-class IsolationReasonBatchRequest(BaseModel):
-    rows: list[IsolationReasonRequest] = Field(default_factory=list, max_length=50)
-
-
-class IsolationReasonBatchResponse(BaseModel):
-    reasons: dict[int, IsolationReasonResponse] = Field(default_factory=dict)
-    errors: dict[int, str] = Field(default_factory=dict)

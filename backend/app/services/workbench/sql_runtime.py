@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 import time
 from typing import Any
 from uuid import uuid4
@@ -41,8 +41,76 @@ from app.services.workbench.source_db import (
 from app.services.workbench.utils import _is_identifier_like_column, _safe_json, _safe_rule_name
 
 
+_JOIN_SQL_CACHE_TTL_SECONDS = 60.0
+_join_sql_cache: dict[tuple[Any, ...], tuple[float, str, list[dict[str, Any]], list[str]]] = {}
+
+
 def _dataset_table_name(_selected_tables: list[str]) -> str:
     return RESULT_TABLE
+
+
+def _join_sql_cache_key(
+    payload: BuiltinRuleRequest | WorkbenchRunRequest,
+    *,
+    row_limit: int | None,
+) -> tuple[Any, ...]:
+    return (
+        tuple(str(table_name) for table_name in payload.selected_tables),
+        tuple(
+            (
+                str(join.left_table),
+                str(join.left_column),
+                str(join.right_table),
+                str(join.right_column),
+                str(join.join_type),
+            )
+            for join in payload.joins
+        ),
+        _safe_date_literal(getattr(payload, "from_date", None)),
+        _safe_date_literal(getattr(payload, "to_date", None)),
+        int(row_limit) if row_limit is not None else None,
+    )
+
+
+def _get_cached_join_sql(
+    payload: BuiltinRuleRequest | WorkbenchRunRequest,
+    *,
+    row_limit: int | None,
+) -> tuple[str, list[dict[str, Any]], list[str]] | None:
+    cache_key = _join_sql_cache_key(payload, row_limit=row_limit)
+    cached = _join_sql_cache.get(cache_key)
+    if cached is None:
+        return None
+
+    cached_at, sql, join_debug, warnings = cached
+    now = datetime.now(tz=timezone.utc).timestamp()
+    if now - cached_at >= _JOIN_SQL_CACHE_TTL_SECONDS:
+        _join_sql_cache.pop(cache_key, None)
+        return None
+
+    logger.info(
+        "Reusing cached workbench join SQL for tables=%s row_limit=%s",
+        payload.selected_tables,
+        row_limit,
+    )
+    return sql, [dict(item) for item in join_debug], list(warnings)
+
+
+def _store_cached_join_sql(
+    payload: BuiltinRuleRequest | WorkbenchRunRequest,
+    *,
+    row_limit: int | None,
+    sql: str,
+    join_debug: list[dict[str, Any]],
+    warnings: list[str],
+) -> None:
+    cache_key = _join_sql_cache_key(payload, row_limit=row_limit)
+    _join_sql_cache[cache_key] = (
+        datetime.now(tz=timezone.utc).timestamp(),
+        sql,
+        [dict(item) for item in join_debug],
+        list(warnings),
+    )
 
 def _feature_column_presence_ratios(
     table_frames: dict[str, list[dict]],
@@ -81,7 +149,7 @@ def _joined_feature_column_presence_ratios(
     payload: BuiltinRuleRequest | WorkbenchRunRequest,
     table_frames: dict[str, list[dict]],
 ) -> dict[str, float]:
-    sql, _join_debug, _warnings = _build_join_sql(payload, table_frames, row_limit=None)
+    sql, _join_debug, _warnings = _get_or_build_join_sql(payload, table_frames, row_limit=None)
     date_columns = [
         f"{table_name}.{column['column_name']}"
         for table_name, columns in table_frames.items()
@@ -1225,6 +1293,27 @@ FROM joined_base base"""
 
     return sql, join_debug, warnings
 
+
+def _get_or_build_join_sql(
+    payload: BuiltinRuleRequest | WorkbenchRunRequest,
+    source_columns: dict[str, list[dict]],
+    *,
+    row_limit: int | None,
+) -> tuple[str, list[dict[str, Any]], list[str]]:
+    cached = _get_cached_join_sql(payload, row_limit=row_limit)
+    if cached is not None:
+        return cached
+
+    sql, join_debug, warnings = _build_join_sql(payload, source_columns, row_limit=row_limit)
+    _store_cached_join_sql(
+        payload,
+        row_limit=row_limit,
+        sql=sql,
+        join_debug=join_debug,
+        warnings=warnings,
+    )
+    return sql, join_debug, warnings
+
 def _enrich_sql_join_debug(
     conn,
     join_debug: list[dict[str, Any]],
@@ -1289,7 +1378,7 @@ def _execute_sql_joined_frame(
 ) -> tuple[pd.DataFrame, dict[str, int], list[dict[str, Any]], list[str], str]:
     row_limit = PREVIEW_ROW_LIMIT if for_preview else None
     source_columns = _source_columns_map(payload.selected_tables)
-    sql, join_debug, warnings = _build_join_sql(payload, source_columns, row_limit=row_limit)
+    sql, join_debug, warnings = _get_or_build_join_sql(payload, source_columns, row_limit=row_limit)
     warnings.extend(_ensure_join_indexes(payload, source_columns))
     warnings.extend(_ensure_date_filter_indexes(payload, source_columns))
 
@@ -1318,7 +1407,7 @@ def _execute_sql_workbench_frame(
     conn,
 ) -> tuple[pd.DataFrame, dict[str, int], list[dict[str, Any]], list[str], str, list[str], int, list[str], int, str]:
     source_columns = _source_columns_map(payload.selected_tables)
-    joined_sql, join_debug, warnings = _build_join_sql(payload, source_columns, row_limit=None)
+    joined_sql, join_debug, warnings = _get_or_build_join_sql(payload, source_columns, row_limit=None)
     warnings.extend(_ensure_join_indexes(payload, source_columns))
     warnings.extend(_ensure_date_filter_indexes(payload, source_columns))
     (
@@ -1471,9 +1560,14 @@ def _read_temp_scoring_frame(
     temp_table: str,
     payload: WorkbenchRunRequest,
 ) -> pd.DataFrame:
-    del payload
-
     available_columns = _temp_table_columns(conn, temp_table)
+    source_columns = _source_columns_map(payload.selected_tables)
+    raw_date_columns = {
+        f"{table_name}.{column['column_name']}"
+        for table_name, columns in source_columns.items()
+        for column in columns
+        if _is_date_like_column_name(str(column["column_name"]), column.get("data_type"))
+    }
     required_columns = [
         TEMP_ROW_ID_COLUMN,
         USER_RULE_FLAG_COLUMN,
@@ -1484,8 +1578,36 @@ def _read_temp_scoring_frame(
     candidate_columns = [
         column
         for column in available_columns
-        if column not in required_columns
+        if (
+            column not in required_columns
+            and column not in raw_date_columns
+            and not _is_identifier_like_column(column)
+        )
     ]
+    dropped_date_columns = [
+        column
+        for column in available_columns
+        if column in raw_date_columns
+    ]
+    if dropped_date_columns:
+        logger.info(
+            "Skipped %d raw date/time scoring columns from temp table %s: %s",
+            len(dropped_date_columns),
+            temp_table,
+            dropped_date_columns[:20],
+        )
+    dropped_identifier_columns = [
+        column
+        for column in available_columns
+        if column not in required_columns and _is_identifier_like_column(column)
+    ]
+    if dropped_identifier_columns:
+        logger.info(
+            "Skipped %d identifier-like scoring columns from temp table %s: %s",
+            len(dropped_identifier_columns),
+            temp_table,
+            dropped_identifier_columns[:20],
+        )
     _total_rows, present_ratios = _temp_table_column_presence_ratios(
         conn,
         temp_table,

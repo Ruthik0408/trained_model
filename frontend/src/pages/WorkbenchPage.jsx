@@ -507,12 +507,12 @@ export default function WorkbenchPage({ onRunComplete }) {
       </div>) : null}
 
       <div style={wizardNav}>
-        <button type="button" onClick={goPreviousStep} disabled={!steps.some((step) => step.id < activeStep && !step.disabled)} style={secondaryButton}>
-          Previous
-        </button>
-        <button type="button" onClick={goNextStep} disabled={!steps.some((step) => step.id > activeStep && !step.disabled)} style={primaryButton}>
-          Next
-        </button>
+        {activeStep !== 1 ? (<button type="button" onClick={goPreviousStep} disabled={!steps.some((step) => step.id < activeStep && !step.disabled)} style={secondaryButton}>
+            Previous
+          </button>) : <div />}
+        {activeStep !== 5 ? (<button type="button" onClick={goNextStep} disabled={!steps.some((step) => step.id > activeStep && !step.disabled)} style={primaryButton}>
+            Next
+          </button>) : <div />}
       </div>
 
     </div>);

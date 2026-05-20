@@ -22,6 +22,7 @@ def _is_identifier_like_column(column_name: str) -> bool:
     return (
         plain_name == "id"
         or plain_name == "fk_dak"
+        or plain_name == "dakid_no"
     )
 
 def _safe_rule_name(name: str | None, prefix: str) -> str:

@@ -108,8 +108,6 @@ export const submitWorkbenchFeedback = (payload, signal) => {
     });
     return response;
 };
-export const generateIsolationReason = (payload, signal) => api.post("/api/workbench/isolation-reason", payload, getConfigWithSignal(signal));
-export const generateIsolationReasonsBatch = (payload, signal) => api.post("/api/workbench/isolation-reasons-batch", payload, getConfigWithSignal(signal));
 export const getWorkbenchReport = (params, signal) => {
     const queryParams = {
         dataset_table: params?.datasetTable,

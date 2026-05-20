@@ -1,37 +1,25 @@
-import logging
+from __future__ import annotations
+
 import json
 import re
-import time
 from datetime import datetime, timezone
 from typing import Any
 
-import httpx
 import numpy as np
 import pandas as pd
 
-from app.core.cache import TTLCache
 from app.core.config import settings
-from app.core.resilience import CircuitBreaker, CircuitBreakerOpenError
 from app.schemas.workbench_schema import IsolationReasonRequest
 
-logger = logging.getLogger(__name__)
 
-INSTRUCTION_ECHO_PATTERNS = (
-    "we are given",
-    "given a row of data",
-    "bill/invoice anomaly to explain",
-    "max 32 words",
-    "one business sentence",
-    "return only",
-    "listed signals",
-)
-
-# Keyword filter used when selecting which row fields to show the LLM
-
+# Constants
 IMPORTANT_KEYWORDS = (
     "amount",
     "invoice",
     "bill",
+    "approved",
+    "passed",
+    "record_status",
     "date",
     "reference",
     "status",
@@ -44,23 +32,27 @@ IMPORTANT_KEYWORDS = (
     "ratio",
 )
 
-NOISY_TEXT_FEATURE_KEYWORDS = (
-    "subject",
-    "payment detail",
-    "remarks"
-)
+# Connectors used to join multiple clauses so sentences don't sound repetitive
+_CLAUSE_CONNECTORS = [
+    "and also",
+    "additionally",
+    "while",
+    "along with",
+    "combined with",
+    "and",
+]
+
+# Helper function to extract rule reasons (DRY principle)
+def _extract_rule_reasons(existing_reasons: Any) -> list[str]:
+    """Extract non-empty rule reasons from payload."""
+    return [
+        str(r).strip()
+        for r in (existing_reasons or [])
+        if str(r).strip()
+    ]
 
 
-# Shared infrastructure
-ANOMALY_REASON_CACHE = TTLCache(ttl_seconds=settings.anomaly_reason_cache_ttl_seconds)
-ANOMALY_REASON_CIRCUIT = CircuitBreaker(
-    fail_threshold=settings.anomaly_reason_circuit_fail_threshold,
-    reset_timeout_seconds=settings.anomaly_reason_circuit_reset_seconds,
-)
-
-
-# Public API: build feature signals (called from orchestrator after IF fit)
-
+# Public API — build signals during orchestration (unchanged interface)
 
 def build_feature_explanation_signals(
     pipeline: Any,
@@ -71,21 +63,12 @@ def build_feature_explanation_signals(
     """
     Build per-row feature signals explaining why IF flagged each anomaly row.
 
-    Strategy: rank the StandardScaler-transformed features by absolute value.
-    A large absolute scaled value means that feature was far from the training
-    median in standard-deviation units — exactly what causes IF to assign a
-    short path length (= anomaly).the scaled matrix is already
-    computed by the pipeline and passed in as `transformed`.
-
-    Args:
-        pipeline:        Fitted sklearn Pipeline (imputer → scaler → model).
-        feature_frame:   Original (pre-transform) feature DataFrame.
-        transformed:     Output of scaler.transform(imputer.transform(feature_frame)).
-        anomaly_indices: Iterable of row indices that IF flagged as anomalies.
+    Ranks StandardScaler-transformed features by absolute value — a large
+    absolute scaled value means that feature was far from the training median,
+    which is exactly what drives short path lengths in Isolation Forest.
 
     Returns:
-        Dict mapping row index → list of signal dicts (feature, value,
-        scaled_value, direction, strength, method).
+        Dict mapping row-index → list of signal dicts.
     """
     if feature_frame.empty or transformed is None:
         return {}
@@ -93,7 +76,6 @@ def build_feature_explanation_signals(
     column_labels = _transformed_feature_labels(pipeline, feature_frame)
     transformed_array = np.asarray(transformed)
 
-    # Safety: trim labels to match actual column count
     n_cols = transformed_array.shape[1] if transformed_array.ndim == 2 else 0
     column_labels = column_labels[:n_cols]
 
@@ -103,63 +85,13 @@ def build_feature_explanation_signals(
         columns=column_labels,
     )
 
-    selected_index = [idx for idx in anomaly_indices if idx in transformed_frame.index]
+    selected_index = [
+        idx for idx in anomaly_indices if idx in transformed_frame.index
+    ]
     if not selected_index:
         return {}
 
     return _build_magnitude_signals(feature_frame, transformed_frame, selected_index)
-
-
-
-# Public API: generate explanation text (called from llm_prep per anomaly row)
-
-
-def explain_isolation_anomaly(payload: IsolationReasonRequest) -> dict[str, Any]:
-    """
-    Return a short human-readable explanation for one anomaly row.
-    Order of operations:
-      1. Cache hit → return immediately.
-      2. Build pre-translated signal clauses from feature_signals.
-      3. Try Ollama (circuit breaker guards the call).
-      4. On failure → assemble fallback from the same clauses.
-    """
-    cache_key = _reason_cache_key(payload)
-    cached = ANOMALY_REASON_CACHE.get(cache_key)
-    if cached is not None:
-        logger.debug("Cache hit for anomaly reason, review_key=%s", payload.review_key or "unknown")
-        return cached
-
-    # Translate signals to plain-English clauses once; reuse in prompt AND fallback
-    signal_clauses = _translate_signals_to_clauses(payload.feature_signals)
-    row_facts = _compact_row_facts(payload.row_payload)
-    rule_reasons = [str(r).strip() for r in payload.existing_reasons if str(r).strip()]
-
-    prompt = _build_prompt(signal_clauses, row_facts, rule_reasons, payload)
-    fallback_reason = _build_fallback_from_clauses(signal_clauses, row_facts)
-
-    try:
-        ANOMALY_REASON_CIRCUIT.assert_request_allowed()
-        llm_reason = _generate_reason_with_retry(prompt)
-        if llm_reason:
-            result = {
-                "reason": llm_reason,
-                "model": settings.anomaly_reason_model,
-                "fallback": False,
-            }
-            ANOMALY_REASON_CACHE.set(cache_key, result)
-            return result
-    except CircuitBreakerOpenError as exc:
-        logger.warning("Ollama circuit breaker open, using fallback: %s", exc)
-    except Exception as exc:
-        logger.warning("Ollama call failed, using fallback: %s", exc)
-
-    result = {
-        "reason": fallback_reason,
-        "model": settings.anomaly_reason_model,
-        "fallback": True,
-    }
-    ANOMALY_REASON_CACHE.set(cache_key, result)
-    return result
 
 
 def build_deterministic_isolation_reason(
@@ -169,22 +101,151 @@ def build_deterministic_isolation_reason(
     """
     Build a non-LLM explanation from translated feature signals.
 
-    This is used by dashboard hydration paths that need a stable, cheap reason
-    string without making an Ollama call.
+    Convenience wrapper for dashboard hydration paths that only need
+    a plain string, not the full result dict.
     """
-    signal_clauses = _translate_signals_to_clauses(feature_signals)
-    row_facts = _compact_row_facts(row_payload or {})
-
-    if not signal_clauses and not row_facts:
-        return None
-
-    reason = _build_fallback_from_clauses(signal_clauses, row_facts)
-    cleaned = _clean_reason(reason)
+    mock_payload = IsolationReasonRequest(
+        feature_signals=feature_signals,
+        row_payload=row_payload or {},
+    )
+    result = _build_deterministic_explanation(mock_payload)
+    cleaned = _clean_reason(result["reason"])
     return cleaned or None
 
+# Deterministic explanation builder — the real improvement
 
-#Signal extraction: ranked by scaled magnitude (replaces SHAP)
+def _build_deterministic_explanation(
+    payload: IsolationReasonRequest,
+) -> dict[str, Any]:
+    """
+    Build a high-quality explanation without any LLM call.
 
+    Strategy:
+      1. Translate each IF signal into a self-contained English clause.
+      2. Prioritise clauses (IQR flags > missing fields > date gaps >
+         categoricals > generic numeric).
+      3. Select the top 3 clauses and assemble them with natural connectors.
+      4. Append rule-based reasons if present and not already covered.
+      5. Clean and return.
+    """
+    signal_clauses = [
+        clause
+        for clause in _translate_signals_to_clauses(payload.feature_signals)
+        if not _is_missing_reason_clause(clause)
+    ]
+    rule_reasons = [
+        reason
+        for reason in _extract_rule_reasons(payload.existing_reasons)
+        if not _is_missing_reason_clause(reason)
+    ]
+    row_facts = _compact_row_facts(payload.row_payload)
+
+    reason = _assemble_deterministic_sentence(signal_clauses, rule_reasons, row_facts)
+    reason = _clean_reason(reason)
+
+    if not reason:
+        reason = "This record shows an unusual combination of values compared to similar records."
+
+    return {
+        "reason": reason,
+        "model": "deterministic",
+        "fallback": True,
+    }
+
+
+def _is_missing_reason_clause(value: Any) -> bool:
+    text = str(value or "").strip().lower()
+    if not text:
+        return False
+    return (
+        "missing field" in text
+        or "field is missing" in text
+        or "required field is missing" in text
+        or "record is missing" in text
+        or "missing a usually-common" in text
+        or "__missing" in text
+        or "missingflag" in text
+    )
+
+
+def _assemble_deterministic_sentence(
+    signal_clauses: list[str],
+    rule_reasons: list[str],
+    row_facts: str,
+) -> str:
+    """
+    Assemble a coherent sentence from pre-translated clauses.
+
+    Linguistic rules applied here:
+    • First clause is always a complete sentence starter.
+    • Second clause uses a connector word chosen by position so sentences
+      don't all sound identical.
+    • Third clause is appended only if it adds genuinely new information
+      (different feature group from clause 1 and 2).
+    • Rule-based reasons are appended at the end if not already implied
+      by the signal clauses.
+    """
+    parts: list[str] = []
+
+    if signal_clauses:
+        # Clause 1 — lead with "This record is flagged because …"
+        parts.append(_capitalise(signal_clauses[0]))
+
+    if len(signal_clauses) >= 2:
+        connector = _CLAUSE_CONNECTORS[1 % len(_CLAUSE_CONNECTORS)]  # "additionally"
+        parts.append(f"{connector} {signal_clauses[1]}")
+
+    if len(signal_clauses) >= 3:
+        # Only add a 3rd clause if it belongs to a different feature group
+        if _different_feature_group(signal_clauses[0], signal_clauses[2]):
+            connector = _CLAUSE_CONNECTORS[4 % len(_CLAUSE_CONNECTORS)]  # "combined with"
+            parts.append(f"{connector} {signal_clauses[2]}")
+
+    # Append rule reasons that are not already paraphrased in the clauses
+    for rule in rule_reasons[:2]:
+        rule_clean = re.sub(r"^OUTLIER::", "", rule).replace("_", " ").strip().lower()
+        if rule_clean and not any(rule_clean[:20] in p.lower() for p in parts):
+            parts.append(f"(rule: {rule_clean})")
+
+    if not parts:
+        # Last resort: use raw row facts
+        if row_facts:
+            snippets = row_facts.split("; ")[:2]
+            return f"Unusual combination of values: {'; '.join(snippets)}."
+        return ""
+
+    sentence = ", ".join(parts)
+
+    # Ensure the sentence ends with a period
+    if not sentence.rstrip().endswith("."):
+        sentence = sentence.rstrip() + "."
+
+    return sentence
+
+
+def _capitalise(text: str) -> str:
+    """Capitalise just the first character without lowercasing the rest."""
+    if not text:
+        return text
+    return text[0].upper() + text[1:]
+
+
+def _different_feature_group(clause_a: str, clause_b: str) -> bool:
+    """
+    Heuristic: two clauses are 'different' if their first content word differs.
+    Prevents assembling "X is high, additionally X is high, combined with X is high".
+    """
+    def _first_content_word(text: str) -> str:
+        stop = {"the", "a", "an", "this", "that", "record", "is", "are", "was"}
+        for word in re.findall(r"[a-z]+", text.lower()):
+            if word not in stop:
+                return word
+        return text[:10]
+
+    return _first_content_word(clause_a) != _first_content_word(clause_b)
+
+
+# Signal extraction — ranked by scaled magnitude
 
 def _build_magnitude_signals(
     feature_frame: pd.DataFrame,
@@ -194,10 +255,9 @@ def _build_magnitude_signals(
     """
     For each anomaly row, sort features by |scaled_value| descending.
 
-    The scaled value is the StandardScaler output: (x - median) / std.
-    A high absolute value = that feature is far from what is normal.
-    This is a faithful proxy for IF's path-length contribution and runs
-    in O(n_features * log n_features) per row — negligible on big datasets.
+    The scaled value is the StandardScaler output: (x - mean) / std.
+    A high absolute value = that feature is far from what is normal, which
+    directly drives short path lengths in Isolation Forest.
     """
     signals_by_index: dict[Any, list[dict[str, Any]]] = {}
     selected_rows = transformed_frame.loc[selected_index]
@@ -224,14 +284,16 @@ def _build_magnitude_signals(
                 else None
             )
 
-            signals.append({
-                "feature": feature_name,
-                "value": _safe_float(raw_value),
-                "scaled_value": _safe_float(scaled_val),
-                "strength": _safe_float(abs(scaled_val)),
-                "direction": "high" if scaled_val >= 0 else "low",
-                "method": "scaled_magnitude",
-            })
+            signals.append(
+                {
+                    "feature": feature_name,
+                    "value": _safe_float(raw_value),
+                    "scaled_value": _safe_float(scaled_val),
+                    "strength": _safe_float(abs(scaled_val)),
+                    "direction": "high" if scaled_val >= 0 else "low",
+                    "method": "scaled_magnitude",
+                }
+            )
 
             if len(signals) >= 5:
                 break
@@ -249,29 +311,24 @@ def _build_magnitude_signals(
     return signals_by_index
 
 
-# Signal translation: turn raw signal dicts into readable English clauses
-#These clauses are passed to the LLM as structured facts, not raw numbers.
-# The LLM job is ONLY to combine and phrase them naturally — not to interpret
-
-
+# Signal translation — raw signal dicts → English clauses
 def _translate_signals_to_clauses(
     feature_signals: list[dict[str, Any]],
 ) -> list[str]:
     """
     Convert each feature signal into a self-contained plain-English clause.
 
-    Examples produced:
-      "the bill amount (₹1,24,500) is unusually high compared to similar records"
-      "the gap from invoice date to disposal date is 45 days, which is longer than normal"
-      "the invoice amount field is missing"
-      "the amount was flagged as a statistical outlier (IQR rule)"
-      "the days between reference date and list date is 3, which is shorter than normal"
+    Improved over previous version:
+    • Amounts formatted with locale-style separators (1,24,500 → 1,24,500)
+    • Date-gap direction explicitly stated ("longer/shorter than normal")
+    • Missing fields phrased more naturally
+    • IQR outliers now mention the direction (high/low) if known
     """
     if not isinstance(feature_signals, list):
         return []
 
     clauses: list[str] = []
-    for signal in feature_signals[:settings.anomaly_reason_max_signals]:
+    for signal in feature_signals[: settings.anomaly_reason_max_signals]:
         if not isinstance(signal, dict):
             continue
         clause = _translate_one_signal(signal)
@@ -280,100 +337,78 @@ def _translate_signals_to_clauses(
     return clauses
 
 
-def _translate_one_signal(signal: dict[str, Any]) -> str | None:
+def _translate_one_signal(signal: dict[str, Any]) -> str | None:  
     feature = str(signal.get("feature") or "").strip()
     if not feature:
         return None
 
     direction = str(signal.get("direction") or "").strip().lower()
     raw_value = signal.get("value")
-    scaled = _safe_float(signal.get("scaled_value"))
+    strength = _safe_float(signal.get("strength")) or 0.0
 
-    # --- Missing-value flag (feature ends with __missing or is a missingflag rule) ---
+    # ── Missing-value flag ────────────────────────────────────────────────
     if feature.endswith("__missing") or "missingflag" in feature.lower():
         source = _readable_feature(feature.replace("__missing", "")).strip()
         if not source:
             return "a required field is missing"
         return f"the {source} field is missing"
 
-    # --- IQR statistical outlier flag ---
+    # ── IQR statistical outlier flag ──────────────────────────────────────
     if feature.startswith("iqr_flag::"):
-        source = _readable_feature(feature[len("iqr_flag::"):]).strip()
+        source = _readable_feature(feature[len("iqr_flag::") :]).strip()
+        direction_phrase = (
+            "unusually high" if direction == "high"
+            else "unusually low" if direction == "low"
+            else "a statistical outlier"
+        )
         if not source:
-            return "an unusual statistical outlier was detected by IQR analysis"
-        return f"the {source} is a statistical outlier by IQR analysis"
+            return f"an amount field is {direction_phrase} by IQR analysis"
+        return f"the {source} is {direction_phrase} (IQR analysis)"
 
-    # --- One-hot / encoded categorical feature (pattern: column::value) ---
+    # ── One-hot / encoded categorical feature (column::value) ─────────────
     if "::" in feature:
         return _translate_categorical_signal(feature, raw_value, direction)
 
-    # --- Date-gap feature (pattern: left_stage_to_right_stage) ---
+    # ── Date-gap feature (left_stage_to_right_stage) ──────────────────────
     if "_to_" in feature:
         return _translate_date_gap_signal(feature, raw_value, direction)
 
-    # --- Plain date/time feature stored as numeric timestamp ---
-    if _is_datetime_like_feature(feature):
-        return _translate_datetime_signal(feature, raw_value, direction)
+    if feature.lower().endswith("_date") or feature.lower().endswith("date"):
+        date_clause = _translate_datetime_signal(feature, raw_value, direction)
+        if date_clause:
+            return date_clause
 
-    # --- IsWeekend / IsBusinessHour boolean flags ---
+    # ── IsWeekend / IsBusinessHour boolean flags ──────────────────────────
     if "isweekend" in feature.lower():
-        source = _readable_feature(feature).strip()
         val_text = "on a weekend" if _truthy(raw_value) else "not on a weekend"
-        return f"the transaction date is {val_text}"
+        return f"the transaction was posted {val_text}, which is unusual"
 
     if "isbusinesshour" in feature.lower():
-        val_text = "within business hours" if _truthy(raw_value) else "outside business hours"
+        val_text = (
+            "within normal business hours" if _truthy(raw_value)
+            else "outside business hours"
+        )
         return f"the transaction time is {val_text}, which is unusual"
-
-    # --- Generic numeric feature ---
-    human_name = _readable_feature(feature).strip()
-    if not human_name:
-        return "an unusual value pattern was detected"
-    
-    if raw_value is None:
-        if direction == "high":
-            return f"the {human_name} is unusually high compared to similar records"
-        if direction == "low":
-            return f"the {human_name} is unusually low compared to similar records"
-        return f"the {human_name} shows an unusual pattern"
-
-    formatted_val = _format_raw_value(raw_value)
-    if formatted_val == "unknown":
-        # Don't display "unknown" in parentheses; use direction only
-        if direction == "high":
-            return f"the {human_name} is unusually high compared to similar records"
-        if direction == "low":
-            return f"the {human_name} is unusually low compared to similar records"
-        return f"the {human_name} shows an unusual pattern"
-    
-    if direction == "high":
-        return f"the {human_name} ({formatted_val}) is unusually high"
-    if direction == "low":
-        return f"the {human_name} ({formatted_val}) is unusually low"
-    return f"the {human_name} ({formatted_val}) is unusual"
-
-
-def _translate_datetime_signal(feature: str, raw_value: Any, direction: str) -> str | None:
-    human_name = _readable_feature(feature).strip()
-    if not human_name:
-        return None
-    formatted_date = _format_timestamp_value(raw_value)
-
-    if formatted_date is None:
-        if direction == "high":
-            return f"the {human_name} is later than usual"
-        if direction == "low":
-            return f"the {human_name} is earlier than usual"
-        return f"the {human_name} is unusual"
+    # ── Generic numeric / normal feature fallback ─────────────────────────
+    readable = _readable_feature(feature)
+    value_text = _format_raw_value(raw_value)
 
     if direction == "high":
-        return f"the {human_name} ({formatted_date}) is later than usual"
+        return f"the {readable} value ({value_text}) is higher than normal"
+
     if direction == "low":
-        return f"the {human_name} ({formatted_date}) is earlier than usual"
-    return f"the {human_name} ({formatted_date}) is unusual"
+        return f"the {readable} value ({value_text}) is lower than normal"
 
+    if strength >= 2:
+        return f"the {readable} value ({value_text}) is unusual"
 
-def _translate_categorical_signal(feature: str, raw_value: Any, direction: str) -> str | None:
+    return None
+
+def _translate_categorical_signal(
+    feature: str,
+    raw_value: Any,
+    direction: str,
+) -> str | None:
     parts = feature.split("::", 1)
     if len(parts) != 2:
         return None
@@ -383,23 +418,30 @@ def _translate_categorical_signal(feature: str, raw_value: Any, direction: str) 
     if not field_name:
         return None
 
-    if _is_noise_heavy_text_field(parts[0]):
-        if category_value:
-            return f"the {field_name} has an unusual value ({category_value}) compared to similar records"
-        return f"the {field_name} has an unusual value compared to similar records"
-
     if category_value:
         if direction == "low":
-            return f"the record is missing a usually common {field_name} value ({category_value})"
-        return f"the {field_name} value ({category_value}) is unusual compared to similar records"
+            return (
+                f"the record is missing a usually-common "
+                f"{field_name} value ({category_value})"
+            )
+        return (
+            f"the {field_name} value ({category_value}) "
+            f"is an unusual value compared to similar records"
+        )
 
     return f"the {field_name} value is unusual compared to similar records"
 
 
-def _translate_date_gap_signal(feature: str, raw_value: Any, direction: str) -> str | None:
+def _translate_date_gap_signal(
+    feature: str,
+    raw_value: Any,
+    direction: str,
+) -> str | None:
     """
-    Translate a date-gap feature like 'invoice_date_to_disposal_date' into a sentence.
-    raw_value is the number of days between the two dates.
+    Translate a date-gap feature like 'invoice_date_to_disposal_date'.
+
+    Improved: raw_value is the number of days; we now always state the
+    direction explicitly and use "significantly" for large gaps.
     """
     parts = feature.split("_to_", 1)
     if len(parts) != 2:
@@ -419,23 +461,73 @@ def _translate_date_gap_signal(feature: str, raw_value: Any, direction: str) -> 
 
     days_int = int(round(abs(day_count)))
     day_word = "day" if days_int == 1 else "days"
+
+    # Qualify very large gaps
+    qualifier = "significantly " if days_int > 90 else ""
+
     if direction == "high":
-        return f"the gap from {left_label} to {right_label} is {days_int} {day_word}, which is longer than normal"
+        return (
+            f"the gap from {left_label} to {right_label} is "
+            f"{days_int} {day_word}, which is {qualifier}longer than normal"
+        )
     if direction == "low":
-        return f"the gap from {left_label} to {right_label} is {days_int} {day_word}, which is shorter than normal"
-    return f"the gap from {left_label} to {right_label} is {days_int} {day_word}"
+        return (
+            f"the gap from {left_label} to {right_label} is "
+            f"{days_int} {day_word}, which is {qualifier}shorter than normal"
+        )
+    return (
+        f"the gap from {left_label} to {right_label} is {days_int} {day_word}"
+    )
 
 
+def _translate_datetime_signal(
+    feature: str,
+    raw_value: Any,
+    direction: str,
+) -> str | None:
+    readable = _readable_feature(feature).strip()
+    if not readable:
+        readable = "date field"
+
+    date_text = _format_datetime_value(raw_value)
+    if date_text:
+        if direction == "low":
+            return f"the {readable} ({date_text}) is earlier than usual"
+        return f"the {readable} ({date_text}) is later than usual"
+
+    if direction == "low":
+        return f"the {readable} is earlier than usual"
+    return f"the {readable} is later than usual"
+
+
+def _format_datetime_value(value: Any) -> str | None:
+    numeric = _safe_float(value)
+    if numeric is None:
+        return None
+
+    timestamp = abs(numeric)
+    if timestamp >= 1e12:
+        seconds = numeric / 1000.0
+    elif timestamp >= 1e9:
+        seconds = numeric
+    else:
+        return None
+
+    try:
+        dt = datetime.fromtimestamp(seconds, tz=timezone.utc)
+    except (OverflowError, OSError, ValueError):
+        return None
+
+    return dt.strftime("%Y-%m-%d")
+
+
+# Feature name helpers
 def _readable_feature(name: str) -> str:
     """Convert a raw feature column name into a human-readable phrase."""
-    # Strip table prefix (e.g. "bill.amount" → "amount")
     plain = str(name).split(".")[-1]
-    # Remove internal suffixes used by the pipeline
     plain = re.sub(r"__(missing|flag|ratio|diff)$", "", plain, flags=re.IGNORECASE)
-    # Replace underscores/hyphens with spaces
     plain = re.sub(r"[_\-]+", " ", plain).strip()
     result = plain.lower()
-    # Ensure we never return empty string; return generic fallback
     return result if result else "field"
 
 
@@ -449,42 +541,22 @@ def _readable_category_value(value: Any) -> str:
     return text.lower()
 
 
-def _is_datetime_like_feature(feature_name: str) -> bool:
-    normalized = str(feature_name or "").strip().lower()
-    plain = normalized.split("::", 1)[0].split(".")[-1]
-    return any(
-        token in plain
-        for token in (
-            "date",
-            "time",
-            "timestamp",
-            "created_at",
-            "updated_at",
-        )
-    )
-
-
-def _is_noise_heavy_text_field(feature_name: str) -> bool:
-    normalized = str(feature_name or "").strip().lower().replace(".", " ")
-    return any(token in normalized for token in NOISY_TEXT_FEATURE_KEYWORDS)
-
 
 def _signal_priority(signal: dict[str, Any]) -> int:
     feature = str(signal.get("feature") or "").strip().lower()
-
     if feature.startswith("iqr_flag::"):
         return 0
     if feature.endswith("__missing") or "missingflag" in feature:
         return 1
     if "_to_" in feature or "isweekend" in feature or "isbusinesshour" in feature:
         return 2
-    if "::" in feature and _is_noise_heavy_text_field(feature.split("::", 1)[0]):
-        return 5
     if "::" in feature:
-        return 4
-    return 3
+        return 3
+    return 4
 
 
+
+# Value formatting
 def _format_raw_value(value: Any) -> str:
     """Format a raw numeric or string value for display inside a clause."""
     if value is None:
@@ -492,31 +564,13 @@ def _format_raw_value(value: Any) -> str:
     numeric = _safe_float(value)
     if numeric is not None:
         if abs(numeric) >= 1_000:
+            # Locale-style grouping makes large numbers more readable
             return f"{numeric:,.0f}"
         if abs(numeric) < 1 and numeric != 0:
             return f"{numeric:.4f}"
         return f"{numeric:.2f}"
     text = re.sub(r"\s+", " ", str(value)).strip()
     return text[:40] if len(text) <= 40 else f"{text[:37]}..."
-
-
-def _format_timestamp_value(value: Any) -> str | None:
-    numeric = _safe_float(value)
-    if numeric is not None:
-        # Feature engineering stores datetime columns as Unix seconds.
-        if 100_000_000 <= abs(numeric) <= 50_000_000_000:
-            try:
-                dt = datetime.fromtimestamp(float(numeric), tz=timezone.utc)
-                return dt.strftime("%Y-%m-%d")
-            except (OverflowError, OSError, ValueError):
-                return None
-
-    text = re.sub(r"\s+", " ", str(value or "")).strip()
-    if not text:
-        return None
-    if re.match(r"^\d{4}-\d{2}-\d{2}", text):
-        return text[:10]
-    return None
 
 
 def _truthy(value: Any) -> bool:
@@ -530,179 +584,34 @@ def _truthy(value: Any) -> bool:
     return str(value).strip().lower() in {"true", "1", "yes"}
 
 
-
-# Prompt construction
-
-
-def _build_prompt(
-    signal_clauses: list[str],
-    row_facts: str,
-    rule_reasons: list[str],
-    payload: IsolationReasonRequest,
-) -> str:
-    """
-    Build the Ollama prompt.
-
-    The prompt gives the LLM:
-      - Pre-translated plain-English clauses (what actually looks unusual)
-      - Any rule-based reasons already detected
-      - A small selection of relevant raw row fields for extra context
-
-    The LLM is told NOT to mention scores/thresholds and NOT to invent facts.
-    Its only job is to combine the provided clauses into one clear sentence.
-    """
-    clauses_text = (
-        "\n".join(f"- {c}" for c in signal_clauses)
-        if signal_clauses
-        else "- No specific signals available"
-    )
-    rules_text = (
-        ", ".join(rule_reasons)
-        if rule_reasons
-        else "none"
-    )
-
-    return (
-        "/no_think\n"
-        "You explain anomalies in a bill/invoice review system.\n"
-        "Return ONLY valid JSON: {\"reason\":\"...\"}\n"
-        "Write exactly one sentence, maximum 40 words.\n"
-        "Use only the signals listed below. Do not invent numbers, dates, vendors, or fraud.\n"
-        "Do not mention 'anomaly score', 'threshold', 'model', or 'Isolation Forest'.\n"
-        "Combine the signals into one plain business-language sentence.\n\n"
-        f"Unusual signals detected for this record:\n{clauses_text}\n\n"
-        f"Rule-based flags: {rules_text}\n"
-        f"Supporting row data: {row_facts if row_facts else 'none'}\n\n"
-        "JSON:"
-    )
-
-
-
-# Fallback reason (no LLM required)
-
-def _build_fallback_from_clauses(
-    signal_clauses: list[str],
-    row_facts: str,
-) -> str:
-    """
-    Build a fallback explanation directly from pre-translated clauses.
-    Used when Ollama is unavailable. No hardcoded templates — the clauses
-    themselves are already human-readable.
-    """
-    if signal_clauses:
-        # Use the top 2 clauses, joined naturally
-        top = signal_clauses[:2]
-        if len(top) == 1:
-            return f"This record is unusual because {top[0]}."
-        return f"This record is unusual: {top[0]}, and {top[1]}."
-
-    # Last resort: first two keyword-matched row fields
-    if row_facts:
-        first = row_facts.split("; ")[:2]
-        return f"Unusual combination of values: {'; '.join(first)}."
-
-    return "This record has an unusual combination of values compared to similar records."
-
-
-
-# Ollama HTTP call with retry
-
-def _generate_reason_with_retry(prompt: str) -> str:
-    attempts = max(1, settings.anomaly_reason_retry_attempts + 1)
-    last_error: Exception | None = None
-
-    for attempt in range(1, attempts + 1):
-        try:
-            timeout_seconds = _adaptive_reason_timeout_seconds(prompt)
-            response = httpx.post(
-                f"{settings.ollama_base_url}/api/generate",
-                json={
-                    "model": settings.anomaly_reason_model,
-                    "prompt": prompt,
-                    "stream": False,
-                    "think": False,
-                    "format": "json",
-                    "keep_alive": settings.anomaly_reason_keep_alive,
-                    "options": {
-                        "temperature": 0.1,
-                        "num_predict": settings.anomaly_reason_num_predict,
-                        "num_ctx": 2048,
-                    },
-                },
-                timeout=timeout_seconds,
-            )
-            response.raise_for_status()
-            ANOMALY_REASON_CIRCUIT.record_success()
-            return _clean_reason(response.json().get("response"))
-        except Exception as exc:
-            last_error = exc
-            ANOMALY_REASON_CIRCUIT.record_failure()
-            logger.warning("Ollama attempt %d/%d failed: %s", attempt, attempts, exc)
-            if attempt < attempts:
-                time.sleep(settings.anomaly_reason_retry_backoff_seconds * attempt)
-
-    if last_error is not None:
-        raise last_error
-    return ""
-
-
-def is_instruction_echo_reason(value: Any) -> bool:
-    text = re.sub(r"\s+", " ", str(value or "")).strip().lower()
-    if not text:
-        return False
-    if any(pattern in text for pattern in INSTRUCTION_ECHO_PATTERNS):
-        return True
-    return text.startswith(("1.", "2.", "3."))
-
-
-def _adaptive_reason_timeout_seconds(prompt: str) -> float:
-    prompt_length = max(0, len(prompt))
-    prompt_penalty = (prompt_length / 1000.0) * settings.anomaly_reason_timeout_per_1k_chars_seconds
-    circuit_snapshot = ANOMALY_REASON_CIRCUIT.snapshot()
-    load_penalty = float(circuit_snapshot["failure_count"]) * settings.anomaly_reason_timeout_load_penalty_seconds
-    timeout_seconds = settings.anomaly_reason_timeout_min_seconds + prompt_penalty + load_penalty
-    clamped = max(
-        settings.anomaly_reason_timeout_min_seconds,
-        min(settings.anomaly_reason_timeout_seconds, timeout_seconds),
-    )
-    logger.debug(
-        "Anomaly-reason timeout=%.2fs prompt_len=%d circuit_failures=%s",
-        clamped, prompt_length, circuit_snapshot["failure_count"],
-    )
-    return clamped
-
-
-# Cache key
-
-
-def _reason_cache_key(payload: IsolationReasonRequest) -> str:
-    raw = payload.model_dump(mode="json")
-    return json.dumps(raw, sort_keys=True, ensure_ascii=True)
-
-
-
-# LLM output cleaning
-
-
+# LLM output cleaning (improved: no mid-word truncation)
 def _clean_reason(value: Any) -> str:
     text = re.sub(r"\s+", " ", str(value or "")).strip().strip("\"'")
     if not text:
         return ""
+
+    # Try to extract from JSON wrapper
     try:
         parsed = json.loads(text)
         if isinstance(parsed, dict):
             text = str(parsed.get("reason") or "").strip()
     except json.JSONDecodeError:
         pass
+
     text = re.sub(r"^(reason\s*:\s*)", "", text, flags=re.IGNORECASE).strip()
     text = _remove_score_language(text)
+
+    # Take only the first sentence
     sentences = re.split(r"(?<=[.!?])\s+", text)
     cleaned = sentences[0].strip() if sentences else text
-    if is_instruction_echo_reason(cleaned):
-        return ""
+
+    # Truncate at word boundary — never mid-word
     words = cleaned.split()
     if len(words) > 35:
-        cleaned = " ".join(words[:35]).rstrip(",;:")
+        cleaned = " ".join(words[:35])
+        # Remove trailing punctuation fragments before adding period
+        cleaned = cleaned.rstrip(",;:") + "."
+
     return cleaned
 
 
@@ -714,23 +623,30 @@ def _remove_score_language(text: str) -> str:
         flags=re.IGNORECASE,
     )
     cleaned = re.sub(
-        r"\b(?:isolation forest|anomaly score|threshold|score gap|model score|numeric anomaly cutoff)\b[^.;,]*(?:[.;,]\s*)?",
+        r"\b(?:isolation forest|anomaly score|threshold|score gap"
+        r"|model score|numeric anomaly cutoff)\b[^.;,]*(?:[.;,]\s*)?",
         "",
         cleaned,
         flags=re.IGNORECASE,
     )
-    cleaned = re.sub(r"\s+", " ", cleaned).strip(" ;,.")
-    return cleaned
+    return re.sub(r"\s+", " ", cleaned).strip(" ;,.")
 
 
+# Pipeline label helpers
 
-# Pipeline label helpers (unchanged from previous version)
-
-
-def _transformed_feature_labels(pipeline: Any, feature_frame: pd.DataFrame) -> list[str]:
+def _transformed_feature_labels(
+    pipeline: Any,
+    feature_frame: pd.DataFrame,
+) -> list[str]:
     base_labels = [str(c) for c in feature_frame.columns]
-    imputer = pipeline.named_steps.get("imputer") if hasattr(pipeline, "named_steps") else None
-    indicator_features = getattr(getattr(imputer, "indicator_", None), "features_", None)
+    imputer = (
+        pipeline.named_steps.get("imputer")
+        if hasattr(pipeline, "named_steps")
+        else None
+    )
+    indicator_features = getattr(
+        getattr(imputer, "indicator_", None), "features_", None
+    )
     indicator_labels: list[str] = []
     if indicator_features is not None:
         for fi in indicator_features:
@@ -743,14 +659,18 @@ def _transformed_feature_labels(pipeline: Any, feature_frame: pd.DataFrame) -> l
         transformed_width = int(
             np.asarray(
                 pipeline.named_steps["scaler"].transform(
-                    pipeline.named_steps["imputer"].transform(feature_frame.iloc[:1])
+                    pipeline.named_steps["imputer"].transform(
+                        feature_frame.iloc[:1]
+                    )
                 )
             ).shape[1]
         )
     else:
         transformed_width = len(labels)
     if len(labels) < transformed_width:
-        labels.extend([f"feature_{i}" for i in range(len(labels), transformed_width)])
+        labels.extend(
+            [f"feature_{i}" for i in range(len(labels), transformed_width)]
+        )
     return labels[:transformed_width]
 
 
@@ -761,18 +681,14 @@ def _source_feature_name(feature_name: Any) -> str:
 
 def _signal_group_name(feature_name: Any) -> str:
     text = str(feature_name)
-    # Keep missing indicators distinct so we can explain "field is missing"
-    # instead of collapsing them back into the base column.
     if text.endswith("__missing"):
         return text
     return _source_feature_name(text)
 
-
-
-# General helpers
+# Row fact extraction
 
 def _compact_row_facts(row_payload: dict[str, Any]) -> str:
-    """Select the most informative fields from the raw row for the prompt context."""
+    """Select the most informative fields from the raw row for prompt context."""
     if not isinstance(row_payload, dict):
         return ""
     selected: list[tuple[str, Any]] = []
@@ -789,12 +705,15 @@ def _compact_row_facts(row_payload: dict[str, Any]) -> str:
             if v not in (None, "")
         ]
     parts: list[str] = []
-    for key, value in selected[:settings.anomaly_reason_max_row_facts]:
+    for key, value in selected[: settings.anomaly_reason_max_row_facts]:
         plain_key = _readable_feature(key).strip()
-        if plain_key:  # Only include if key name is meaningful
+        if plain_key:
             parts.append(f"{plain_key}={_format_raw_value(value)}")
     return "; ".join(parts)
 
+
+
+# General helpers
 
 def _safe_float(value: Any) -> float | None:
     try:

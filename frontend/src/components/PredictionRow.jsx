@@ -23,18 +23,18 @@ const FIELD_ALIASES = {
     amount_disallowed: ["amount_disallowed"],
     record_status: ["record_status"],
 };
-export default function PredictionRow({ item, onAction, selectedTables = [], llmReason = "", llmReasonLoading = false, llmReasonError = "", }) {
+export default function PredictionRow({ item, onAction, selectedTables = [], }) {
     const payload = item?.row_payload_json ?? {};
     const reasons = item?.reasons_json ?? {};
     const businessSections = useMemo(() => getBusinessSections(payload, selectedTables), [payload, selectedTables]);
     const businessDetails = useMemo(() => businessSections.flatMap((section) => section.rows), [businessSections]);
     const metrics = useMemo(() => getReviewMetrics(item, payload, reasons), [item, payload, reasons]);
     const baseReasonList = useMemo(() => getBaseReasonList(item, reasons), [item, reasons]);
+    const mlSignalList = useMemo(() => getMlSignalList(reasons, payload, baseReasonList), [reasons, payload, baseReasonList]);
     const [saving, setSaving] = useState(null);
     const [showAllColumns, setShowAllColumns] = useState(false);
     const [columnSearch, setColumnSearch] = useState("");
     const activeFeedback = typeof item?.feedback === "string" ? item.feedback.toLowerCase() : "";
-    const canGenerateIsolationReason = Boolean(reasons.ml_anomaly_flag);
     const sortedColumns = useMemo(() => Object.entries(payload).sort(([left], [right]) => left.localeCompare(right)), [payload]);
     const visibleColumns = useMemo(() => sortedColumns.filter(([key]) => isVisiblePayloadKey(key, selectedTables)), [sortedColumns, selectedTables]);
     const defaultSelectedColumns = useMemo(() => {
@@ -113,16 +113,11 @@ export default function PredictionRow({ item, onAction, selectedTables = [], llm
           {baseReasonList.length > 0 ? (<div style={reasonBox}>
               <div style={reasonTitle}>Why anomaly</div>
               {baseReasonList.map((reason) => (<div key={reason} style={reasonItem}>{formatReason(reason)}</div>))}
-              {canGenerateIsolationReason && llmReasonLoading ? <div style={reasonMuted}>Generating explanation...</div> : null}
-              {canGenerateIsolationReason && !llmReasonLoading && llmReason ? <div style={reasonItem}>{formatReason(llmReason)}</div> : null}
-              {canGenerateIsolationReason && llmReasonError ? <div style={reasonError}>{llmReasonError}</div> : null}
+              {mlSignalList.map((signal) => (<div key={signal} style={reasonItem}>{signal}</div>))}
             </div>) : null}
-          {baseReasonList.length === 0 && canGenerateIsolationReason ? (<div style={reasonBox}>
+          {baseReasonList.length === 0 && mlSignalList.length > 0 ? (<div style={reasonBox}>
               <div style={reasonTitle}>Why anomaly</div>
-              {llmReasonLoading ? <div style={reasonMuted}>Generating explanation...</div> : null}
-              {!llmReasonLoading && llmReason ? <div style={reasonItem}>{formatReason(llmReason)}</div> : null}
-              {!llmReasonLoading && !llmReason && !llmReasonError ? <div style={reasonMuted}>No generated explanation available for this row.</div> : null}
-              {llmReasonError ? <div style={reasonError}>{llmReasonError}</div> : null}
+              {mlSignalList.map((signal) => (<div key={signal} style={reasonItem}>{signal}</div>))}
             </div>) : null}
 
           <div style={toolbarRow}>
@@ -247,6 +242,320 @@ function getBaseReasonList(item, reasons) {
         .map((reason) => reason.trim())
         .filter(Boolean);
     return dedupeReasons(splitReasons);
+}
+function getMlSignalList(reasons, payload, baseReasonList) {
+    const signals = Array.isArray(reasons?.ml_feature_signals) ? reasons.ml_feature_signals : [];
+    const groupedSignals = collapseMlSignals(signals);
+    const blockedReasons = new Set((baseReasonList || []).map((reason) => normalizeReasonText(reason)));
+    return dedupeReasons(groupedSignals
+        .map((signal) => formatMlSignal(signal, payload))
+        .filter(Boolean)
+        .filter((reason) => !blockedReasons.has(normalizeReasonText(reason)))
+        .slice(0, 3));
+}
+function collapseMlSignals(signals) {
+    const grouped = new Map();
+    for (const signal of signals) {
+        if (!signal || typeof signal !== "object") {
+            continue;
+        }
+        const groupKey = getMlSignalGroupKey(signal.feature);
+        const current = grouped.get(groupKey);
+        if (!current || scoreMlSignal(signal) > scoreMlSignal(current)) {
+            grouped.set(groupKey, signal);
+        }
+    }
+    return [...grouped.values()].sort((left, right) => scoreMlSignal(right) - scoreMlSignal(left));
+}
+function getMlSignalGroupKey(feature) {
+    const parsed = parseMlSignalFeature(feature);
+    return parsed.groupKey;
+}
+function scoreMlSignal(signal) {
+    const parsed = parseMlSignalFeature(signal?.feature);
+    const strength = Number(signal?.strength ?? Math.abs(Number(signal?.scaled_value ?? 0)) ?? 0);
+    const direction = String(signal?.direction || "").toLowerCase();
+    const value = signal?.value;
+    let score = Number.isFinite(strength) ? strength : 0;
+    if (parsed.kind === "missing" || parsed.kind === "date_gap" || parsed.kind === "iqr") {
+        score += 100;
+    }
+    if (parsed.kind === "category") {
+        if (isTruthyCategoryValue(parsed.category) || isTruthyRawValue(value)) {
+            score += 30;
+        }
+        if (isBlankCategoryValue(parsed.category)) {
+            score += 20;
+        }
+        if (isFalseCategoryValue(parsed.category)) {
+            score -= 10;
+        }
+    }
+    if (direction === "high") {
+        score += 5;
+    }
+    return score;
+}
+function formatMlSignal(signal, payload) {
+    if (!signal || typeof signal !== "object") {
+        return "";
+    }
+    const parsed = parseMlSignalFeature(signal.feature);
+    if (parsed.kind === "missing") {
+        return `${parsed.label} is missing.`;
+    }
+    if (parsed.kind === "iqr") {
+        return formatIqrSignalReason(parsed, signal);
+    }
+    if (parsed.kind === "date_gap") {
+        return formatDateGapSignalReason(parsed, signal);
+    }
+    if (parsed.kind === "category") {
+        return formatCategorySignalReason(parsed, signal, payload);
+    }
+    return formatNumericSignalReason(parsed, signal);
+}
+function parseMlSignalFeature(feature) {
+    const rawFeature = String(feature || "").trim();
+    if (rawFeature.endsWith("__missing")) {
+        const source = rawFeature.slice(0, -10);
+        return {
+            kind: "missing",
+            groupKey: source.toLowerCase(),
+            field: source,
+            label: formatFieldLabel(source),
+        };
+    }
+    if (rawFeature.startsWith("iqr_flag::")) {
+        const source = rawFeature.slice("iqr_flag::".length);
+        return {
+            kind: "iqr",
+            groupKey: source.toLowerCase(),
+            field: source,
+            label: formatFieldLabel(source),
+        };
+    }
+    if (rawFeature.includes("::")) {
+        const [field, category] = rawFeature.split("::", 2);
+        return {
+            kind: "category",
+            groupKey: String(field || "").toLowerCase(),
+            field,
+            category: String(category || "").trim(),
+            label: formatFieldLabel(field),
+        };
+    }
+    if (rawFeature.includes("_to_")) {
+        const [left, right] = rawFeature.split("_to_", 2);
+        return {
+            kind: "date_gap",
+            groupKey: rawFeature.toLowerCase(),
+            field: rawFeature,
+            left,
+            right,
+            leftLabel: formatFieldLabel(left),
+            rightLabel: formatFieldLabel(right),
+            label: `${formatFieldLabel(left)} to ${formatFieldLabel(right)}`,
+        };
+    }
+    return {
+        kind: "numeric",
+        groupKey: rawFeature.toLowerCase(),
+        field: rawFeature,
+        label: formatFieldLabel(rawFeature),
+    };
+}
+function formatFieldLabel(feature) {
+    const text = String(feature || "")
+        .split(".")
+        .pop()
+        ?.replace(/__(missing|flag|ratio|diff)$/i, "")
+        .replace(/[_\-]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim() || "Field";
+    return text.replace(/\b\w/g, (char) => char.toUpperCase());
+}
+function formatIqrSignalReason(parsed, signal) {
+    const direction = normalizeSignalDirection(signal?.direction);
+    const value = formatMeaningfulDisplayValue(parsed, signal?.value);
+    if (value) {
+        return `${parsed.label} is ${direction === "low" ? "much lower" : "much higher"} than the usual range (${value}).`;
+    }
+    return `${parsed.label} is ${direction === "low" ? "much lower" : "much higher"} than the usual range.`;
+}
+function formatDateGapSignalReason(parsed, signal) {
+    const numeric = toFiniteNumber(signal?.value);
+    const direction = normalizeSignalDirection(signal?.direction);
+    if (Number.isFinite(numeric) && numeric < 0) {
+        const days = Math.round(Math.abs(numeric));
+        const dayLabel = days === 1 ? "day" : "days";
+        return `The date order between ${parsed.leftLabel} and ${parsed.rightLabel} looks inconsistent (${days} ${dayLabel}).`;
+    }
+    if (Number.isFinite(numeric)) {
+        const days = Math.round(Math.abs(numeric));
+        const dayLabel = days === 1 ? "day" : "days";
+        if (direction === "low") {
+            return `The gap from ${parsed.leftLabel} to ${parsed.rightLabel} is ${days} ${dayLabel}, which is shorter than usual.`;
+        }
+        return `The gap from ${parsed.leftLabel} to ${parsed.rightLabel} is ${days} ${dayLabel}, which is longer than usual.`;
+    }
+    if (direction === "low") {
+        return `The gap from ${parsed.leftLabel} to ${parsed.rightLabel} is unusually small for similar records.`;
+    }
+    return `The gap from ${parsed.leftLabel} to ${parsed.rightLabel} is unusually large for similar records.`;
+}
+function formatCategorySignalReason(parsed, signal, payload) {
+    const rawCategory = String(parsed.category || "").trim();
+    const categoryValue = resolveCategoryDisplayValue(parsed, rawCategory, payload);
+    if (isBlankCategoryValue(categoryValue)) {
+        return `${parsed.label} is blank or missing.`;
+    }
+    if (isBooleanLikeCategory(categoryValue)) {
+        const boolLabel = isTruthyCategoryValue(categoryValue) ? "Yes" : "No";
+        return `${parsed.label} is marked as ${boolLabel}, which is unusual for similar records.`;
+    }
+    if (looksLikeCodeField(parsed.field)) {
+        return `${parsed.label} has an unusual code or type value for similar records.`;
+    }
+    if (looksLikeFreeTextField(parsed.field)) {
+        return `${parsed.label} includes "${String(categoryValue).trim()}", which is unusual for similar records.`;
+    }
+    return `${parsed.label} is "${String(categoryValue).trim()}", which is unusual for similar records.`;
+}
+function formatNumericSignalReason(parsed, signal) {
+    const direction = normalizeSignalDirection(signal?.direction);
+    const numeric = toFiniteNumber(signal?.value);
+    const displayValue = formatMeaningfulDisplayValue(parsed, signal?.value);
+    if (looksLikePercentField(parsed.field) && Number.isFinite(numeric)) {
+        return `${parsed.label} is ${trimTrailingZeros(numeric)}%, which is ${direction === "low" ? "lower" : "higher"} than usual.`;
+    }
+    if (looksLikeAmountField(parsed.field)) {
+        if (displayValue) {
+            return `${parsed.label} is ${direction === "low" ? "lower" : "higher"} than usual (${displayValue}).`;
+        }
+        return `${parsed.label} is ${direction === "low" ? "lower" : "higher"} than usual.`;
+    }
+    if (looksLikeIdentifierField(parsed.field)) {
+        if (displayValue) {
+            return `${parsed.label} does not match the usual pattern for similar records (recorded value: ${displayValue}).`;
+        }
+        return `${parsed.label} does not match the usual pattern for similar records.`;
+    }
+    if (displayValue) {
+        return `${parsed.label} has an unusually ${direction === "low" ? "low" : "high"} recorded value (${displayValue}).`;
+    }
+    return `${parsed.label} has an unusual recorded value for similar records.`;
+}
+function resolveCategoryDisplayValue(parsed, rawCategory, payload) {
+    const actualValue = findPayloadValueForSignalField(payload, parsed.field);
+    if (actualValue !== undefined && actualValue !== null && actualValue !== "") {
+        return String(actualValue).trim();
+    }
+    return prettifyCategoryValue(rawCategory);
+}
+function findPayloadValueForSignalField(payload, field) {
+    if (!payload || typeof payload !== "object") {
+        return undefined;
+    }
+    if (field in payload) {
+        return payload[field];
+    }
+    const normalizedField = normalizeKey(field);
+    for (const [key, value] of Object.entries(payload)) {
+        if (normalizeKey(key) === normalizedField || normalizeKey(key).endsWith(normalizedField)) {
+            return value;
+        }
+    }
+    return undefined;
+}
+function prettifyCategoryValue(value) {
+    return String(value || "")
+        .replace(/[_\-]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+function normalizeSignalDirection(direction) {
+    return String(direction || "").trim().toLowerCase() === "low" ? "low" : "high";
+}
+function toFiniteNumber(value) {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : null;
+}
+function formatMeaningfulDisplayValue(parsed, value) {
+    const numeric = toFiniteNumber(value);
+    if (numeric === null) {
+        const text = String(value || "").trim();
+        return text ? text : "";
+    }
+    if (looksLikePercentField(parsed.field)) {
+        return `${trimTrailingZeros(numeric)}%`;
+    }
+    if (looksLikeAmountField(parsed.field)) {
+        return numeric.toLocaleString("en-IN", { maximumFractionDigits: 2 });
+    }
+    if (looksLikeCodeField(parsed.field) && Math.abs(numeric) > 999) {
+        return "";
+    }
+    if (Math.abs(numeric) >= 1000) {
+        return numeric.toLocaleString("en-IN", { maximumFractionDigits: 2 });
+    }
+    return trimTrailingZeros(numeric);
+}
+function trimTrailingZeros(value) {
+    return Number(value).toLocaleString("en-IN", {
+        minimumFractionDigits: 0,
+        maximumFractionDigits: 2,
+    });
+}
+function looksLikeAmountField(field) {
+    const lower = String(field || "").toLowerCase();
+    return ["amount", "paid", "claimed", "disallowed", "price", "total"].some((token) => lower.includes(token));
+}
+function looksLikePercentField(field) {
+    const lower = String(field || "").toLowerCase();
+    return lower.includes("percent") || lower.includes("percentage") || lower.endsWith("_pct") || lower.endsWith(" pct");
+}
+function looksLikeIdentifierField(field) {
+    const lower = String(field || "").toLowerCase();
+    return lower.includes("bill no") ||
+        lower.includes("invoice no") ||
+        lower.includes("pv no") ||
+        lower.includes("reference no") ||
+        lower.endsWith("_no") ||
+        lower.endsWith(".no") ||
+        lower.includes("number") ||
+        lower.includes(" id");
+}
+function looksLikeCodeField(field) {
+    const lower = String(field || "").toLowerCase();
+    return lower.includes(" type") || lower.includes("_type") || lower.includes(" code") || lower.includes("_code") || lower.endsWith("_id");
+}
+function looksLikeFreeTextField(field) {
+    const lower = String(field || "").toLowerCase();
+    return lower.includes("subject") || lower.includes("remarks") || lower.includes("detail") || lower.includes("description");
+}
+function isBooleanLikeCategory(value) {
+    const normalized = String(value || "").trim().toLowerCase();
+    return ["true", "false", "yes", "no", "0", "1"].includes(normalized);
+}
+function isTruthyCategoryValue(value) {
+    const normalized = String(value || "").trim().toLowerCase();
+    return ["true", "yes", "1"].includes(normalized);
+}
+function isFalseCategoryValue(value) {
+    const normalized = String(value || "").trim().toLowerCase();
+    return ["false", "no", "0"].includes(normalized);
+}
+function isBlankCategoryValue(value) {
+    const normalized = String(value || "").trim().toLowerCase();
+    return ["blank", "missing", "null", "none", ""].includes(normalized);
+}
+function isTruthyRawValue(value) {
+    const numeric = toFiniteNumber(value);
+    if (numeric !== null) {
+        return numeric >= 0.5;
+    }
+    return isTruthyCategoryValue(value);
 }
 function dedupeReasons(reasons) {
     const seen = new Set();

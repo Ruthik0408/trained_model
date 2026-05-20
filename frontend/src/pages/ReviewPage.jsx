@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Card from "../components/Card";
 import PredictionRow from "../components/PredictionRow";
-import { generateIsolationReasonsBatch, getWorkbenchDatasets, getWorkbenchReviewRows, submitWorkbenchFeedback, } from "../api/anomalyApi";
+import { getWorkbenchDatasets, getWorkbenchReviewRows, submitWorkbenchFeedback, } from "../api/anomalyApi";
 export default function ReviewPage({ latestWorkbenchRun }) {
     const PAGE_SIZE = 50;
     const [datasets, setDatasets] = useState([]);
@@ -12,10 +12,6 @@ export default function ReviewPage({ latestWorkbenchRun }) {
     const [pageOffset, setPageOffset] = useState(0);
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState("");
-    const [reasonMap, setReasonMap] = useState({});
-    const [reasonLoadingIds, setReasonLoadingIds] = useState(new Set());
-    const [reasonErrors, setReasonErrors] = useState({});
-    const [showTable, setShowTable] = useState(false);
     const [focusedPredictionId, setFocusedPredictionId] = useState(null);
     const [activeSlideIndex, setActiveSlideIndex] = useState(0);
     const [activeSlideHeight, setActiveSlideHeight] = useState(null);
@@ -38,7 +34,6 @@ export default function ReviewPage({ latestWorkbenchRun }) {
         if (latestWorkbenchRun?.datasetTable) {
             setDatasetTable(latestWorkbenchRun.datasetTable);
             setPageOffset(0);
-            setShowTable(true);
         }
     }, [latestWorkbenchRun]);
     useEffect(() => {
@@ -47,9 +42,6 @@ export default function ReviewPage({ latestWorkbenchRun }) {
     useEffect(() => {
         setActiveSlideIndex(0);
         setFocusedPredictionId(null);
-        setReasonMap({});
-        setReasonLoadingIds(new Set());
-        setReasonErrors({});
         if (slideTrackRef.current) {
             slideTrackRef.current.scrollTo({ left: 0, behavior: "auto" });
         }
@@ -116,53 +108,6 @@ export default function ReviewPage({ latestWorkbenchRun }) {
         hydratedLatestDataset, [datasetTable, datasets, hydratedLatestDataset, hydratedRunIdKey]);
     const activeTables = activeDataset?.selected_tables || [];
     const activeRunId = activeDataset?.run_id;
-    useEffect(() => {
-        const rowsToExplain = pending
-            .filter((item) => shouldBatchExplainRow(item))
-            .filter((item) => !reasonMap[item.prediction_id]);
-        if (rowsToExplain.length === 0) {
-            setReasonLoadingIds(new Set());
-            return;
-        }
-        const controller = new AbortController();
-        const loadingIds = new Set(rowsToExplain.map((item) => item.prediction_id));
-        setReasonLoadingIds(loadingIds);
-        setReasonErrors({});
-        generateIsolationReasonsBatch({
-            rows: rowsToExplain.map((item) => buildBatchReasonPayload(item)),
-        }, controller.signal)
-            .then((response) => {
-            const nextReasons = response?.data?.reasons || {};
-            const nextErrors = response?.data?.errors || {};
-            setReasonMap((current) => ({
-                ...current,
-                ...Object.fromEntries(Object.entries(nextReasons).map(([predictionId, result]) => [
-                    predictionId,
-                    result?.reason || "",
-                ])),
-            }));
-            setReasonErrors(Object.fromEntries(Object.entries(nextErrors).map(([predictionId, detail]) => [
-                predictionId,
-                typeof detail === "string" ? detail : "Unable to generate anomaly explanation right now.",
-            ])));
-        })
-            .catch((error) => {
-            if (error?.name === "CanceledError" || error?.code === "ERR_CANCELED") {
-                return;
-            }
-            const detail = error?.response?.data?.detail ||
-                error?.message ||
-                "Unable to generate anomaly explanations right now.";
-            setReasonErrors(Object.fromEntries(rowsToExplain.map((item) => [
-                item.prediction_id,
-                typeof detail === "string" ? detail : "Unable to generate anomaly explanations right now.",
-            ])));
-        })
-            .finally(() => {
-            setReasonLoadingIds(new Set());
-        });
-        return () => controller.abort();
-    }, [pending, reasonMap]);
     useEffect(() => {
         if (pending.length === 0) {
             setActiveSlideHeight(null);
@@ -257,21 +202,6 @@ export default function ReviewPage({ latestWorkbenchRun }) {
             });
         }
     }
-    function jumpToPrediction(predictionId) {
-        const nextIndex = pending.findIndex((item) => item.prediction_id === predictionId);
-        if (nextIndex >= 0) {
-            setActiveSlideIndex(nextIndex);
-        }
-        setFocusedPredictionId(predictionId);
-        setShowTable(false);
-        requestAnimationFrame(() => {
-            cardRefs.current[predictionId]?.scrollIntoView({
-                behavior: "smooth",
-                block: "nearest",
-                inline: "start",
-            });
-        });
-    }
     function handleSlideTrackScroll(event) {
         const viewportWidth = event.currentTarget.clientWidth;
         if (viewportWidth <= 0)
@@ -283,21 +213,22 @@ export default function ReviewPage({ latestWorkbenchRun }) {
     }
     const slideTrackStyle = {
         ...slideTrack,
-        ...(activeSlideHeight ? { height: activeSlideHeight + 22 } : {}),
+        ...(activeSlideHeight ? { height: activeSlideHeight + 10 } : {}),
     };
     return (<div style={page}>
       <div style={header}>
         <div>
-          <h1 style={title}>Human Review And Feedback</h1>
+          <h1 style={title}>User Review And Feedback</h1>
         </div>
 
       </div>
 
-      {activeDataset?.run_name ? (<Card title="Latest Run Result">
-          <div style={runCardHeader}>
-            <div style={runFilterBlock}>
+      {activeDataset?.run_name ? (<Card>
+          <div style={runInlineHeader}>
+            <div style={runInlineTitle}>Latest Run Result</div>
+            <div style={runInlineGroup}>
               <label style={controlLabel}>Anomaly View</label>
-              <select value={anomalyFilter} onChange={(event) => setAnomalyFilter(event.target.value)} style={runFilterInput}>
+              <select value={anomalyFilter} onChange={(event) => setAnomalyFilter(event.target.value)} style={runInlineSelect}>
                 <option value="all">Rule or ML anomalies</option>
                 <option value="rule">Rule-based only</option>
                 <option value="ml">ML-based only</option>
@@ -305,9 +236,14 @@ export default function ReviewPage({ latestWorkbenchRun }) {
                 <option value="reviewed">Reviewed rows only</option>
               </select>
             </div>
-            <button type="button" onClick={() => setShowTable((value) => !value)} style={toggleButton}>
-              {showTable ? "Hide Summary Table" : "Show Summary Table"}
-            </button>
+            <div style={runInlineGroup}>
+              <div style={controlLabel}>Feedback Slides</div>
+              <div style={slideCount}>
+                {tableData.total_rows || pending.length} cards
+                {" · "}
+                Page {currentPage} of {totalPages}
+              </div>
+            </div>
           </div>
           <div style={runResultGrid}>
             <div style={runResultCard}><strong>Total rows</strong><div>{latestWorkbenchRun?.totalRows || activeDataset.total_rows || 0}</div></div>
@@ -320,15 +256,6 @@ export default function ReviewPage({ latestWorkbenchRun }) {
 
       {loading ? <div>Loading review rows...</div> : null}
       {!loading && loadError ? <div style={errorBox}>{loadError}</div> : null}
-
-      <div style={reviewSlideHeader}>
-        <div style={queueTitle}>Feedback Slides</div>
-        <div style={slideCount}>
-          {tableData.total_rows || pending.length} cards
-          {" · "}
-          Page {currentPage} of {totalPages}
-        </div>
-      </div>
 
       <div style={pagerRow}>
         <button type="button" onClick={handlePreviousPage} disabled={!canGoPrevious || loading} style={pagerButton}>
@@ -346,36 +273,9 @@ export default function ReviewPage({ latestWorkbenchRun }) {
         {pending.map((item, index) => (<div key={item.prediction_id} ref={(node) => {
                 cardRefs.current[item.prediction_id] = node;
             }} style={focusedPredictionId === item.prediction_id ? focusedSlide : slide}>
-            <PredictionRow item={item} onAction={handleFeedback} selectedTables={activeTables} llmReason={reasonMap[item.prediction_id] || ""} llmReasonLoading={reasonLoadingIds.has(item.prediction_id)} llmReasonError={reasonErrors[item.prediction_id] || ""}/>
+            <PredictionRow item={item} onAction={handleFeedback} selectedTables={activeTables} />
           </div>))}
       </div>
-
-      {showTable ? (<Card title="Review Summary Table">
-          <div style={tableWrap}>
-            <table style={table}>
-              <thead>
-                <tr>
-                  <th style={th}>S.No</th>
-                  <th style={th}>Anomaly</th>
-                  <th style={th}>Amount</th>
-                  <th style={th}>Total Amount</th>
-                  <th style={th}>Status</th>
-                  <th style={th}>Feedback</th>
-                </tr>
-              </thead>
-              <tbody>
-                {tableData.rows.map((row) => (<tr key={row.prediction_id} style={focusedPredictionId === row.prediction_id ? focusedTableRow : clickableRow} onClick={() => jumpToPrediction(row.prediction_id)}>
-                    <td style={td}>{row.serial_no}</td>
-                    <td style={td}>{row.anomaly}</td>
-                    <td style={td}>{Number(row.amount || 0).toLocaleString()}</td>
-                    <td style={td}>{Number(row.total_amount || 0).toLocaleString()}</td>
-                    <td style={td}>{row.review_status || "PENDING_REVIEW"}</td>
-                    <td style={td}>{row.feedback || "pending"}</td>
-                  </tr>))}
-              </tbody>
-            </table>
-          </div>
-        </Card>) : null}
     </div>);
 }
 const page = { display: "grid", gap: 18 };
@@ -385,26 +285,20 @@ const button = { border: "none", borderRadius: 14, background: "#0f766e", color:
 const controlLabel = { fontWeight: 700, color: "#9a3412" };
 const runResultGrid = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 8 };
 const runResultCard = { borderRadius: 14, border: "1px solid #e5e7eb", background: "#f8fafc", padding: "10px 14px", display: "grid", gap: 4 };
-const runCardHeader = { display: "flex", justifyContent: "space-between", gap: 10, alignItems: "end", flexWrap: "wrap", marginBottom: 8 };
-const runFilterBlock = { display: "grid", gap: 4, minWidth: "min(100%, 280px)" };
+const runInlineHeader = { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 18, flexWrap: "wrap", marginBottom: 10 };
+const runInlineTitle = { fontSize: 28, fontWeight: 800, color: "#111827", lineHeight: 1.1 };
+const runInlineGroup = { display: "flex", alignItems: "center", gap: 10, flexWrap: "nowrap", minWidth: 0 };
+const runInlineSelect = { borderRadius: 12, border: "1px solid #cbd5e1", padding: "8px 12px", fontSize: 15, minWidth: 260 };
 const runFilterInput = { borderRadius: 14, border: "1px solid #cbd5e1", padding: "10px 14px", font: "inherit", minWidth: 0 };
 const successBox = { marginBottom: 12, borderRadius: 14, background: "#ecfdf5", border: "1px solid #10b981", color: "#065f46", padding: "10px 12px", fontSize: 13, lineHeight: 1.5, fontWeight: 800 };
 const queueTitle = { fontSize: 16, fontWeight: 700, color: "#111827" };
-const toggleButton = { border: "1px solid #fdba74", borderRadius: 12, background: "#fff7ed", color: "#9a3412", padding: "8px 14px", fontWeight: 700, cursor: "pointer" };
-const reviewSlideHeader = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" };
 const slideCount = { borderRadius: 999, background: "#fffbeb", border: "1px solid #fed7aa", color: "#9a3412", padding: "8px 12px", fontWeight: 800, fontSize: 13 };
 const pagerRow = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" };
 const pagerButton = { border: "1px solid #fdba74", borderRadius: 12, background: "#fff", color: "#9a3412", padding: "9px 14px", fontWeight: 700, cursor: "pointer" };
 const pagerMeta = { color: "#6b7280", fontSize: 13, fontWeight: 600 };
-const slideTrack = { display: "flex", alignItems: "flex-start", gap: 0, overflowX: "auto", padding: "4px 0 18px", scrollSnapType: "x mandatory", scrollBehavior: "smooth" };
+const slideTrack = { display: "flex", alignItems: "flex-start", gap: 0, overflowX: "auto", padding: "4px 0 12px", scrollSnapType: "x mandatory", scrollBehavior: "smooth" };
 const slide = { flex: "0 0 100%", minWidth: "100%", boxSizing: "border-box", scrollSnapAlign: "start", paddingRight: 4, transition: "transform 160ms ease, box-shadow 160ms ease" };
 const focusedSlide = { ...slide, transform: "translateY(-2px)", boxShadow: "0 0 0 3px rgba(245, 158, 11, 0.25)", borderRadius: 24 };
-const tableWrap = { overflowX: "auto" };
-const table = { width: "100%", borderCollapse: "collapse" };
-const th = { textAlign: "left", padding: "12px 14px", borderBottom: "1px solid #e5e7eb", color: "#9a3412", fontSize: 13 };
-const td = { padding: "12px 14px", borderBottom: "1px solid #f3f4f6", color: "#111827", fontSize: 14 };
-const clickableRow = { cursor: "pointer" };
-const focusedTableRow = { background: "#fff7ed", cursor: "pointer" };
 const errorBox = { borderRadius: 12, border: "1px solid #fecaca", background: "#fef2f2", color: "#b91c1c", padding: "12px 14px" };
 
 function buildReviewTableData(rows, summary, offset) {
@@ -452,45 +346,4 @@ function resolveReviewAmount(payload) {
         }
     }
     return 0;
-}
-
-function shouldBatchExplainRow(item) {
-    const reasons = item?.reasons_json || {};
-    return Boolean(reasons.ml_anomaly_flag && Array.isArray(reasons.ml_feature_signals));
-}
-
-function buildBatchReasonPayload(item) {
-    const reasons = item?.reasons_json || {};
-    const payload = item?.row_payload_json || {};
-    const baseReasons = Array.isArray(reasons.reason_list)
-        ? reasons.reason_list.filter(Boolean)
-        : item?.rule_codes
-            ? [item.rule_codes]
-            : [];
-    return {
-        prediction_id: item?.prediction_id,
-        dataset_table: item?.dataset_table,
-        review_key: String(payload.review_key || ""),
-        if_score: toNullableNumber(firstDefined(reasons.if_score, payload.if_score, reasons.isolation_score, item.raw_ml_score, item.ml_score)),
-        ml_threshold: toNullableNumber(firstDefined(reasons.ml_threshold, payload.ml_threshold, item.ml_threshold)),
-        rule_anomaly: Boolean(reasons.rule_anomaly ?? payload.rule_anomaly ?? item.rule_flag ?? reasons.human_outlier_flag ?? false),
-        rule_count: Number(reasons.rule_count ?? payload.rule_count ?? baseReasons.length ?? 0),
-        existing_reasons: baseReasons,
-        feature_signals: Array.isArray(reasons.ml_feature_signals) ? reasons.ml_feature_signals : [],
-        row_payload: payload,
-    };
-}
-
-function firstDefined(...values) {
-    for (const value of values) {
-        if (value !== undefined && value !== null && value !== "") {
-            return value;
-        }
-    }
-    return undefined;
-}
-
-function toNullableNumber(value) {
-    const numeric = Number(value);
-    return Number.isFinite(numeric) ? numeric : null;
 }

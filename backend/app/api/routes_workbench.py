@@ -1,3 +1,4 @@
+
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -9,10 +10,6 @@ from app.core.errors import WorkbenchValidationError
 from app.schemas.workbench_schema import (
     BuiltinRuleRequest,
     DatasetFeedbackRequest,
-    IsolationReasonBatchRequest,
-    IsolationReasonBatchResponse,
-    IsolationReasonRequest,
-    IsolationReasonResponse,
     ReportResponse,
     ReviewTableResponse,
     TableInfo,
@@ -20,7 +17,6 @@ from app.schemas.workbench_schema import (
     WorkbenchRunResponse,
 )
 from app.services.dashboard_service import report_data, review_rows_data, review_table_data
-from app.services.llm_reason_service import explain_isolation_anomaly
 from app.services.workbench.default_rules import builtin_feature_rules
 from app.services.workbench.orchestrator import preview_workbench, run_workbench
 from app.services.workbench.result_store import list_saved_datasets, update_dataset_feedback
@@ -30,10 +26,9 @@ router = APIRouter(prefix="/api/workbench", tags=["workbench"])
 logger = logging.getLogger(__name__)
 
 
-def _log_request(request: Request, message: str):
-    """Helper to log requests with request ID."""
+def _log_request(request: Request, message: str) -> None:
     request_id = getattr(request.state, "request_id", "unknown")
-    logger.debug(f"[{request_id}] {message}")
+    logger.debug("[%s] %s", request_id, message)
 
 
 @router.get(
@@ -52,9 +47,9 @@ def get_tables(request: Request):
         _log_request(request, f"Retrieved {len(tables)} tables")
         return tables
     except ConnectionError as exc:
-        logger.warning(f"Connection error fetching tables: {exc}")
+        logger.warning("Connection error fetching tables: %s", exc)
         raise HTTPException(status_code=503, detail="Cannot connect to source database")
-    except Exception as exc:
+    except Exception:
         logger.exception("Error fetching tables")
         raise HTTPException(status_code=500, detail="Failed to retrieve tables")
 
@@ -71,13 +66,16 @@ def get_connection_status(request: Request):
         if status.get("connected"):
             _log_request(request, "Connection OK")
             return status
-        logger.warning(f"Connection check failed: {status}")
+        logger.warning("Connection check failed: %s", status)
         raise HTTPException(status_code=503, detail=status)
     except HTTPException:
         raise
-    except Exception as exc:
+    except Exception:
         logger.exception("Connection status check failed")
-        raise HTTPException(status_code=503, detail={"connected": False, "error": "Connection check failed"})
+        raise HTTPException(
+            status_code=503,
+            detail={"connected": False, "error": "Connection check failed"},
+        )
 
 
 @router.post(
@@ -95,12 +93,12 @@ def get_default_feature_rules(payload: BuiltinRuleRequest, request: Request):
         _log_request(request, f"Generated {len(rules)} feature rules")
         return rules
     except ConnectionError as exc:
-        logger.warning(f"Source DB connection error in feature rules: {exc}")
+        logger.warning("Source DB connection error in feature rules: %s", exc)
         raise HTTPException(status_code=503, detail=str(exc))
     except ValueError as exc:
-        logger.warning(f"Validation error in feature rules: {exc}")
+        logger.warning("Validation error in feature rules: %s", exc)
         raise HTTPException(status_code=400, detail=str(exc))
-    except Exception as exc:
+    except Exception:
         logger.exception("Error generating feature rules")
         raise HTTPException(status_code=500, detail="Failed to generate feature rules")
 
@@ -120,15 +118,15 @@ def preview_workbench_route(payload: WorkbenchRunRequest, request: Request):
         _log_request(request, "Preview completed successfully")
         return result
     except ConnectionError as exc:
-        logger.warning(f"Workbench preview connection error: {exc}")
+        logger.warning("Workbench preview connection error: %s", exc)
         raise HTTPException(status_code=503, detail=str(exc))
     except WorkbenchValidationError as exc:
         logger.warning("Workbench preview structured validation error: %s", exc.message)
         raise HTTPException(status_code=400, detail=exc.to_http_detail())
     except ValueError as exc:
-        logger.warning(f"Workbench preview validation error: {exc}")
+        logger.warning("Workbench preview validation error: %s", exc)
         raise HTTPException(status_code=400, detail=f"Validation error: {str(exc)}")
-    except Exception as exc:
+    except Exception:
         logger.exception("Workbench preview failed")
         raise HTTPException(status_code=500, detail="Preview execution failed")
 
@@ -147,26 +145,33 @@ def preview_workbench_route(payload: WorkbenchRunRequest, request: Request):
         503: {"description": "A required database connection is unavailable."},
     },
 )
-def run_workbench_route(payload: WorkbenchRunRequest, request: Request, db: Session = Depends(get_db)):
+def run_workbench_route(
+    payload: WorkbenchRunRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
     """Execute the full workbench pipeline and persist anomaly results."""
     try:
         result = run_workbench(db, payload)
-        _log_request(request, f"Workbench run completed - Run ID: {result.get('run_id')}")
+        _log_request(request, f"Workbench run completed — Run ID: {result.get('run_id')}")
         return result
     except ConnectionError as exc:
-        logger.warning(f"Workbench source DB connection error: {exc}")
+        logger.warning("Workbench source DB connection error: %s", exc)
         raise HTTPException(status_code=503, detail=str(exc))
     except WorkbenchValidationError as exc:
         logger.warning("Workbench structured validation error: %s", exc.message)
         raise HTTPException(status_code=400, detail=exc.to_http_detail())
     except ValueError as exc:
-        logger.warning(f"Workbench validation error: {exc}")
+        logger.warning("Workbench validation error: %s", exc)
         raise HTTPException(status_code=400, detail=f"Validation error: {str(exc)}")
     except HTTPException:
         raise
     except Exception as exc:
         logger.exception("Workbench execution failed")
-        raise HTTPException(status_code=500, detail=str(exc) or "Workbench execution failed")
+        raise HTTPException(
+            status_code=500,
+            detail=str(exc) or "Workbench execution failed",
+        )
 
 
 @router.get(
@@ -181,13 +186,15 @@ def dataset_list_route(request: Request, db: Session = Depends(get_db)):
         _log_request(request, f"Retrieved {len(datasets)} datasets")
         return datasets
     except OperationalError as exc:
-        logger.warning("Application DB is unavailable while fetching datasets: %s", exc)
+        logger.warning("Application DB unavailable while fetching datasets: %s", exc)
         status = check_app_db_connection()
         raise HTTPException(
             status_code=503,
-            detail=status if not status.get("connected") else {"connected": False, "error": "Application database is unavailable"},
+            detail=status
+            if not status.get("connected")
+            else {"connected": False, "error": "Application database is unavailable"},
         )
-    except Exception as exc:
+    except Exception:
         logger.exception("Error fetching datasets")
         raise HTTPException(status_code=500, detail="Failed to retrieve datasets")
 
@@ -216,9 +223,12 @@ def review_table_route(
             offset=offset,
             run_id=run_id,
         )
-        _log_request(request, f"Retrieved review table: {dataset_table or 'current'}@{anomaly_filter}")
+        _log_request(
+            request,
+            f"Retrieved review table: {dataset_table or 'current'}@{anomaly_filter}",
+        )
         return result
-    except Exception as exc:
+    except Exception:
         logger.exception("Error fetching review table")
         raise HTTPException(status_code=500, detail="Failed to retrieve review table")
 
@@ -243,9 +253,12 @@ def review_rows_route(
             offset=offset,
             run_id=run_id,
         )
-        _log_request(request, f"Retrieved {len(result) if isinstance(result, list) else 'rows'} from review")
+        _log_request(
+            request,
+            f"Retrieved {len(result) if isinstance(result, list) else 'rows'} from review",
+        )
         return result
-    except Exception as exc:
+    except Exception:
         logger.exception("Error fetching review rows")
         raise HTTPException(status_code=500, detail="Failed to retrieve review rows")
 
@@ -253,63 +266,33 @@ def review_rows_route(
 @router.post(
     "/feedback",
     summary="Save record feedback",
-    responses={400: {"description": "The feedback payload is invalid or the record was not found."}},
+    responses={
+        400: {"description": "The feedback payload is invalid or the record was not found."}
+    },
 )
-def dataset_feedback_route(payload: DatasetFeedbackRequest, request: Request, db: Session = Depends(get_db)):
+def dataset_feedback_route(
+    payload: DatasetFeedbackRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+):
     """Persist reviewer feedback for an anomaly row."""
     try:
         result = update_dataset_feedback(db, payload)
         _log_request(request, f"Feedback saved for record {payload.record_id}")
         return result
     except ValueError as exc:
-        logger.warning(f"Feedback error: {exc}")
+        logger.warning("Feedback error: %s", exc)
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception:
         logger.exception("Error saving feedback")
         raise HTTPException(status_code=500, detail="Failed to save feedback")
 
 
-@router.post(
-    "/isolation-reason",
-    response_model=IsolationReasonResponse,
-    summary="Explain an Isolation Forest anomaly",
+@router.get(
+    "/report",
+    response_model=ReportResponse,
+    summary="Get run report",
 )
-def isolation_reason_route(payload: IsolationReasonRequest, request: Request):
-    """Generate a short explanation for a scored anomaly using local IF context."""
-    try:
-        result = explain_isolation_anomaly(payload)
-        _log_request(request, f"Generated IF reason for prediction {payload.prediction_id}")
-        return result
-    except Exception:
-        logger.exception("Error generating Isolation Forest reason")
-        raise HTTPException(status_code=500, detail="Failed to generate Isolation Forest reason")
-
-
-@router.post(
-    "/isolation-reasons-batch",
-    response_model=IsolationReasonBatchResponse,
-    summary="Explain a page of Isolation Forest anomalies",
-)
-def isolation_reasons_batch_route(payload: IsolationReasonBatchRequest, request: Request):
-    """Generate IF explanations for the current review page in one API call."""
-    reasons: dict[int, dict] = {}
-    errors: dict[int, str] = {}
-
-    for row in payload.rows[:50]:
-        prediction_id = row.prediction_id
-        if prediction_id is None:
-            continue
-        try:
-            result = explain_isolation_anomaly(row)
-            reasons[int(prediction_id)] = result
-        except Exception as exc:
-            logger.warning("Failed to generate IF reason for prediction %s", prediction_id, exc_info=True)
-            errors[int(prediction_id)] = str(exc) or "Failed to generate reason"
-
-    _log_request(request, f"Generated batch IF reasons for {len(reasons)} rows")
-    return {"reasons": reasons, "errors": errors}
-
-@router.get("/report", response_model=ReportResponse, summary="Get run report")
 def report_route(
     request: Request,
     dataset_table: str | None = None,
@@ -319,8 +302,11 @@ def report_route(
     """Return report metrics for the latest dataset or a specific run identifier."""
     try:
         result = report_data(db, dataset_table=dataset_table, run_id=run_id)
-        _log_request(request, f"Generated report for {dataset_table or 'current'}@run_id={run_id}")
+        _log_request(
+            request,
+            f"Generated report for {dataset_table or 'current'}@run_id={run_id}",
+        )
         return result
-    except Exception as exc:
+    except Exception:
         logger.exception("Error generating report")
         raise HTTPException(status_code=500, detail="Failed to generate report")

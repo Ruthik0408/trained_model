@@ -32,8 +32,6 @@ export const API_ENDPOINTS = {
   DATASETS: "/api/workbench/datasets",
   REVIEW_TABLE: "/api/workbench/review-table",
   REVIEW_ROWS: "/api/workbench/review-rows",
-  REPORT_DATA: "/api/workbench/report-data",
-  ANOMALY_REASON: "/api/workbench/anomaly-reason",
 };
 
 // Cache Configuration

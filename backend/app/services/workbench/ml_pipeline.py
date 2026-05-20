@@ -6,7 +6,8 @@ import numpy as np
 
 from app.core.errors import WorkbenchValidationError
 from app.services.workbench.constants import logger
-from app.services.workbench.utils import _is_amount_like_column, _is_identifier_like_column
+from app.services.workbench.source_db import _is_date_like_column_name
+from app.services.workbench.utils import _is_amount_like_column
 
 
 @dataclass(frozen=True)
@@ -15,22 +16,6 @@ class FeatureSelectionResult:
     selected_columns: list[str]
     dropped_all_missing_columns: list[str]
     dropped_constant_columns: list[str]
-
-
-def _is_datetime_like_column_name(column_name: str) -> bool:
-    normalized = str(column_name).strip().lower()
-    return any(
-        token in normalized
-        for token in (
-            "date",
-            "time",
-            "timestamp",
-            "created_at",
-            "updated_at",
-            "disposed_at",
-        )
-    )
-
 
 def _is_frequency_encoded_column(column_name: str) -> bool:
     plain_name = str(column_name).strip().lower().split(".")[-1]
@@ -111,7 +96,7 @@ def _coerce_joined_feature_series(series: pd.Series, column_name: str) -> pd.Ser
     numeric_series = pd.to_numeric(series, errors="coerce")
     numeric_ratio = float(numeric_series.notna().sum()) / float(non_missing)
 
-    datetime_like_name = _is_datetime_like_column_name(column_name)
+    datetime_like_name = _is_date_like_column_name(column_name)
     if datetime_like_name:
         datetime_series = _datetime_series_to_numeric(series)
         datetime_ratio = float(datetime_series.notna().sum()) / float(non_missing)
@@ -136,23 +121,27 @@ def _build_auto_feature_frame(
     excluded = {str(column) for column in (excluded_columns or set())}
     features = pd.DataFrame(index=joined.index)
 
-    for column in joined.columns:
+    for index, column in enumerate(joined.columns):
         column_name = str(column)
-        if column_name in excluded or _is_identifier_like_column(column_name):
+        if column_name in excluded:
             continue
-        encoded = _coerce_joined_feature_series(joined[column], column_name)
+        encoded = _coerce_joined_feature_series(joined.iloc[:, index], column_name)
         if isinstance(encoded, pd.DataFrame):
             features = pd.concat([features, encoded], axis=1)
         else:
-            features[column_name] = encoded
+            features = pd.concat([features, encoded.rename(column_name)], axis=1)
 
     return features
 
 def _add_statistical_outlier_signals(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
-    numeric_cols = [column for column in out.columns if _is_amount_like_column(str(column))]
-    for column in numeric_cols[:]:
-        series = pd.to_numeric(out[column], errors="coerce")
+    numeric_cols = [
+        (index, column)
+        for index, column in enumerate(out.columns)
+        if _is_amount_like_column(str(column))
+    ]
+    for index, column in numeric_cols[:]:
+        series = pd.to_numeric(out.iloc[:, index], errors="coerce")
         if pd.api.types.is_bool_dtype(series):
             series = series.astype(float)
         if series.notna().sum() < 10:
