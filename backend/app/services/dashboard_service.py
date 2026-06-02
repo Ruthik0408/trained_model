@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.cache import DATASET_SUMMARY_CACHE, QUERY_RESULT_CACHE, TTLCache
 from app.core.models import WorkbenchRun
-from app.services.llm_reason_service import build_deterministic_isolation_reason
+from app.services.reason_service import build_deterministic_isolation_reason
 from app.services.workbench.constants import (
     FEATURE_VALUES_COLUMN,
     FEEDBACK_SCORE_COLUMN,
@@ -19,6 +19,7 @@ from app.services.workbench.constants import (
     ML_FEATURES_TABLE,
     ML_THRESHOLD_COLUMN,
     RESULT_SCHEMA,
+    REVIEW_PAYLOAD_COLUMN,
     RUN_ID_COLUMN,
     SELECTED_TABLES_COLUMN,
     SERIAL_COLUMN,
@@ -426,9 +427,10 @@ def _dataset_summary(
             total_amount = 0.0
             for _, row in df.iterrows():
                 record_id = row.get(SERIAL_COLUMN)
-                if record_id is None:
+                numeric_record_id = _safe_numeric_scalar(record_id, default=None)
+                if numeric_record_id is None:
                     continue
-                payload = payload_rows.get(str(int(record_id)))
+                payload = payload_rows.get(str(int(numeric_record_id)))
                 if isinstance(payload, dict):
                     total_amount += _payload_amount(payload)
             result = {
@@ -448,13 +450,35 @@ def _dataset_summary(
         f"""
         SELECT
             COUNT(*) AS total_rows,
-            COALESCE(SUM({_dashboard_amount_sql()}), 0.0) AS total_amount
+            COALESCE(SUM({_dashboard_amount_sql(dataset_table)}), 0.0) AS total_amount
         FROM {_result_table_ref(dataset_table)}
         {where_clause}
         """
     )
-    with _source_connect() as conn:
-        row = conn.execute(sql).mappings().first()
+    try:
+        with _source_connect() as conn:
+            row = conn.execute(sql).mappings().first()
+    except Exception as exc:
+        logger.warning(
+            "Dataset summary amount query failed for %s; falling back to count-only summary: %s",
+            dataset_table,
+            exc,
+        )
+        count_sql = text(
+            f"""
+            SELECT COUNT(*) AS total_rows
+            FROM {_result_table_ref(dataset_table)}
+            {where_clause}
+            """
+        )
+        with _source_connect() as conn:
+            count_row = conn.execute(count_sql).mappings().first()
+        result = {
+            "total_rows": int(count_row.get("total_rows") or 0) if count_row else 0,
+            "total_amount": 0.0,
+        }
+        DATASET_SUMMARY_CACHE.set(cache_key, result)
+        return result
 
     if not row:
         return {"total_rows": 0, "total_amount": 0.0}
@@ -591,17 +615,17 @@ def _dataset_row_to_prediction(
         raw_signals = feature_payload.get("__ml_explanation_signals")
         if isinstance(raw_signals, list):
             ml_feature_signals = [item for item in raw_signals if isinstance(item, dict)]
-    llm_if_reason = None
-    llm_if_reason_model = None
-    llm_if_reason_fallback = False
+    if_reason = None
+    if_reason_model = None
+    if_reason_fallback = False
     payload["review_key"] = row.get(SELECTED_TABLES_COLUMN)
     user_rule = _safe_bool(row.get(USER_RULE_COLUMN))
     isolation_rule = _safe_bool(row.get(ISOLATION_RULE_COLUMN))
     if not isolation_rule:
         ml_feature_signals = []
-        llm_if_reason = None
-        llm_if_reason_model = None
-        llm_if_reason_fallback = False
+        if_reason = None
+        if_reason_model = None
+        if_reason_fallback = False
     if_score = _safe_json(row.get(IF_SCORE_COLUMN))
     ml_threshold = _safe_json(row.get(ML_THRESHOLD_COLUMN))
     feedback = _score_to_feedback(row.get(FEEDBACK_SCORE_COLUMN))
@@ -649,9 +673,9 @@ def _dataset_row_to_prediction(
             "if_score": if_score,
             "ml_threshold": ml_threshold,
             "ml_feature_signals": ml_feature_signals,
-            "llm_if_reason": llm_if_reason,
-            "llm_if_reason_model": llm_if_reason_model,
-            "llm_if_reason_fallback": llm_if_reason_fallback,
+            "if_reason": if_reason,
+            "if_reason_model": if_reason_model,
+            "if_reason_fallback": if_reason_fallback,
             "feedback_score": _safe_json(row.get(FEEDBACK_SCORE_COLUMN)),
         },
         "row_payload_json": payload,
@@ -659,10 +683,15 @@ def _dataset_row_to_prediction(
 
 
 def _safe_bool(value: Any) -> bool:
-    if value is None or pd.isna(value):
+    if value is None:
         return False
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "t", "yes", "y"}
+    try:
+        if pd.isna(value):
+            return False
+    except (TypeError, ValueError):
+        return False
     return bool(value)
 
 
@@ -793,7 +822,13 @@ def _dataset_payload(row: pd.Series) -> dict[str, Any]:
 
     feature_payload = _parse_json_text(row.get(FEATURE_VALUES_COLUMN), None)
     if isinstance(feature_payload, dict):
-        return {str(column): _safe_json(value) for column, value in feature_payload.items()}
+        business_payload = {
+            str(column): _safe_json(value)
+            for column, value in feature_payload.items()
+            if str(column) != "__ml_explanation_signals"
+        }
+        if business_payload:
+            return business_payload
 
     payload = {}
     for column, value in row.items():
@@ -928,5 +963,38 @@ def _payload_lookup_ids(payload: dict[str, Any], aliases: list[str]) -> set[int]
             ids.add(int(numeric))
     return ids
 
-def _dashboard_amount_sql() -> str:
-    return "0.0"
+def _dashboard_amount_sql(dataset_table: str) -> str:
+    if REVIEW_PAYLOAD_COLUMN not in _result_table_columns(dataset_table):
+        return "0.0"
+    payload_column = _quote(REVIEW_PAYLOAD_COLUMN)
+    candidates = [
+        "amount",
+        "amount_passed",
+        "amount_claimed",
+        "invoice_amount",
+        "schedule3_amount",
+        "dak.amount",
+        "bill.amount",
+        "bill.amount_claimed",
+        "bill.amount_passed",
+        "gem_bill.invoice_amount",
+        "civ_medical_bill.amount_claimed",
+        "civ_medical_bill.amount_passed",
+        "civ_paybill.amount_claimed",
+        "civ_paybill.amount_passed",
+        "civ_tada_ltc_bill.amount_claimed",
+        "civ_tada_ltc_bill.amount_passed",
+        "cheque_slip.amount",
+        "schedule3.schedule3_amount",
+    ]
+    numeric_parts = []
+    for key in candidates:
+        escaped_key = key.replace("'", "''")
+        value_expr = f"NULLIF({payload_column}::jsonb ->> '{escaped_key}', '')"
+        numeric_parts.append(
+            "CASE "
+            f"WHEN {value_expr} ~ '^[+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)$' "
+            f"THEN {value_expr}::double precision "
+            "ELSE NULL END"
+        )
+    return f"COALESCE({', '.join(numeric_parts)}, 0.0)"

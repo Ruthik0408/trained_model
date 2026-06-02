@@ -267,9 +267,12 @@ def review_rows_route(
             f"Retrieved {len(result) if isinstance(result, list) else 'rows'} from review",
         )
         return result
-    except Exception:
+    except Exception as exc:
         logger.exception("Error fetching review rows")
-        raise HTTPException(status_code=500, detail="Failed to retrieve review rows")
+        raise HTTPException(
+            status_code=500,
+            detail=str(exc) or "Failed to retrieve review rows",
+        )
 
 
 @router.post(

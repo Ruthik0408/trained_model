@@ -501,8 +501,9 @@ function parseMlSignalFeature(feature) {
             label: formatFieldLabel(field),
         };
     }
-    if (rawFeature.includes("_to_")) {
-        const [left, right] = rawFeature.split("_to_", 2);
+    if (rawFeature.startsWith("gap_days_") && rawFeature.includes("_to_")) {
+        const gapFeature = rawFeature.slice("gap_days_".length);
+        const [left, right] = gapFeature.split("_to_", 2);
         return {
             kind: "date_gap",
             groupKey: rawFeature.toLowerCase(),

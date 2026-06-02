@@ -245,7 +245,7 @@ export default function WorkbenchPage({ onRunComplete }) {
             feature_type: rule.feature_type,
             first_column: rule.first_column,
             second_column: featureUsesSecondColumn(rule.feature_type) ? rule.second_column || null : null,
-            operator: featureUsesOperator(rule.feature_type) ? rule.operator || null : null,
+            operator: rule.operator || null,
         }));
         const normalizedFromDate = normalizeDateInput(fromDate);
         const normalizedToDate = normalizeDateInput(toDate);
@@ -256,7 +256,6 @@ export default function WorkbenchPage({ onRunComplete }) {
             amount_field: amountField || null,
             user_rules: activeUserRules,
             feature_rules: activeFeatureRules,
-            contamination: 0.02,
             from_date: normalizedFromDate,
             to_date: normalizedToDate,
         };
@@ -598,9 +597,6 @@ function removeListItem(setter, index) {
 }
 function featureUsesSecondColumn(featureType) {
     return featureType === "daysbetween";
-}
-function featureUsesOperator(featureType) {
-    return false;
 }
 function isDateSelectionValid(fromDate, toDate) {
     const normalizedFromDate = normalizeDateInput(fromDate);

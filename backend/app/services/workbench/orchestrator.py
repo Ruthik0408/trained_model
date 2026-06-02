@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 from app.core.errors import WorkbenchValidationError
 from app.core.models import WorkbenchRun
 from app.schemas.workbench_schema import WorkbenchRunRequest
-from app.services.llm_reason_service import build_feature_explanation_signals
+from app.services.reason_service import build_feature_explanation_signals
 from app.services.workbench.constants import PREVIEW_ROW_LIMIT, RESULT_TABLE, logger
 from app.services.workbench.result_store import (
     DatasetBuildInputs,
@@ -35,7 +35,11 @@ from app.services.workbench.saved_model_inference import (
     score_with_saved_model,
 )
 from app.services.workbench.valkey_artifacts import (
+    denormalize_explanation_signals,
     deserialize_dataframe,
+    deserialize_ndarray,
+    deserialize_pipeline,
+    deserialize_series,
     get_isolation_forest_artifact,
     get_preview_artifact,
     get_run_execution_artifact,
@@ -618,6 +622,41 @@ def _isolation_forest_artifact_from_state(
         ),
         "filtered_joined": serialize_dataframe(model_state.filtered_joined),
     }
+
+
+def _isolation_forest_state_from_artifact(
+    artifact: dict[str, Any],
+) -> IsolationForestState:
+    feature_selection = artifact.get("feature_selection") or {}
+    feature_frame = deserialize_dataframe(artifact["feature_frame"])
+    return IsolationForestState(
+        feature_frame=feature_frame,
+        feature_selection=FeatureSelectionResult(
+            feature_frame=feature_frame,
+            selected_columns=[
+                str(column)
+                for column in feature_selection.get("selected_columns") or []
+            ],
+            dropped_all_missing_columns=[
+                str(column)
+                for column in feature_selection.get("dropped_all_missing_columns") or []
+            ],
+            dropped_constant_columns=[
+                str(column)
+                for column in feature_selection.get("dropped_constant_columns") or []
+            ],
+        ),
+        pipeline=deserialize_pipeline(artifact["pipeline"]),
+        transformed=deserialize_ndarray(artifact["transformed"]),
+        isolation_scores=deserialize_ndarray(artifact["isolation_scores"]),
+        ml_flag=deserialize_series(artifact["ml_flag"]).astype(bool),
+        ml_threshold=float(artifact.get("ml_threshold") or 0.0),
+        final_flag=deserialize_series(artifact["final_flag"]).astype(bool),
+        explanation_signals=denormalize_explanation_signals(
+            artifact.get("explanation_signals")
+        ),
+        filtered_joined=deserialize_dataframe(artifact["filtered_joined"]),
+    )
 
 
 def _calculate_amount_total(

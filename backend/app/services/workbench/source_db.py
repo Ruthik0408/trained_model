@@ -55,12 +55,20 @@ def list_source_tables() -> list[dict]:
 
 def source_connection_status() -> dict:
     try:
-        tables = list_source_tables()
+        with _source_connect() as conn:
+            conn.execute(text("SELECT 1"))
+            table_count = conn.execute(
+                text(
+                    "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = :schema"
+                ),
+                {"schema": settings.source_db_schema},
+            ).scalar_one()
+
         return {
             "connected": True,
             "host": settings.source_db_host,
             "database": settings.source_db_name,
-            "table_count": len(tables),
+            "table_count": int(table_count),
         }
     except Exception as exc:
         return {

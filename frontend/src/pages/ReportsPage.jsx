@@ -949,9 +949,9 @@ function formatShortDate(date) {
 }
 function mapReviewStatus(value, feedback) {
     const normalizedFeedback = String(feedback || "").toLowerCase();
-    if (normalizedFeedback === "Accept")
+    if (normalizedFeedback === "accept")
         return "Approved";
-    if (normalizedFeedback === "Reject" || normalizedFeedback === "Maybe")
+    if (normalizedFeedback === "reject" || normalizedFeedback === "maybe")
         return "Under Review";
     const normalized = (value || "").toUpperCase();
     if (normalized === "REVIEWED")

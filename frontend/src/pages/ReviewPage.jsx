@@ -129,11 +129,7 @@ export default function ReviewPage({ latestWorkbenchRun }) {
         const observer = new ResizeObserver(() => {
             syncHeight();
         });
-        const observedNode = activePredictionId ? cardRefs.current[activePredictionId] : null;
-        if (!observedNode) {
-            return;
-        }
-        observer.observe(observedNode);
+        observer.observe(activeNode);
         return () => observer.disconnect();
     }, [activeSlideIndex, pending]);
     const currentPage = Math.floor(pageOffset / PAGE_SIZE) + 1;

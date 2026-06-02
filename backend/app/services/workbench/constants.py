@@ -1,6 +1,8 @@
 import logging
 from typing import Any
 
+from app.core.cache import TTLCache
+
 logger = logging.getLogger(__name__)
 
 PREVIEW_ROW_LIMIT = 50
@@ -18,7 +20,10 @@ ML_FEATURES_TABLE = RESULT_TABLE
 SERIAL_COLUMN = "id"
 
 BUILTIN_FEATURE_RULES_CACHE_TTL = 60.0
-_builtin_feature_rules_cache: dict[tuple[Any, ...], tuple[float, list[dict]]] = {}
+_builtin_feature_rules_cache = TTLCache(
+    ttl_seconds=BUILTIN_FEATURE_RULES_CACHE_TTL,
+    namespace="builtin_feature_rules",
+)
 SELECTED_TABLES_COLUMN = "selected_tables"
 FEATURE_NAME_COLUMN = "feature_name"
 USER_RULE_NAME_COLUMN = "user_rule_name"

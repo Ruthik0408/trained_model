@@ -644,16 +644,19 @@ def _qualified_builtin_scoring_columns(
         if column_name in table_column_names:
             required.add(f"{table_name}.{column_name}")
 
-    for table_name in ("bill", "gem_bill"):
-        add_if_present(table_name, "record_status")
-        add_if_present(table_name, "invoice_date")
-        if f"{table_name}.invoice_no" in {
-            f"{table_name}.{str(item['column_name'])}"
+    for table_name in selected_tables:
+        table_column_names = {
+            str(item["column_name"])
             for item in source_columns.get(table_name, [])
-        }:
-            add_if_present(table_name, "invoice_no")
-        else:
-            add_if_present(table_name, "invoice_number")
+        }
+        invoice_column = next(
+            (column_name for column_name in ("invoice_number", "invoice_no") if column_name in table_column_names),
+            None,
+        )
+        if invoice_column and "invoice_date" in table_column_names and "record_status" in table_column_names:
+            add_if_present(table_name, invoice_column)
+            add_if_present(table_name, "invoice_date")
+            add_if_present(table_name, "record_status")
 
     add_if_present("cmp_scroll", "payment_reference_no")
     add_if_present("cmp_scroll", "cda_name")
@@ -1216,6 +1219,9 @@ def _build_sql_anomaly_expressions(
             for column in source_columns.get(table, [])
         }
 
+    def text_key(expr: str) -> str:
+        return f"NULLIF(BTRIM(CAST({expr} AS text)), '')"
+
     # CMP scroll payment_reference_no must exist in ECS
     if has_table("cmp_scroll") and has_table("ecs"):
         conditions.append((
@@ -1342,6 +1348,44 @@ def _build_sql_anomaly_expressions(
                 f"Approved cheque slip but all approval columns are null: {', '.join(officer_columns)}",
             ))
 
+    # Rows removed before training as duplicate voided invoices should be shown as rule anomalies at test time.
+    for table_name in joined_tables:
+        column_names = table_cols(table_name)
+        invoice_column = next(
+            (column_name for column_name in ("invoice_number", "invoice_no") if column_name in column_names),
+            None,
+        )
+        if not invoice_column or "invoice_date" not in column_names or "record_status" not in column_names:
+            continue
+
+        base_invoice_expr = f'base."{table_name}.{invoice_column}"'
+        base_invoice_key = text_key(base_invoice_expr)
+        base_invoice_date_expr = _safe_sql_date_expr(f'base."{table_name}.invoice_date"')
+        base_status_expr = f'base."{table_name}.record_status"'
+        dup_invoice_expr = f"dup.{_quote(invoice_column)}"
+        dup_invoice_key = text_key(dup_invoice_expr)
+        dup_invoice_date_expr = _safe_sql_date_expr(f"dup.{_quote('invoice_date')}")
+
+        conditions.append((
+            f"""
+            (
+                {base_invoice_key} IS NOT NULL
+                AND {base_invoice_date_expr} IS NOT NULL
+                AND UPPER(BTRIM(CAST({base_status_expr} AS text))) = 'V'
+                AND (
+                    SELECT COUNT(*)
+                    FROM {_source_table_only_ref(table_name)} AS dup
+                    WHERE {dup_invoice_key} = {base_invoice_key}
+                      AND {dup_invoice_date_expr} = {base_invoice_date_expr}
+                ) >= 2
+            )
+            """,
+            (
+                f"{table_name} has duplicate {invoice_column} and invoice_date "
+                "with record_status V"
+            ),
+        ))
+
     # Date sequence rule
     date_sequence_conditions = _build_date_sequence_anomaly_conditions(
         joined_tables,
@@ -1454,9 +1498,8 @@ def _build_join_sql(
     if filters:
         sql += "\nWHERE " + "\n  AND ".join(f"({item})" for item in filters)
 
-    if row_limit and row_limit > 0:
-        safe_limit = max(1, int(row_limit))
-        sql += f"\nLIMIT {safe_limit}"
+    safe_limit = max(1, int(row_limit)) if row_limit and row_limit > 0 else None
+    if safe_limit:
         warnings.append(
             "The final joined result is capped with LIMIT "
             f"{safe_limit}. This is a final-result limit, not a per-table source limit."
@@ -1493,6 +1536,9 @@ SELECT base.*,
 FROM joined_base base"""
         if outer_join_sql:
             sql += "\n" + outer_join_sql
+
+    if safe_limit:
+        sql += f"\nLIMIT {safe_limit}"
 
     return sql, join_debug, warnings
 

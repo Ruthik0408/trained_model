@@ -132,7 +132,10 @@ def deserialize_series(data: dict[str, Any]) -> pd.Series:
     values = list(data.get("values") or [])
     index = list(data.get("index") or [])
     dtype = str(data.get("dtype") or "object")
-    return pd.Series(values, index=index, dtype=dtype)
+    series = pd.Series(values, index=index, dtype=dtype)
+    if dtype in {"bool", "boolean"}:
+        return series.astype(bool)
+    return series
 
 
 def serialize_ndarray(values: np.ndarray) -> dict[str, Any]:

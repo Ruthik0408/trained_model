@@ -35,11 +35,6 @@ IMPORTANT_KEYWORDS = (
 
 # Connectors used to join multiple clauses so sentences don't sound repetitive
 _CLAUSE_CONNECTORS = [
-    "and also",
-    "additionally",
-    "while",
-    "along with",
-    "combined with",
     "and",
 ]
 
@@ -51,7 +46,6 @@ def _extract_rule_reasons(existing_reasons: Any) -> list[str]:
         for r in (existing_reasons or [])
         if str(r).strip()
     ]
-
 
 # Public API — build signals during orchestration (unchanged interface)
 
@@ -366,8 +360,8 @@ def _translate_one_signal(signal: dict[str, Any]) -> str | None:
     if "::" in feature:
         return _translate_categorical_signal(feature, raw_value, direction)
 
-    # ── Date-gap feature (left_stage_to_right_stage) ──────────────────────
-    if "_to_" in feature:
+    # ── Date-gap feature (gap_days_left_stage_to_right_stage) ─────────────
+    if feature.startswith("gap_days_") and "_to_" in feature:
         return _translate_date_gap_signal(feature, raw_value, direction)
 
     if feature.lower().endswith("_date") or feature.lower().endswith("date"):
@@ -440,7 +434,8 @@ def _translate_date_gap_signal(
     Improved: raw_value is the number of days; we now always state the
     direction explicitly and use "significantly" for large gaps.
     """
-    parts = feature.split("_to_", 1)
+    gap_feature = feature[len("gap_days_"):] if feature.startswith("gap_days_") else feature
+    parts = gap_feature.split("_to_", 1)
     if len(parts) != 2:
         return None
     left_label = _readable_feature(parts[0]).strip()
@@ -545,7 +540,11 @@ def _signal_priority(signal: dict[str, Any]) -> int:
         return 0
     if feature.endswith("__missing") or "missingflag" in feature:
         return 1
-    if "_to_" in feature or "isweekend" in feature or "isbusinesshour" in feature:
+    if (
+        (feature.startswith("gap_days_") and "_to_" in feature)
+        or "isweekend" in feature
+        or "isbusinesshour" in feature
+    ):
         return 2
     if "::" in feature:
         return 3
@@ -581,7 +580,7 @@ def _truthy(value: Any) -> bool:
     return str(value).strip().lower() in {"true", "1", "yes"}
 
 
-# LLM output cleaning (improved: no mid-word truncation)
+#  output cleaning (improved: no mid-word truncation)
 def _clean_reason(value: Any) -> str:
     text = re.sub(r"\s+", " ", str(value or "")).strip().strip("\"'")
     if not text:

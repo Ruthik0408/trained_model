@@ -196,15 +196,9 @@ def update_dataset_feedback(db: Session, payload) -> dict[str, Any]:
 
 
 def _feature_values_payload(
-    row: pd.Series,
     signals: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    payload = {str(column): _safe_json(value) for column, value in row.items()}
-
-    if signals:
-        payload["__ml_explanation_signals"] = signals
-
-    return payload
+    return {"__ml_explanation_signals": signals or []}
 
 
 def _coerce_insert_value(value: Any) -> Any:
@@ -308,8 +302,8 @@ def _build_dataset_frame(inputs: DatasetBuildInputs) -> pd.DataFrame:
     )
 
     dataset[FEATURE_VALUES_COLUMN] = [
-        _feature_values_payload(row, explanation_signals.get(row_index))
-        for row_index, row in filtered_feature_frame.iterrows()
+        _feature_values_payload(explanation_signals.get(row_index))
+        for row_index in filtered_feature_frame.index
     ]
 
     user_rule_names: list[str | None] = []

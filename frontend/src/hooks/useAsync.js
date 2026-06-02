@@ -73,7 +73,7 @@ export function useAsync(asyncFunction, immediate = true, deps = []) {
                 abortControllerRef.current.abort();
             }
         };
-    }, deps);
+    }, [execute, immediate, ...deps]);
 
     return {
         execute,

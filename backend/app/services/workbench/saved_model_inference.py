@@ -16,6 +16,19 @@ from app.services.workbench.constants import TEMP_ROW_ID_COLUMN
 from app.services.workbench.sql_runtime import _temp_table_columns, _workbench_temp_table_ref
 from app.services.workbench.source_db import _quote
 
+KNOWN_MODEL_TABLE_PREFIXES = (
+    "civ_tada_ltc_bill",
+    "civ_medical_bill",
+    "echs_medical_bill",
+    "cheque_slip",
+    "gem_bill",
+    "civ_paybill",
+    "schedule3",
+    "bill",
+    "dak",
+    "ecs",
+)
+
 
 @dataclass(frozen=True)
 class FeatureSelectionResult:
@@ -29,18 +42,22 @@ def resolve_dataset_name(selected_tables: list[str]) -> str:
     normalized = {str(table).strip().lower() for table in selected_tables}
     if normalized == {"dak"}:
         return "dak"
+    if "cheque_slip" in normalized and "schedule3" in normalized:
+        return "dak.cheque_slip.schedule3"
+    if "cheque_slip" in normalized and "ecs" in normalized:
+        return "dak.cheque_slip.ecs"
     if "gem_bill" in normalized:
-        return "dak_gem_bill"
+        return "dak.gem_bill"
     if "bill" in normalized:
-        return "dak_bill"
+        return "dak.bill"
     if "civ_medical_bill" in normalized:
-        return "dak_civ_medical_bill"
+        return "dak.civ_medical_bill"
     if "civ_paybill" in normalized:
-        return "dak_civ_paybill"
+        return "dak.civ_paybill"
     if "civ_tada_ltc_bill" in normalized:
-        return "dak_civ_tada_ltc_bill"
+        return "dak.civ_tada_ltc_bill"
     if "echs_medical_bill" in normalized:
-        return "dak_echs_medical_bill"
+        return "dak.echs_medical_bill"
     raise WorkbenchValidationError(
         "No saved trained model is available for the selected tables.",
         suggestion=(
@@ -138,9 +155,9 @@ def score_with_saved_model(
 def _read_model_raw_frame(conn, temp_table: str, artifact: dict[str, Any]) -> pd.DataFrame:
     available_columns = set(_temp_table_columns(conn, temp_table))
     raw_columns = [str(column) for column in artifact.get("raw_columns") or []]
-    dot_columns = [_model_column_to_joined_column(column) for column in raw_columns]
+    raw_joined_columns = _raw_joined_columns_for_artifact(raw_columns, artifact)
     select_columns = [TEMP_ROW_ID_COLUMN]
-    select_columns.extend(column for column in dot_columns if column in available_columns)
+    select_columns.extend(column for column in raw_joined_columns if column in available_columns)
 
     if len(select_columns) == 1:
         raise WorkbenchValidationError(
@@ -160,7 +177,12 @@ def _read_model_raw_frame(conn, temp_table: str, artifact: dict[str, Any]) -> pd
         """
     )
     df = pd.read_sql_query(sql, conn)
-    df = df.rename(columns={column: _joined_column_to_model_column(column) for column in df.columns})
+    df = df.rename(
+        columns={
+            joined_column: raw_column
+            for raw_column, joined_column in zip(raw_columns, raw_joined_columns)
+        }
+    )
     if TEMP_ROW_ID_COLUMN in df.columns:
         df = df.set_index(TEMP_ROW_ID_COLUMN, drop=True)
 
@@ -171,11 +193,26 @@ def _read_model_raw_frame(conn, temp_table: str, artifact: dict[str, Any]) -> pd
     return df.reindex(columns=raw_columns)
 
 
+def _raw_joined_columns_for_artifact(
+    raw_columns: list[str],
+    artifact: dict[str, Any],
+) -> list[str]:
+    raw_joined_columns = [
+        str(column)
+        for column in artifact.get("raw_joined_columns") or []
+    ]
+    if len(raw_joined_columns) == len(raw_columns):
+        return raw_joined_columns
+    return [_model_column_to_joined_column(column) for column in raw_columns]
+
+
 def _apply_saved_training_cleaning(
     raw_df: pd.DataFrame,
     artifact: dict[str, Any],
 ) -> pd.DataFrame:
-    working = _drop_saved_void_invoice_rows(raw_df, artifact)
+    # Training removes duplicate voided invoices before fitting. During review/scoring we keep
+    # those rows so the workbench SQL rules can show them as anomalies.
+    working = raw_df.copy()
     cleaned_columns = [str(column) for column in artifact.get("cleaned_columns") or []]
     if cleaned_columns:
         working = working.reindex(columns=cleaned_columns)
@@ -280,11 +317,16 @@ def _add_saved_date_gap_features(
 
 
 def _model_column_to_joined_column(column_name: str) -> str:
-    table_name, separator, plain_column = str(column_name).partition("_")
+    text = str(column_name)
+    if "." in text:
+        return text
+    for table_name in KNOWN_MODEL_TABLE_PREFIXES:
+        prefix = f"{table_name}_"
+        if text.startswith(prefix):
+            return f"{table_name}.{text[len(prefix):]}"
+    table_name, separator, plain_column = text.partition("_")
     if not separator:
-        return str(column_name)
-    if table_name == "gem" and plain_column.startswith("bill_"):
-        return f"gem_bill.{plain_column[len('bill_'):]}"
+        return text
     return f"{table_name}.{plain_column}"
 
 

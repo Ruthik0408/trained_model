@@ -13,7 +13,123 @@ from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
-from notebook_common import DB_CONFIG, query_postgres
+import os
+import subprocess
+from io import StringIO
+from pathlib import Path
+
+import pandas as pd
+
+
+def load_env_file(env_path: Path) -> None:
+    """Populate os.environ from a simple KEY=VALUE .env file."""
+    for raw_line in env_path.read_text().splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+
+        key, value = line.split("=", 1)
+        value = value.strip().strip('"').strip("'")
+        os.environ[key.strip()] = value
+
+
+def find_env_file() -> Path:
+    """Look for the project .env from common notebook/module locations."""
+    module_dir = Path(__file__).resolve().parent
+    candidates = [
+        Path.cwd() / ".env",
+        Path.cwd().parent / ".env",
+        module_dir / ".env",
+        module_dir.parent / ".env",
+    ]
+
+    for path in candidates:
+        if path.exists():
+            return path
+
+    raise FileNotFoundError("Could not find .env in the current directory or its parent.")
+
+
+ENV_PATH = find_env_file()
+load_env_file(ENV_PATH)
+
+DB_CONFIG = {
+    "host": os.environ.get("TULIP_SOURCE_DB_HOST"),
+    "port": os.environ.get("TULIP_SOURCE_DB_PORT", "5432"),
+    "dbname": os.environ.get("TULIP_SOURCE_DB_NAME"),
+    "user": os.environ.get("TULIP_SOURCE_DB_USER"),
+    "password": os.environ.get("TULIP_SOURCE_DB_PASSWORD"),
+    "schema": os.environ.get("TULIP_SOURCE_DB_SCHEMA", "public"),
+}
+
+missing = [key for key, value in DB_CONFIG.items() if key != "schema" and not value]
+if missing:
+    raise ValueError(f"Missing required database settings: {missing}")
+
+
+def query_postgres(sql: str) -> pd.DataFrame:
+    """Run a SQL query through psql and return the result as a dataframe."""
+    cleaned_sql = sql.strip().rstrip(";")
+    psql_sql = (
+        f"SET search_path TO {DB_CONFIG['schema']}; "
+        f"COPY ({cleaned_sql}) TO STDOUT WITH CSV HEADER"
+    )
+
+    env = os.environ.copy()
+    env["PGPASSWORD"] = DB_CONFIG["password"]
+
+    command = [
+        "psql",
+        "-h",
+        DB_CONFIG["host"],
+        "-p",
+        str(DB_CONFIG["port"]),
+        "-U",
+        DB_CONFIG["user"],
+        "-d",
+        DB_CONFIG["dbname"],
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-c",
+        psql_sql,
+    ]
+
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            env=env,
+            check=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        detail = (exc.stderr or exc.stdout or str(exc)).strip()
+        raise RuntimeError(f"psql query failed: {detail}") from exc
+
+    stdout = result.stdout
+    lines = stdout.splitlines()
+
+    while lines and (not lines[0].strip() or lines[0].strip() == "SET"):
+        lines = lines[1:]
+
+    df = pd.read_csv(StringIO("\n".join(lines)), low_memory=False)
+    if "SET" in df.columns:
+        df = df.drop(columns=["SET"])
+
+    return df
+
+
+def get_connection_check_df() -> pd.DataFrame:
+    return query_postgres(
+        """
+        SELECT
+            current_database() AS database_name,
+            current_schema() AS schema_name,
+            current_user AS database_user,
+            now() AS connected_at
+        """
+    )
+
 
 
 BASE_TABLE = "dak"
@@ -148,16 +264,15 @@ JOIN_SPECS: dict[str, JoinSpec] = {
 
 DATASET_TABLES: dict[str, list[str]] = {
     "dak": [],
-    "dak_bill": ["bill"],
-    "dak_gem_bill": ["gem_bill"],
-    "dak_civ_medical_bill": ["civ_medical_bill"],
-    "dak_civ_paybill": ["civ_paybill"],
-    "dak_civ_tada_ltc_bill": ["civ_tada_ltc_bill"],
-    "dak_echs_medical_bill": ["echs_medical_bill"],
-    "dak_cheque_slip_schedule3": ["cheque_slip", "schedule3"],
-    "dak_cheque_slip_ecs": ["cheque_slip", "ecs"],
+    "dak.bill": ["bill"],
+    "dak.gem_bill": ["gem_bill"],
+    "dak.civ_medical_bill": ["civ_medical_bill"],
+    "dak.civ_paybill": ["civ_paybill"],
+    "dak.civ_tada_ltc_bill": ["civ_tada_ltc_bill"],
+    "dak.echs_medical_bill": ["echs_medical_bill"],
+    "dak.cheque_slip.schedule3": ["cheque_slip", "schedule3"],
+    "dak.cheque_slip.ecs": ["cheque_slip", "ecs"],
 }
-
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -182,9 +297,9 @@ def parse_args() -> argparse.Namespace:
         nargs="*",
         default=list(DATASET_TABLES),
         help=(
-            "Datasets to train. Example: --datasets dak dak_bill dak_gem_bill "
-            "dak_civ_medical_bill dak_civ_paybill dak_civ_tada_ltc_bill dak_echs_medical_bill "
-            "dak_cheque_slip_schedule3 dak_cheque_slip_ecs"
+            "Datasets to train. Example: --datasets dak dak.bill dak.gem_bill "
+            "dak.civ_medical_bill dak.civ_paybill dak.civ_tada_ltc_bill dak.echs_medical_bill "
+            "dak.cheque_slip.schedule3 dak.cheque_slip.ecs"
         ),
     )
     parser.add_argument(
@@ -243,6 +358,17 @@ def prefixed_schema(table_name: str) -> pd.DataFrame:
         lambda column_name: f"{table_name}_{column_name}"
     )
     return schema_df
+
+
+def raw_joined_columns_for_tables(
+    table_names: list[str],
+    schema_map: dict[str, pd.DataFrame],
+) -> list[str]:
+    return [
+        f"{table_name}.{column_name}"
+        for table_name in table_names
+        for column_name in schema_map[table_name]["column_name"].tolist()
+    ]
 
 
 def build_select_sql(
@@ -864,6 +990,7 @@ def train_dataset(
 ) -> dict:
     tables_in_dataset = [BASE_TABLE, *join_tables]
     schema_df = merged_schema_for_tables(BASE_TABLE, join_tables, schema_map)
+    raw_joined_columns = raw_joined_columns_for_tables(tables_in_dataset, schema_map)
     count_sql = build_count_sql(
         BASE_TABLE,
         join_tables,
@@ -956,6 +1083,7 @@ def train_dataset(
             "sql": sql,
             "pipeline": training_pipeline,
             "raw_columns": raw_df.columns.tolist(),
+            "raw_joined_columns": raw_joined_columns,
             "cleaned_columns": cleaned_df.columns.tolist(),
             "date_sequence_checked_columns": dated_df.columns.tolist(),
             "sequence_filtered_columns": sequence_filtered_df.columns.tolist(),
@@ -997,6 +1125,7 @@ def train_dataset(
         "feature_input_column_count": int(len(feature_df.columns)),
         "transformed_feature_count": int(len(transformed_feature_names)),
         "raw_columns": raw_df.columns.tolist(),
+        "raw_joined_columns": raw_joined_columns,
         "cleaned_columns": cleaned_df.columns.tolist(),
         "feature_input_columns": feature_df.columns.tolist(),
         "transformed_feature_names": transformed_feature_names,
@@ -1046,6 +1175,7 @@ def main() -> None:
     manifest: dict[str, list[dict]] = {"trained_datasets": []}
     for dataset_name in args.datasets:
         join_tables = DATASET_TABLES[dataset_name]
+        print(f"Training {dataset_name} ...", flush=True)
         report = train_dataset(
             dataset_name,
             join_tables,
