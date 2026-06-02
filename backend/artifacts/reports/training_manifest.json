@@ -1,0 +1,80 @@
+{
+  "trained_datasets": [
+    {
+      "dataset_name": "dak",
+      "base_table": "dak",
+      "join_tables": [],
+      "source_row_count": 1407551,
+      "queried_row_count": 1407551,
+      "post_invoice_filter_row_count": 1407551,
+      "post_date_sequence_filter_row_count": 1403243,
+      "training_row_count": 1403243,
+      "anomaly_count": 69764,
+      "inlier_count": 1333479,
+      "raw_column_count": 73,
+      "cleaned_column_count": 14,
+      "feature_input_column_count": 8,
+      "transformed_feature_count": 18,
+      "high_null_column_count": 42,
+      "id_like_column_count": 13,
+      "text_like_column_count": 2,
+      "long_varchar_column_count": 6,
+      "dropped_column_count": 59,
+      "converted_date_column_count": 5,
+      "date_gap_feature_count": 1,
+      "unsupported_column_count": 2
+    },
+    {
+      "dataset_name": "dak_bill",
+      "base_table": "dak",
+      "join_tables": [
+        "bill"
+      ],
+      "source_row_count": 324366,
+      "queried_row_count": 324366,
+      "post_invoice_filter_row_count": 290333,
+      "post_date_sequence_filter_row_count": 286460,
+      "training_row_count": 286460,
+      "anomaly_count": 14323,
+      "inlier_count": 272137,
+      "raw_column_count": 189,
+      "cleaned_column_count": 44,
+      "feature_input_column_count": 34,
+      "transformed_feature_count": 68,
+      "high_null_column_count": 107,
+      "id_like_column_count": 33,
+      "text_like_column_count": 2,
+      "long_varchar_column_count": 8,
+      "dropped_column_count": 145,
+      "converted_date_column_count": 13,
+      "date_gap_feature_count": 7,
+      "unsupported_column_count": 4
+    },
+    {
+      "dataset_name": "dak_gem_bill",
+      "base_table": "dak",
+      "join_tables": [
+        "gem_bill"
+      ],
+      "source_row_count": 169864,
+      "queried_row_count": 169864,
+      "post_invoice_filter_row_count": 161066,
+      "post_date_sequence_filter_row_count": 160463,
+      "training_row_count": 160463,
+      "anomaly_count": 8024,
+      "inlier_count": 152439,
+      "raw_column_count": 213,
+      "cleaned_column_count": 50,
+      "feature_input_column_count": 29,
+      "transformed_feature_count": 54,
+      "high_null_column_count": 106,
+      "id_like_column_count": 42,
+      "text_like_column_count": 1,
+      "long_varchar_column_count": 32,
+      "dropped_column_count": 163,
+      "converted_date_column_count": 20,
+      "date_gap_feature_count": 6,
+      "unsupported_column_count": 7
+    }
+  ]
+}

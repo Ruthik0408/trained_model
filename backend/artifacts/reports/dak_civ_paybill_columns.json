@@ -1,0 +1,1312 @@
+{
+  "dataset_name": "dak_civ_paybill",
+  "base_table": "dak",
+  "join_tables": [
+    "civ_paybill"
+  ],
+  "list_date_cutoff": "2026-01-01",
+  "join_sql": "SELECT\n            dak.\"id\" AS \"dak_id\", dak.\"list_no\" AS \"dak_list_no\", dak.\"dakid_no\" AS \"dak_dakid_no\", dak.\"fk_section\" AS \"dak_fk_section\", dak.\"fk_dak_type\" AS \"dak_fk_dak_type\", dak.\"fk_bill_type\" AS \"dak_fk_bill_type\", dak.\"fk_unit\" AS \"dak_fk_unit\", dak.\"fk_imprest\" AS \"dak_fk_imprest\", dak.\"fk_dad_employee\" AS \"dak_fk_dad_employee\", dak.\"fk_civ_employee\" AS \"dak_fk_civ_employee\", dak.\"emp_no\" AS \"dak_emp_no\", dak.\"gpf_pran_ppan_no\" AS \"dak_gpf_pran_ppan_no\", dak.\"dad_account_no\" AS \"dak_dad_account_no\", dak.\"reference_no\" AS \"dak_reference_no\", dak.\"reference_date\" AS \"dak_reference_date\", dak.\"subject\" AS \"dak_subject\", dak.\"bill_no\" AS \"dak_bill_no\", dak.\"bill_date\" AS \"dak_bill_date\", dak.\"amount\" AS \"dak_amount\", dak.\"disposal_no\" AS \"dak_disposal_no\", dak.\"disposal_date\" AS \"dak_disposal_date\", dak.\"fk_outward_dak\" AS \"dak_fk_outward_dak\", dak.\"record_status\" AS \"dak_record_status\", dak.\"reason\" AS \"dak_reason\", dak.\"remarks\" AS \"dak_remarks\", dak.\"fk_dak_entry_usr\" AS \"dak_fk_dak_entry_usr\", dak.\"fk_usr\" AS \"dak_fk_usr\", dak.\"task_no\" AS \"dak_task_no\", dak.\"rescheduled\" AS \"dak_rescheduled\", dak.\"fk_old_dak\" AS \"dak_fk_old_dak\", dak.\"multiple_entry\" AS \"dak_multiple_entry\", dak.\"temp_dak_id\" AS \"dak_temp_dak_id\", dak.\"created_at\" AS \"dak_created_at\", dak.\"fk_dad_office\" AS \"dak_fk_dad_office\", dak.\"fk_task_usr\" AS \"dak_fk_task_usr\", dak.\"fk_office_id\" AS \"dak_fk_office_id\", dak.\"month_year\" AS \"dak_month_year\", dak.\"dak_year\" AS \"dak_dak_year\", dak.\"priority\" AS \"dak_priority\", dak.\"list_date\" AS \"dak_list_date\", dak.\"fk_vendor\" AS \"dak_fk_vendor\", dak.\"sender_name\" AS \"dak_sender_name\", dak.\"sender_city\" AS \"dak_sender_city\", dak.\"mode_of_receipt\" AS \"dak_mode_of_receipt\", dak.\"regn_no\" AS \"dak_regn_no\", dak.\"security_grading\" AS \"dak_security_grading\", dak.\"gem_bill\" AS \"dak_gem_bill\", dak.\"fis_doc_no\" AS \"dak_fis_doc_no\", dak.\"fis_date\" AS \"dak_fis_date\", dak.\"fis_code_head\" AS \"dak_fis_code_head\", dak.\"fis_xml_file_no\" AS \"dak_fis_xml_file_no\", dak.\"fk_fis_imported_by\" AS \"dak_fk_fis_imported_by\", dak.\"fis_imported_at\" AS \"dak_fis_imported_at\", dak.\"pfms_bill\" AS \"dak_pfms_bill\", dak.\"pfms_sanction_id\" AS \"dak_pfms_sanction_id\", dak.\"pfms_sanction_date\" AS \"dak_pfms_sanction_date\", dak.\"fk_auditor_disposal\" AS \"dak_fk_auditor_disposal\", dak.\"fk_aao_disposal\" AS \"dak_fk_aao_disposal\", dak.\"fk_ao_disposal\" AS \"dak_fk_ao_disposal\", dak.\"auditor_disposal_date\" AS \"dak_auditor_disposal_date\", dak.\"aao_disposal_date\" AS \"dak_aao_disposal_date\", dak.\"ao_disposal_date\" AS \"dak_ao_disposal_date\", dak.\"kpi_bill_type\" AS \"dak_kpi_bill_type\", dak.\"msme_cat\" AS \"dak_msme_cat\", dak.\"make_cat\" AS \"dak_make_cat\", dak.\"exp_cat\" AS \"dak_exp_cat\", dak.\"codehead\" AS \"dak_codehead\", dak.\"major_head\" AS \"dak_major_head\", dak.\"uuid\" AS \"dak_uuid\", dak.\"fk_central_unit\" AS \"dak_fk_central_unit\", dak.\"fk_central_vendor\" AS \"dak_fk_central_vendor\", dak.\"fk_central_civ_employee\" AS \"dak_fk_central_civ_employee\", dak.\"file_path\" AS \"dak_file_path\", civ_paybill.\"id\" AS \"civ_paybill_id\", civ_paybill.\"fk_dak\" AS \"civ_paybill_fk_dak\", civ_paybill.\"fk_section\" AS \"civ_paybill_fk_section\", civ_paybill.\"fk_task_usr\" AS \"civ_paybill_fk_task_usr\", civ_paybill.\"fk_unit\" AS \"civ_paybill_fk_unit\", civ_paybill.\"fk_bill_type\" AS \"civ_paybill_fk_bill_type\", civ_paybill.\"fk_bill_nature\" AS \"civ_paybill_fk_bill_nature\", civ_paybill.\"month\" AS \"civ_paybill_month\", civ_paybill.\"amount_claimed\" AS \"civ_paybill_amount_claimed\", civ_paybill.\"amount_passed\" AS \"civ_paybill_amount_passed\", civ_paybill.\"amount_disallowed\" AS \"civ_paybill_amount_disallowed\", civ_paybill.\"provisional_payment\" AS \"civ_paybill_provisional_payment\", civ_paybill.\"verified_audit_checks\" AS \"civ_paybill_verified_audit_checks\", civ_paybill.\"sysgenerated_bill_amount\" AS \"civ_paybill_sysgenerated_bill_amount\", civ_paybill.\"last_charge\" AS \"civ_paybill_last_charge\", civ_paybill.\"fk_auditor\" AS \"civ_paybill_fk_auditor\", civ_paybill.\"auditor_date\" AS \"civ_paybill_auditor_date\", civ_paybill.\"fk_aao\" AS \"civ_paybill_fk_aao\", civ_paybill.\"aao_date\" AS \"civ_paybill_aao_date\", civ_paybill.\"fk_ao\" AS \"civ_paybill_fk_ao\", civ_paybill.\"ao_date\" AS \"civ_paybill_ao_date\", civ_paybill.\"fk_go\" AS \"civ_paybill_fk_go\", civ_paybill.\"go_date\" AS \"civ_paybill_go_date\", civ_paybill.\"fk_jcda\" AS \"civ_paybill_fk_jcda\", civ_paybill.\"jcda_date\" AS \"civ_paybill_jcda_date\", civ_paybill.\"fk_cda\" AS \"civ_paybill_fk_cda\", civ_paybill.\"cda_date\" AS \"civ_paybill_cda_date\", civ_paybill.\"record_status\" AS \"civ_paybill_record_status\", civ_paybill.\"reason\" AS \"civ_paybill_reason\", civ_paybill.\"passed\" AS \"civ_paybill_passed\", civ_paybill.\"regular_pay_bill\" AS \"civ_paybill_regular_pay_bill\", civ_paybill.\"fk_punching_medium\" AS \"civ_paybill_fk_punching_medium\", civ_paybill.\"created_at\" AS \"civ_paybill_created_at\", civ_paybill.\"last_modified_at\" AS \"civ_paybill_last_modified_at\", civ_paybill.\"last_modified_by\" AS \"civ_paybill_last_modified_by\", civ_paybill.\"fk_office_id\" AS \"civ_paybill_fk_office_id\", civ_paybill.\"last_charge_month_year\" AS \"civ_paybill_last_charge_month_year\", civ_paybill.\"table_name\" AS \"civ_paybill_table_name\", civ_paybill.\"fk_central_unit\" AS \"civ_paybill_fk_central_unit\", civ_paybill.\"last_paybill_dakidno\" AS \"civ_paybill_last_paybill_dakidno\", civ_paybill.\"spb_type\" AS \"civ_paybill_spb_type\"\n        FROM dak\n        JOIN civ_paybill ON dak.\"id\" = civ_paybill.\"fk_dak\"\n        WHERE dak.list_date < '2026-01-01'",
+  "source_row_count": 149412,
+  "queried_row_count": 149412,
+  "post_invoice_filter_row_count": 149412,
+  "post_date_sequence_filter_row_count": 148654,
+  "training_row_count": 148654,
+  "anomaly_count": 7433,
+  "inlier_count": 141221,
+  "raw_column_count": 114,
+  "cleaned_column_count": 28,
+  "feature_input_column_count": 20,
+  "transformed_feature_count": 42,
+  "raw_columns": [
+    "dak_id",
+    "dak_list_no",
+    "dak_dakid_no",
+    "dak_fk_section",
+    "dak_fk_dak_type",
+    "dak_fk_bill_type",
+    "dak_fk_unit",
+    "dak_fk_imprest",
+    "dak_fk_dad_employee",
+    "dak_fk_civ_employee",
+    "dak_emp_no",
+    "dak_gpf_pran_ppan_no",
+    "dak_dad_account_no",
+    "dak_reference_no",
+    "dak_reference_date",
+    "dak_subject",
+    "dak_bill_no",
+    "dak_bill_date",
+    "dak_amount",
+    "dak_disposal_no",
+    "dak_disposal_date",
+    "dak_fk_outward_dak",
+    "dak_record_status",
+    "dak_reason",
+    "dak_remarks",
+    "dak_fk_dak_entry_usr",
+    "dak_fk_usr",
+    "dak_task_no",
+    "dak_rescheduled",
+    "dak_fk_old_dak",
+    "dak_multiple_entry",
+    "dak_temp_dak_id",
+    "dak_created_at",
+    "dak_fk_dad_office",
+    "dak_fk_task_usr",
+    "dak_fk_office_id",
+    "dak_month_year",
+    "dak_dak_year",
+    "dak_priority",
+    "dak_list_date",
+    "dak_fk_vendor",
+    "dak_sender_name",
+    "dak_sender_city",
+    "dak_mode_of_receipt",
+    "dak_regn_no",
+    "dak_security_grading",
+    "dak_gem_bill",
+    "dak_fis_doc_no",
+    "dak_fis_date",
+    "dak_fis_code_head",
+    "dak_fis_xml_file_no",
+    "dak_fk_fis_imported_by",
+    "dak_fis_imported_at",
+    "dak_pfms_bill",
+    "dak_pfms_sanction_id",
+    "dak_pfms_sanction_date",
+    "dak_fk_auditor_disposal",
+    "dak_fk_aao_disposal",
+    "dak_fk_ao_disposal",
+    "dak_auditor_disposal_date",
+    "dak_aao_disposal_date",
+    "dak_ao_disposal_date",
+    "dak_kpi_bill_type",
+    "dak_msme_cat",
+    "dak_make_cat",
+    "dak_exp_cat",
+    "dak_codehead",
+    "dak_major_head",
+    "dak_uuid",
+    "dak_fk_central_unit",
+    "dak_fk_central_vendor",
+    "dak_fk_central_civ_employee",
+    "dak_file_path",
+    "civ_paybill_id",
+    "civ_paybill_fk_dak",
+    "civ_paybill_fk_section",
+    "civ_paybill_fk_task_usr",
+    "civ_paybill_fk_unit",
+    "civ_paybill_fk_bill_type",
+    "civ_paybill_fk_bill_nature",
+    "civ_paybill_month",
+    "civ_paybill_amount_claimed",
+    "civ_paybill_amount_passed",
+    "civ_paybill_amount_disallowed",
+    "civ_paybill_provisional_payment",
+    "civ_paybill_verified_audit_checks",
+    "civ_paybill_sysgenerated_bill_amount",
+    "civ_paybill_last_charge",
+    "civ_paybill_fk_auditor",
+    "civ_paybill_auditor_date",
+    "civ_paybill_fk_aao",
+    "civ_paybill_aao_date",
+    "civ_paybill_fk_ao",
+    "civ_paybill_ao_date",
+    "civ_paybill_fk_go",
+    "civ_paybill_go_date",
+    "civ_paybill_fk_jcda",
+    "civ_paybill_jcda_date",
+    "civ_paybill_fk_cda",
+    "civ_paybill_cda_date",
+    "civ_paybill_record_status",
+    "civ_paybill_reason",
+    "civ_paybill_passed",
+    "civ_paybill_regular_pay_bill",
+    "civ_paybill_fk_punching_medium",
+    "civ_paybill_created_at",
+    "civ_paybill_last_modified_at",
+    "civ_paybill_last_modified_by",
+    "civ_paybill_fk_office_id",
+    "civ_paybill_last_charge_month_year",
+    "civ_paybill_table_name",
+    "civ_paybill_fk_central_unit",
+    "civ_paybill_last_paybill_dakidno",
+    "civ_paybill_spb_type"
+  ],
+  "cleaned_columns": [
+    "dak_reference_date",
+    "dak_bill_date",
+    "dak_amount",
+    "dak_disposal_date",
+    "dak_record_status",
+    "dak_rescheduled",
+    "dak_multiple_entry",
+    "dak_created_at",
+    "dak_month_year",
+    "dak_dak_year",
+    "dak_list_date",
+    "dak_gem_bill",
+    "dak_pfms_bill",
+    "dak_kpi_bill_type",
+    "civ_paybill_month",
+    "civ_paybill_amount_claimed",
+    "civ_paybill_amount_passed",
+    "civ_paybill_amount_disallowed",
+    "civ_paybill_verified_audit_checks",
+    "civ_paybill_last_charge",
+    "civ_paybill_auditor_date",
+    "civ_paybill_aao_date",
+    "civ_paybill_ao_date",
+    "civ_paybill_record_status",
+    "civ_paybill_passed",
+    "civ_paybill_regular_pay_bill",
+    "civ_paybill_created_at",
+    "civ_paybill_last_charge_month_year"
+  ],
+  "feature_input_columns": [
+    "dak_amount",
+    "dak_record_status",
+    "dak_rescheduled",
+    "dak_multiple_entry",
+    "dak_dak_year",
+    "dak_gem_bill",
+    "dak_pfms_bill",
+    "dak_kpi_bill_type",
+    "civ_paybill_amount_claimed",
+    "civ_paybill_amount_passed",
+    "civ_paybill_amount_disallowed",
+    "civ_paybill_verified_audit_checks",
+    "civ_paybill_last_charge",
+    "civ_paybill_record_status",
+    "civ_paybill_passed",
+    "civ_paybill_regular_pay_bill",
+    "gap_days_dak_bill_date_to_dak_reference_date",
+    "gap_days_dak_reference_date_to_civ_paybill_auditor_date",
+    "gap_days_civ_paybill_auditor_date_to_civ_paybill_aao_date",
+    "gap_days_civ_paybill_aao_date_to_civ_paybill_ao_date"
+  ],
+  "transformed_feature_names": [
+    "civ_paybill_amount_claimed",
+    "civ_paybill_amount_disallowed",
+    "civ_paybill_amount_passed",
+    "civ_paybill_last_charge",
+    "dak_amount",
+    "gap_days_civ_paybill_aao_date_to_civ_paybill_ao_date",
+    "gap_days_civ_paybill_auditor_date_to_civ_paybill_aao_date",
+    "gap_days_dak_bill_date_to_dak_reference_date",
+    "gap_days_dak_reference_date_to_civ_paybill_auditor_date",
+    "dak_rescheduled_f",
+    "dak_rescheduled_t",
+    "dak_multiple_entry_f",
+    "dak_multiple_entry_t",
+    "dak_gem_bill_f",
+    "dak_gem_bill_t",
+    "dak_pfms_bill_f",
+    "civ_paybill_verified_audit_checks_f",
+    "civ_paybill_verified_audit_checks_t",
+    "civ_paybill_passed_f",
+    "civ_paybill_passed_t",
+    "civ_paybill_regular_pay_bill_f",
+    "civ_paybill_regular_pay_bill_t",
+    "dak_record_status_D",
+    "dak_record_status_P",
+    "dak_record_status_R",
+    "dak_record_status_T",
+    "dak_dak_year_2022-2023",
+    "dak_dak_year_2023-2024",
+    "dak_dak_year_2024-2025",
+    "dak_dak_year_2025-2026",
+    "dak_kpi_bill_type_0.0",
+    "dak_kpi_bill_type_9010000000.0",
+    "dak_kpi_bill_type_9900000000.0",
+    "dak_kpi_bill_type_9910000100.0",
+    "dak_kpi_bill_type_9910000200.0",
+    "dak_kpi_bill_type_9910000600.0",
+    "dak_kpi_bill_type_9910001200.0",
+    "civ_paybill_record_status_D",
+    "civ_paybill_record_status_I",
+    "civ_paybill_record_status_P",
+    "civ_paybill_record_status_R",
+    "civ_paybill_record_status_V"
+  ],
+  "invoice_row_filter_summary": {
+    "dropped_row_count": 0,
+    "tables_applied": []
+  },
+  "dropped_columns_summary": {
+    "high_null_columns": [
+      "civ_paybill_cda_date",
+      "civ_paybill_fk_bill_nature",
+      "civ_paybill_fk_cda",
+      "civ_paybill_fk_go",
+      "civ_paybill_fk_jcda",
+      "civ_paybill_fk_punching_medium",
+      "civ_paybill_go_date",
+      "civ_paybill_jcda_date",
+      "civ_paybill_last_modified_at",
+      "civ_paybill_last_modified_by",
+      "civ_paybill_last_paybill_dakidno",
+      "civ_paybill_provisional_payment",
+      "civ_paybill_spb_type",
+      "civ_paybill_sysgenerated_bill_amount",
+      "dak_aao_disposal_date",
+      "dak_ao_disposal_date",
+      "dak_auditor_disposal_date",
+      "dak_codehead",
+      "dak_dad_account_no",
+      "dak_emp_no",
+      "dak_exp_cat",
+      "dak_file_path",
+      "dak_fis_code_head",
+      "dak_fis_date",
+      "dak_fis_doc_no",
+      "dak_fis_imported_at",
+      "dak_fis_xml_file_no",
+      "dak_fk_aao_disposal",
+      "dak_fk_ao_disposal",
+      "dak_fk_auditor_disposal",
+      "dak_fk_bill_type",
+      "dak_fk_central_vendor",
+      "dak_fk_dad_employee",
+      "dak_fk_dad_office",
+      "dak_fk_fis_imported_by",
+      "dak_fk_imprest",
+      "dak_fk_old_dak",
+      "dak_fk_outward_dak",
+      "dak_fk_usr",
+      "dak_fk_vendor",
+      "dak_major_head",
+      "dak_make_cat",
+      "dak_msme_cat",
+      "dak_pfms_sanction_date",
+      "dak_pfms_sanction_id",
+      "dak_priority",
+      "dak_reason",
+      "dak_regn_no",
+      "dak_remarks",
+      "dak_sender_city",
+      "dak_sender_name",
+      "dak_task_no",
+      "dak_temp_dak_id",
+      "dak_uuid"
+    ],
+    "id_like_columns": [
+      "civ_paybill_fk_aao",
+      "civ_paybill_fk_ao",
+      "civ_paybill_fk_auditor",
+      "civ_paybill_fk_bill_type",
+      "civ_paybill_fk_central_unit",
+      "civ_paybill_fk_dak",
+      "civ_paybill_fk_office_id",
+      "civ_paybill_fk_section",
+      "civ_paybill_fk_task_usr",
+      "civ_paybill_fk_unit",
+      "civ_paybill_id",
+      "dak_bill_no",
+      "dak_dakid_no",
+      "dak_disposal_no",
+      "dak_fk_central_civ_employee",
+      "dak_fk_central_unit",
+      "dak_fk_civ_employee",
+      "dak_fk_dak_entry_usr",
+      "dak_fk_dak_type",
+      "dak_fk_office_id",
+      "dak_fk_section",
+      "dak_fk_task_usr",
+      "dak_fk_unit",
+      "dak_gpf_pran_ppan_no",
+      "dak_id",
+      "dak_list_no",
+      "dak_reference_no"
+    ],
+    "text_like_columns": [
+      "civ_paybill_reason",
+      "dak_subject"
+    ],
+    "long_varchar_columns": [
+      "civ_paybill_table_name",
+      "dak_bill_no",
+      "dak_dakid_no",
+      "dak_disposal_no",
+      "dak_gpf_pran_ppan_no",
+      "dak_mode_of_receipt",
+      "dak_reference_no",
+      "dak_security_grading"
+    ],
+    "final_dropped_columns": [
+      "civ_paybill_cda_date",
+      "civ_paybill_fk_aao",
+      "civ_paybill_fk_ao",
+      "civ_paybill_fk_auditor",
+      "civ_paybill_fk_bill_nature",
+      "civ_paybill_fk_bill_type",
+      "civ_paybill_fk_cda",
+      "civ_paybill_fk_central_unit",
+      "civ_paybill_fk_dak",
+      "civ_paybill_fk_go",
+      "civ_paybill_fk_jcda",
+      "civ_paybill_fk_office_id",
+      "civ_paybill_fk_punching_medium",
+      "civ_paybill_fk_section",
+      "civ_paybill_fk_task_usr",
+      "civ_paybill_fk_unit",
+      "civ_paybill_go_date",
+      "civ_paybill_id",
+      "civ_paybill_jcda_date",
+      "civ_paybill_last_modified_at",
+      "civ_paybill_last_modified_by",
+      "civ_paybill_last_paybill_dakidno",
+      "civ_paybill_provisional_payment",
+      "civ_paybill_reason",
+      "civ_paybill_spb_type",
+      "civ_paybill_sysgenerated_bill_amount",
+      "civ_paybill_table_name",
+      "dak_aao_disposal_date",
+      "dak_ao_disposal_date",
+      "dak_auditor_disposal_date",
+      "dak_bill_no",
+      "dak_codehead",
+      "dak_dad_account_no",
+      "dak_dakid_no",
+      "dak_disposal_no",
+      "dak_emp_no",
+      "dak_exp_cat",
+      "dak_file_path",
+      "dak_fis_code_head",
+      "dak_fis_date",
+      "dak_fis_doc_no",
+      "dak_fis_imported_at",
+      "dak_fis_xml_file_no",
+      "dak_fk_aao_disposal",
+      "dak_fk_ao_disposal",
+      "dak_fk_auditor_disposal",
+      "dak_fk_bill_type",
+      "dak_fk_central_civ_employee",
+      "dak_fk_central_unit",
+      "dak_fk_central_vendor",
+      "dak_fk_civ_employee",
+      "dak_fk_dad_employee",
+      "dak_fk_dad_office",
+      "dak_fk_dak_entry_usr",
+      "dak_fk_dak_type",
+      "dak_fk_fis_imported_by",
+      "dak_fk_imprest",
+      "dak_fk_office_id",
+      "dak_fk_old_dak",
+      "dak_fk_outward_dak",
+      "dak_fk_section",
+      "dak_fk_task_usr",
+      "dak_fk_unit",
+      "dak_fk_usr",
+      "dak_fk_vendor",
+      "dak_gpf_pran_ppan_no",
+      "dak_id",
+      "dak_list_no",
+      "dak_major_head",
+      "dak_make_cat",
+      "dak_mode_of_receipt",
+      "dak_msme_cat",
+      "dak_pfms_sanction_date",
+      "dak_pfms_sanction_id",
+      "dak_priority",
+      "dak_reason",
+      "dak_reference_no",
+      "dak_regn_no",
+      "dak_remarks",
+      "dak_security_grading",
+      "dak_sender_city",
+      "dak_sender_name",
+      "dak_subject",
+      "dak_task_no",
+      "dak_temp_dak_id",
+      "dak_uuid"
+    ]
+  },
+  "converted_date_columns": [
+    "dak_reference_date",
+    "dak_bill_date",
+    "dak_disposal_date",
+    "dak_created_at",
+    "dak_list_date",
+    "civ_paybill_auditor_date",
+    "civ_paybill_aao_date",
+    "civ_paybill_ao_date",
+    "civ_paybill_created_at"
+  ],
+  "date_stage_plan": {
+    "global_stage_columns": {
+      "invoice_date": null,
+      "bill_date": "dak_bill_date",
+      "reference_date": "dak_reference_date",
+      "dp_sheet_date": null,
+      "cmp_date": null
+    },
+    "same_table_stage_columns": {
+      "dak": {
+        "go_date": null,
+        "disposal_date": "dak_disposal_date",
+        "aao_stage": null,
+        "ao_stage": null,
+        "auditor_stage": null
+      },
+      "civ_paybill": {
+        "go_date": null,
+        "disposal_date": null,
+        "aao_stage": "civ_paybill_aao_date",
+        "ao_stage": "civ_paybill_ao_date",
+        "auditor_stage": "civ_paybill_auditor_date"
+      }
+    },
+    "table_paths": {
+      "dak": [
+        {
+          "stage_name": "invoice_date",
+          "column_name": null
+        },
+        {
+          "stage_name": "bill_date",
+          "column_name": "dak_bill_date"
+        },
+        {
+          "stage_name": "reference_date",
+          "column_name": "dak_reference_date"
+        },
+        {
+          "stage_name": "auditor_stage",
+          "column_name": null
+        },
+        {
+          "stage_name": "aao_stage",
+          "column_name": null
+        },
+        {
+          "stage_name": "ao_stage",
+          "column_name": null
+        },
+        {
+          "stage_name": "go_date",
+          "column_name": null
+        },
+        {
+          "stage_name": "dp_sheet_date",
+          "column_name": null
+        },
+        {
+          "stage_name": "cmp_date",
+          "column_name": null
+        },
+        {
+          "stage_name": "disposal_date",
+          "column_name": "dak_disposal_date"
+        }
+      ],
+      "civ_paybill": [
+        {
+          "stage_name": "invoice_date",
+          "column_name": null
+        },
+        {
+          "stage_name": "bill_date",
+          "column_name": "dak_bill_date"
+        },
+        {
+          "stage_name": "reference_date",
+          "column_name": "dak_reference_date"
+        },
+        {
+          "stage_name": "auditor_stage",
+          "column_name": "civ_paybill_auditor_date"
+        },
+        {
+          "stage_name": "aao_stage",
+          "column_name": "civ_paybill_aao_date"
+        },
+        {
+          "stage_name": "ao_stage",
+          "column_name": "civ_paybill_ao_date"
+        },
+        {
+          "stage_name": "go_date",
+          "column_name": null
+        },
+        {
+          "stage_name": "dp_sheet_date",
+          "column_name": null
+        },
+        {
+          "stage_name": "cmp_date",
+          "column_name": null
+        },
+        {
+          "stage_name": "disposal_date",
+          "column_name": null
+        }
+      ]
+    }
+  },
+  "date_sequence_summary": {
+    "dropped_row_count": 758,
+    "checks": [
+      {
+        "table_name": "dak",
+        "previous_stage": "invoice_date",
+        "next_stage": "bill_date",
+        "previous_column": null,
+        "next_column": "dak_bill_date",
+        "rows_checked": 0,
+        "invalid_row_count": 0,
+        "status": "skipped_missing_column"
+      },
+      {
+        "table_name": "dak",
+        "previous_stage": "bill_date",
+        "next_stage": "reference_date",
+        "previous_column": "dak_bill_date",
+        "next_column": "dak_reference_date",
+        "rows_checked": 149015,
+        "invalid_row_count": 743,
+        "status": "checked"
+      },
+      {
+        "table_name": "dak",
+        "previous_stage": "reference_date",
+        "next_stage": "auditor_stage",
+        "previous_column": "dak_reference_date",
+        "next_column": null,
+        "rows_checked": 0,
+        "invalid_row_count": 0,
+        "status": "skipped_missing_column"
+      },
+      {
+        "table_name": "dak",
+        "previous_stage": "auditor_stage",
+        "next_stage": "aao_stage",
+        "previous_column": null,
+        "next_column": null,
+        "rows_checked": 0,
+        "invalid_row_count": 0,
+        "status": "skipped_missing_column"
+      },
+      {
+        "table_name": "dak",
+        "previous_stage": "aao_stage",
+        "next_stage": "ao_stage",
+        "previous_column": null,
+        "next_column": null,
+        "rows_checked": 0,
+        "invalid_row_count": 0,
+        "status": "skipped_missing_column"
+      },
+      {
+        "table_name": "dak",
+        "previous_stage": "ao_stage",
+        "next_stage": "go_date",
+        "previous_column": null,
+        "next_column": null,
+        "rows_checked": 0,
+        "invalid_row_count": 0,
+        "status": "skipped_missing_column"
+      },
+      {
+        "table_name": "dak",
+        "previous_stage": "go_date",
+        "next_stage": "dp_sheet_date",
+        "previous_column": null,
+        "next_column": null,
+        "rows_checked": 0,
+        "invalid_row_count": 0,
+        "status": "skipped_missing_column"
+      },
+      {
+        "table_name": "dak",
+        "previous_stage": "dp_sheet_date",
+        "next_stage": "cmp_date",
+        "previous_column": null,
+        "next_column": null,
+        "rows_checked": 0,
+        "invalid_row_count": 0,
+        "status": "skipped_missing_column"
+      },
+      {
+        "table_name": "dak",
+        "previous_stage": "cmp_date",
+        "next_stage": "disposal_date",
+        "previous_column": null,
+        "next_column": "dak_disposal_date",
+        "rows_checked": 0,
+        "invalid_row_count": 0,
+        "status": "skipped_missing_column"
+      },
+      {
+        "table_name": "civ_paybill",
+        "previous_stage": "invoice_date",
+        "next_stage": "bill_date",
+        "previous_column": null,
+        "next_column": "dak_bill_date",
+        "rows_checked": 0,
+        "invalid_row_count": 0,
+        "status": "skipped_missing_column"
+      },
+      {
+        "table_name": "civ_paybill",
+        "previous_stage": "bill_date",
+        "next_stage": "reference_date",
+        "previous_column": "dak_bill_date",
+        "next_column": "dak_reference_date",
+        "rows_checked": 149015,
+        "invalid_row_count": 743,
+        "status": "checked"
+      },
+      {
+        "table_name": "civ_paybill",
+        "previous_stage": "reference_date",
+        "next_stage": "auditor_stage",
+        "previous_column": "dak_reference_date",
+        "next_column": "civ_paybill_auditor_date",
+        "rows_checked": 52337,
+        "invalid_row_count": 1,
+        "status": "checked"
+      },
+      {
+        "table_name": "civ_paybill",
+        "previous_stage": "auditor_stage",
+        "next_stage": "aao_stage",
+        "previous_column": "civ_paybill_auditor_date",
+        "next_column": "civ_paybill_aao_date",
+        "rows_checked": 51698,
+        "invalid_row_count": 0,
+        "status": "checked"
+      },
+      {
+        "table_name": "civ_paybill",
+        "previous_stage": "aao_stage",
+        "next_stage": "ao_stage",
+        "previous_column": "civ_paybill_aao_date",
+        "next_column": "civ_paybill_ao_date",
+        "rows_checked": 38421,
+        "invalid_row_count": 14,
+        "status": "checked"
+      },
+      {
+        "table_name": "civ_paybill",
+        "previous_stage": "ao_stage",
+        "next_stage": "go_date",
+        "previous_column": "civ_paybill_ao_date",
+        "next_column": null,
+        "rows_checked": 0,
+        "invalid_row_count": 0,
+        "status": "skipped_missing_column"
+      },
+      {
+        "table_name": "civ_paybill",
+        "previous_stage": "go_date",
+        "next_stage": "dp_sheet_date",
+        "previous_column": null,
+        "next_column": null,
+        "rows_checked": 0,
+        "invalid_row_count": 0,
+        "status": "skipped_missing_column"
+      },
+      {
+        "table_name": "civ_paybill",
+        "previous_stage": "dp_sheet_date",
+        "next_stage": "cmp_date",
+        "previous_column": null,
+        "next_column": null,
+        "rows_checked": 0,
+        "invalid_row_count": 0,
+        "status": "skipped_missing_column"
+      },
+      {
+        "table_name": "civ_paybill",
+        "previous_stage": "cmp_date",
+        "next_stage": "disposal_date",
+        "previous_column": null,
+        "next_column": null,
+        "rows_checked": 0,
+        "invalid_row_count": 0,
+        "status": "skipped_missing_column"
+      }
+    ]
+  },
+  "original_date_columns_dropped_before_training": [
+    "dak_reference_date",
+    "dak_bill_date",
+    "dak_disposal_date",
+    "dak_created_at",
+    "dak_list_date",
+    "civ_paybill_auditor_date",
+    "civ_paybill_aao_date",
+    "civ_paybill_ao_date",
+    "civ_paybill_created_at"
+  ],
+  "date_gap_features": [
+    {
+      "table_name": "dak",
+      "feature_name": "gap_days_dak_bill_date_to_dak_reference_date",
+      "previous_stage": "bill_date",
+      "next_stage": "reference_date",
+      "previous_column": "dak_bill_date",
+      "next_column": "dak_reference_date"
+    },
+    {
+      "table_name": "civ_paybill",
+      "feature_name": "gap_days_dak_reference_date_to_civ_paybill_auditor_date",
+      "previous_stage": "reference_date",
+      "next_stage": "auditor_stage",
+      "previous_column": "dak_reference_date",
+      "next_column": "civ_paybill_auditor_date"
+    },
+    {
+      "table_name": "civ_paybill",
+      "feature_name": "gap_days_civ_paybill_auditor_date_to_civ_paybill_aao_date",
+      "previous_stage": "auditor_stage",
+      "next_stage": "aao_stage",
+      "previous_column": "civ_paybill_auditor_date",
+      "next_column": "civ_paybill_aao_date"
+    },
+    {
+      "table_name": "civ_paybill",
+      "feature_name": "gap_days_civ_paybill_aao_date_to_civ_paybill_ao_date",
+      "previous_stage": "aao_stage",
+      "next_stage": "ao_stage",
+      "previous_column": "civ_paybill_aao_date",
+      "next_column": "civ_paybill_ao_date"
+    }
+  ],
+  "numeric_columns_standardized": [
+    "civ_paybill_amount_claimed",
+    "civ_paybill_amount_disallowed",
+    "civ_paybill_amount_passed",
+    "civ_paybill_last_charge",
+    "dak_amount",
+    "gap_days_civ_paybill_aao_date_to_civ_paybill_ao_date",
+    "gap_days_civ_paybill_auditor_date_to_civ_paybill_aao_date",
+    "gap_days_dak_bill_date_to_dak_reference_date",
+    "gap_days_dak_reference_date_to_civ_paybill_auditor_date"
+  ],
+  "boolean_columns_one_hot_encoded": [
+    "dak_rescheduled",
+    "dak_multiple_entry",
+    "dak_gem_bill",
+    "dak_pfms_bill",
+    "civ_paybill_verified_audit_checks",
+    "civ_paybill_passed",
+    "civ_paybill_regular_pay_bill"
+  ],
+  "categorical_columns_one_hot_encoded": [
+    "dak_record_status",
+    "dak_dak_year",
+    "dak_kpi_bill_type",
+    "civ_paybill_record_status"
+  ],
+  "unsupported_columns_dropped_before_training": [
+    "civ_paybill_last_charge_month_year",
+    "civ_paybill_month",
+    "dak_month_year"
+  ],
+  "column_operation_map": {
+    "civ_paybill_aao_date": [
+      "selected_from_sql",
+      "converted_to_datetime_for_checks",
+      "used_in_date_sequence_check",
+      "dropped_raw_date_before_training",
+      "used_for_date_gap_feature"
+    ],
+    "civ_paybill_amount_claimed": [
+      "selected_from_sql",
+      "numeric_standardized"
+    ],
+    "civ_paybill_amount_disallowed": [
+      "selected_from_sql",
+      "numeric_standardized"
+    ],
+    "civ_paybill_amount_passed": [
+      "selected_from_sql",
+      "numeric_standardized"
+    ],
+    "civ_paybill_ao_date": [
+      "selected_from_sql",
+      "converted_to_datetime_for_checks",
+      "used_in_date_sequence_check",
+      "dropped_raw_date_before_training",
+      "used_for_date_gap_feature"
+    ],
+    "civ_paybill_auditor_date": [
+      "selected_from_sql",
+      "converted_to_datetime_for_checks",
+      "used_in_date_sequence_check",
+      "dropped_raw_date_before_training",
+      "used_for_date_gap_feature"
+    ],
+    "civ_paybill_cda_date": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_paybill_created_at": [
+      "selected_from_sql",
+      "converted_to_datetime_for_checks",
+      "dropped_raw_date_before_training"
+    ],
+    "civ_paybill_fk_aao": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "civ_paybill_fk_ao": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "civ_paybill_fk_auditor": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "civ_paybill_fk_bill_nature": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_paybill_fk_bill_type": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "civ_paybill_fk_cda": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_paybill_fk_central_unit": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "civ_paybill_fk_dak": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "civ_paybill_fk_go": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_paybill_fk_jcda": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_paybill_fk_office_id": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "civ_paybill_fk_punching_medium": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_paybill_fk_section": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "civ_paybill_fk_task_usr": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "civ_paybill_fk_unit": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "civ_paybill_go_date": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_paybill_id": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "civ_paybill_jcda_date": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_paybill_last_charge": [
+      "selected_from_sql",
+      "numeric_standardized"
+    ],
+    "civ_paybill_last_charge_month_year": [
+      "selected_from_sql",
+      "dropped_before_training"
+    ],
+    "civ_paybill_last_modified_at": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_paybill_last_modified_by": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_paybill_last_paybill_dakidno": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_paybill_month": [
+      "selected_from_sql",
+      "dropped_before_training"
+    ],
+    "civ_paybill_passed": [
+      "selected_from_sql",
+      "boolean_one_hot_encoded"
+    ],
+    "civ_paybill_provisional_payment": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_paybill_reason": [
+      "selected_from_sql",
+      "dropped_text_like"
+    ],
+    "civ_paybill_record_status": [
+      "selected_from_sql",
+      "categorical_one_hot_encoded"
+    ],
+    "civ_paybill_regular_pay_bill": [
+      "selected_from_sql",
+      "boolean_one_hot_encoded"
+    ],
+    "civ_paybill_spb_type": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_paybill_sysgenerated_bill_amount": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_paybill_table_name": [
+      "selected_from_sql",
+      "dropped_long_varchar"
+    ],
+    "civ_paybill_verified_audit_checks": [
+      "selected_from_sql",
+      "boolean_one_hot_encoded"
+    ],
+    "dak_aao_disposal_date": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_amount": [
+      "selected_from_sql",
+      "numeric_standardized"
+    ],
+    "dak_ao_disposal_date": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_auditor_disposal_date": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_bill_date": [
+      "selected_from_sql",
+      "converted_to_datetime_for_checks",
+      "used_in_date_sequence_check",
+      "dropped_raw_date_before_training",
+      "used_for_date_gap_feature"
+    ],
+    "dak_bill_no": [
+      "selected_from_sql",
+      "dropped_long_varchar",
+      "identified_as_id_like"
+    ],
+    "dak_codehead": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_created_at": [
+      "selected_from_sql",
+      "converted_to_datetime_for_checks",
+      "dropped_raw_date_before_training"
+    ],
+    "dak_dad_account_no": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_dak_year": [
+      "selected_from_sql",
+      "categorical_one_hot_encoded"
+    ],
+    "dak_dakid_no": [
+      "selected_from_sql",
+      "dropped_long_varchar",
+      "identified_as_id_like"
+    ],
+    "dak_disposal_date": [
+      "selected_from_sql",
+      "converted_to_datetime_for_checks",
+      "used_in_date_sequence_check",
+      "dropped_raw_date_before_training"
+    ],
+    "dak_disposal_no": [
+      "selected_from_sql",
+      "dropped_long_varchar",
+      "identified_as_id_like"
+    ],
+    "dak_emp_no": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_exp_cat": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_file_path": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fis_code_head": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fis_date": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fis_doc_no": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fis_imported_at": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fis_xml_file_no": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fk_aao_disposal": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fk_ao_disposal": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fk_auditor_disposal": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fk_bill_type": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fk_central_civ_employee": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "dak_fk_central_unit": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "dak_fk_central_vendor": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fk_civ_employee": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "dak_fk_dad_employee": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fk_dad_office": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fk_dak_entry_usr": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "dak_fk_dak_type": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "dak_fk_fis_imported_by": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fk_imprest": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fk_office_id": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "dak_fk_old_dak": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fk_outward_dak": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fk_section": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "dak_fk_task_usr": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "dak_fk_unit": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "dak_fk_usr": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fk_vendor": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_gem_bill": [
+      "selected_from_sql",
+      "boolean_one_hot_encoded"
+    ],
+    "dak_gpf_pran_ppan_no": [
+      "selected_from_sql",
+      "dropped_long_varchar",
+      "identified_as_id_like"
+    ],
+    "dak_id": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "dak_kpi_bill_type": [
+      "selected_from_sql",
+      "categorical_one_hot_encoded"
+    ],
+    "dak_list_date": [
+      "selected_from_sql",
+      "converted_to_datetime_for_checks",
+      "dropped_raw_date_before_training"
+    ],
+    "dak_list_no": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "dak_major_head": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_make_cat": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_mode_of_receipt": [
+      "selected_from_sql",
+      "dropped_long_varchar"
+    ],
+    "dak_month_year": [
+      "selected_from_sql",
+      "dropped_before_training"
+    ],
+    "dak_msme_cat": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_multiple_entry": [
+      "selected_from_sql",
+      "boolean_one_hot_encoded"
+    ],
+    "dak_pfms_bill": [
+      "selected_from_sql",
+      "boolean_one_hot_encoded"
+    ],
+    "dak_pfms_sanction_date": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_pfms_sanction_id": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_priority": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_reason": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_record_status": [
+      "selected_from_sql",
+      "categorical_one_hot_encoded"
+    ],
+    "dak_reference_date": [
+      "selected_from_sql",
+      "converted_to_datetime_for_checks",
+      "used_in_date_sequence_check",
+      "dropped_raw_date_before_training",
+      "used_for_date_gap_feature"
+    ],
+    "dak_reference_no": [
+      "selected_from_sql",
+      "dropped_long_varchar",
+      "identified_as_id_like"
+    ],
+    "dak_regn_no": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_remarks": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_rescheduled": [
+      "selected_from_sql",
+      "boolean_one_hot_encoded"
+    ],
+    "dak_security_grading": [
+      "selected_from_sql",
+      "dropped_long_varchar"
+    ],
+    "dak_sender_city": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_sender_name": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_subject": [
+      "selected_from_sql",
+      "dropped_text_like"
+    ],
+    "dak_task_no": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_temp_dak_id": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_uuid": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "gap_days_civ_paybill_aao_date_to_civ_paybill_ao_date": [
+      "engineered_date_gap_feature",
+      "from:civ_paybill_aao_date->civ_paybill_ao_date",
+      "numeric_standardized"
+    ],
+    "gap_days_civ_paybill_auditor_date_to_civ_paybill_aao_date": [
+      "engineered_date_gap_feature",
+      "from:civ_paybill_auditor_date->civ_paybill_aao_date",
+      "numeric_standardized"
+    ],
+    "gap_days_dak_bill_date_to_dak_reference_date": [
+      "engineered_date_gap_feature",
+      "from:dak_bill_date->dak_reference_date",
+      "numeric_standardized"
+    ],
+    "gap_days_dak_reference_date_to_civ_paybill_auditor_date": [
+      "engineered_date_gap_feature",
+      "from:dak_reference_date->civ_paybill_auditor_date",
+      "numeric_standardized"
+    ]
+  },
+  "model_path": "backend/artifacts/models/dak_civ_paybill_pipeline.joblib"
+}

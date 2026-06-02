@@ -6,13 +6,14 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy.exc import OperationalError, SQLAlchemyError
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.routes_workbench import router as workbench_router
 from app.core.config import settings
-from app.core.database import Base, engine, check_app_db_connection
+from app.core.database import Base, engine, check_app_db_connection, ensure_workbench_run_schema
 from app.core.logging_utils import configure_logging
-from app.core.rate_limit import InMemoryRateLimiter
+from app.core.rate_limit import InMemoryRateLimiter, ValkeyRateLimiter
+from app.core.valkey import valkey_available
 from app.core.errors import (
     WorkbenchValidationError,
     WorkbenchConnectionError,
@@ -23,9 +24,16 @@ logger = logging.getLogger(__name__)
 
 configure_logging(settings.log_json)
 
-rate_limiter = InMemoryRateLimiter(
-    limit=settings.rate_limit_requests,
-    window_seconds=settings.rate_limit_window_seconds,
+rate_limiter = (
+    ValkeyRateLimiter(
+        limit=settings.rate_limit_requests,
+        window_seconds=settings.rate_limit_window_seconds,
+    )
+    if settings.valkey_enabled
+    else InMemoryRateLimiter(
+        limit=settings.rate_limit_requests,
+        window_seconds=settings.rate_limit_window_seconds,
+    )
 )
 
 
@@ -47,6 +55,7 @@ def _initialize_app_tables() -> None:
 
     try:
         Base.metadata.create_all(bind=engine)
+        ensure_workbench_run_schema()
         logger.info("App DB tables verified / created successfully.")
     except SQLAlchemyError as exc:
         logger.warning("App DB table initialisation skipped: %s", exc)
@@ -56,10 +65,11 @@ def _initialize_app_tables() -> None:
 async def lifespan(app: FastAPI):
     """Startup / shutdown lifecycle hook."""
     logger.info(
-        "Starting %s — app DB: %s",
+        "Starting %s — app DB: %s — valkey=%s",
         settings.app_name,
         # Hide password from log
         settings.db_url.split("@")[-1] if "@" in settings.db_url else settings.db_url,
+        "connected" if valkey_available() else "local-fallback",
     )
     _initialize_app_tables()
     yield
@@ -179,6 +189,7 @@ def health_check():
         "status": "ok" if app_db["connected"] else "degraded",
         "app_db_connected": app_db["connected"],
         "app_db_error": app_db.get("error"),
+        "valkey_connected": valkey_available(),
     }
 
 

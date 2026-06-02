@@ -8,6 +8,11 @@ import threading
 import time
 from typing import Any, Callable, Dict, Optional, TypeVar, Tuple
 
+from app.core.valkey import delete as valkey_delete
+from app.core.valkey import delete_prefix as valkey_delete_prefix
+from app.core.valkey import get_json as valkey_get_json
+from app.core.valkey import set_json as valkey_set_json
+
 logger = logging.getLogger(__name__)
 
 T = TypeVar('T')
@@ -15,8 +20,8 @@ T = TypeVar('T')
 
 class TTLCache:
     """Thread-safe TTL-based cache for expensive operations."""
-    
-    def __init__(self, ttl_seconds: float = 60.0) -> None:
+
+    def __init__(self, ttl_seconds: float = 60.0, namespace: str | None = None) -> None:
         """
         Initialize TTL cache.
         
@@ -24,8 +29,14 @@ class TTLCache:
             ttl_seconds: Time-to-live in seconds. Cache entries expire after this duration.
         """
         self.ttl = ttl_seconds
+        self.namespace = namespace
         self._cache: Dict[str, Tuple[Any, float]] = {}
         self._lock = threading.Lock()
+
+    def _valkey_key(self, key: str) -> str:
+        if not self.namespace:
+            return key
+        return f"{self.namespace}:{key}"
     
     def get(self, key: str) -> Optional[Any]:
         """
@@ -37,6 +48,16 @@ class TTLCache:
         Returns:
             Cached value or None if not found or expired
         """
+        # Namespaced caches are Valkey-backed only. We intentionally avoid
+        # keeping a parallel in-process copy so Valkey is the single temporary
+        # storage layer for shared backend caches/artifacts.
+        if self.namespace:
+            shared_value = valkey_get_json(self._valkey_key(key))
+            if shared_value is not None:
+                logger.debug(f"Valkey cache hit: {self._valkey_key(key)}")
+                return shared_value
+            logger.debug(f"Valkey cache miss: {self._valkey_key(key)}")
+            return None
         with self._lock:
             if key not in self._cache:
                 logger.debug(f"Cache miss: {key}")
@@ -59,6 +80,10 @@ class TTLCache:
             key: Cache key
             value: Value to cache
         """
+        if self.namespace:
+            valkey_set_json(self._valkey_key(key), value, self.ttl)
+            logger.debug(f"Valkey cache set: {self._valkey_key(key)}")
+            return
         with self._lock:
             self._cache[key] = (value, time.monotonic())
             logger.debug(f"Cache set: {key}")
@@ -70,13 +95,22 @@ class TTLCache:
         Args:
             key: Specific key to invalidate. If None, clears entire cache.
         """
+        if self.namespace:
+            if key is None:
+                logger.info("Valkey cache cleared (all entries) for namespace=%s", self.namespace)
+                valkey_delete_prefix(f"{self.namespace}:")
+            else:
+                logger.debug("Valkey cache invalidated: %s", self._valkey_key(key))
+                valkey_delete(self._valkey_key(key))
+            return
         with self._lock:
             if key is None:
                 self._cache.clear()
                 logger.info(f"Cache cleared (all entries)")
-            elif key in self._cache:
-                del self._cache[key]
-                logger.debug(f"Cache invalidated: {key}")
+            else:
+                if key in self._cache:
+                    del self._cache[key]
+                    logger.debug(f"Cache invalidated: {key}")
     
     def invalidate_prefix(self, prefix: str) -> None:
         """
@@ -85,6 +119,14 @@ class TTLCache:
         Args:
             prefix: Key prefix to match for invalidation
         """
+        if self.namespace:
+            logger.info(
+                "Valkey cache invalidated by prefix for namespace=%s prefix=%s",
+                self.namespace,
+                prefix,
+            )
+            valkey_delete_prefix(f"{self.namespace}:{prefix}")
+            return
         with self._lock:
             keys_to_delete = [k for k in self._cache if k.startswith(prefix)]
             for k in keys_to_delete:
@@ -94,6 +136,8 @@ class TTLCache:
     
     def size(self) -> int:
         """Get current cache size."""
+        if self.namespace:
+            return 0
         with self._lock:
             return len(self._cache)
 
@@ -138,9 +182,9 @@ def cached(cache: TTLCache, key_fn: Callable[..., str]) -> Callable:
 
 
 # Shared cache instances for common operations
-TABLE_METADATA_CACHE = TTLCache(ttl_seconds=300.0)  # 5 minutes for table structures
-QUERY_RESULT_CACHE = TTLCache(ttl_seconds=60.0)     # 1 minute for query results
-DATASET_SUMMARY_CACHE = TTLCache(ttl_seconds=30.0)  # 30 seconds for dataset summaries
+TABLE_METADATA_CACHE = TTLCache(ttl_seconds=300.0, namespace="table_metadata")  # 5 minutes for table structures
+QUERY_RESULT_CACHE = TTLCache(ttl_seconds=60.0, namespace="query_result")     # 1 minute for query results
+DATASET_SUMMARY_CACHE = TTLCache(ttl_seconds=30.0, namespace="dataset_summary")  # 30 seconds for dataset summaries
 
 
 def invalidate_all_caches() -> None:

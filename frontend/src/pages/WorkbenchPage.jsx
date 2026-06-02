@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Card from "../components/Card";
-import { clearApiCache, getWorkbenchDefaultFeatureRules, getWorkbenchTables, previewWorkbench, runWorkbench, } from "../api/anomalyApi";
+import { clearApiCache, getWorkbenchTables, previewWorkbench, runWorkbench, } from "../api/anomalyApi";
 const INITIAL_TABLE_LOAD_RETRIES = 6;
 const INITIAL_TABLE_LOAD_DELAY_MS = 1000;
-const DEFAULT_OUTLIER_RULE = (index) => ({
-    name: `Outlier rule ${index + 1}`,
+const DEFAULT_USER_RULE = (index) => ({
+    name: `User rule ${index + 1}`,
     first_column: "",
     second_column: "",
     operator: ">",
@@ -16,7 +16,7 @@ export default function WorkbenchPage({ onRunComplete }) {
     const [tableLoadError, setTableLoadError] = useState("");
     const [selectedTables, setSelectedTables] = useState([]);
     const [joins, setJoins] = useState([]);
-    const [outlierRules, setOutlierRules] = useState([]);
+    const [userRules, setUserRules] = useState([]);
     const [featureRules, setFeatureRules] = useState([]);
     const [amountField, setAmountField] = useState("");
     const [fromDate, setFromDate] = useState("");
@@ -69,7 +69,7 @@ export default function WorkbenchPage({ onRunComplete }) {
     }, [selectedTables, tables]);
     const availableColumns = useMemo(() => new Set(columnOptions.map((item) => item.value)), [columnOptions]);
     useEffect(() => {
-        setOutlierRules((current) => current.filter((rule) => !!rule.first_column &&
+        setUserRules((current) => current.filter((rule) => !!rule.first_column &&
             availableColumns.has(rule.first_column) &&
             (!rule.second_column || availableColumns.has(rule.second_column))));
         setFeatureRules((current) => current.filter((rule) => !!rule.first_column &&
@@ -106,9 +106,10 @@ export default function WorkbenchPage({ onRunComplete }) {
         !join.join_type);
     const isJoinStepComplete = selectedTables.length > 0 &&
         (!requiresJoins || (joins.length > 0 && !hasIncompleteJoin));
-    const isDateStepComplete = isDateSelectionValid(fromDate, toDate);
+    const hasExplicitDateRange = Boolean(fromDate && toDate);
+    const isDateStepComplete = hasExplicitDateRange && isDateSelectionValid(fromDate, toDate);
     const canEditRules = isJoinStepComplete && isDateStepComplete;
-    const canRun = isDateStepComplete && !previewing && !running && !autoFeatureLoading;
+    const canRun = canEditRules && !previewing && !running && !autoFeatureLoading;
     useEffect(() => {
         if (!requiresJoins && activeStep === 3) {
             setActiveStep(4);
@@ -129,7 +130,7 @@ export default function WorkbenchPage({ onRunComplete }) {
                     left_column: existingJoin?.left_column || "",
                     right_table: rightTable,
                     right_column: existingJoin?.right_column || "",
-                    join_type: existingJoin?.join_type || "inner",
+                    join_type: existingJoin?.join_type === "outer" ? "full" : (existingJoin?.join_type || "inner"),
                 });
             }
             const isSame = nextJoins.length === current.length &&
@@ -145,68 +146,36 @@ export default function WorkbenchPage({ onRunComplete }) {
             return isSame ? current : nextJoins;
         });
     }, [selectedTables]);
-    const hasExplicitDateRange = Boolean(fromDate && toDate);
+    const dateValidationError = getDateValidationError(fromDate, toDate);
     useEffect(() => {
-        let cancelled = false;
-        const shouldLoadAutomaticFeatures = selectedTables.length > 0 && isJoinStepComplete && isDateStepComplete && hasExplicitDateRange;
         setFeatureRules([]);
         setAutoFeatureError("");
-        if (!shouldLoadAutomaticFeatures) {
-            setAutoFeatureLoading(false);
-            return () => {
-                cancelled = true;
-            };
-        }
-        const loadAutomaticFeatures = async () => {
-            setAutoFeatureLoading(true);
-            try {
-                const response = await getWorkbenchDefaultFeatureRules({
-                    selected_tables: selectedTables,
-                    joins,
-                    from_date: fromDate || null,
-                    to_date: toDate || null,
-                });
-                if (cancelled) {
-                    return;
-                }
-                const incomingRules = (response.data || []).map((rule) => ({
-                    ...rule,
-                    operator: rule.operator || "",
-                    locked: true,
-                }));
-                if (incomingRules.length === 0) {
-                    setFeatureRules([]);
-                    setAutoFeatureError("No ML features were selected for the chosen dates. Check the selected date range and source data.");
-                    return;
-                }
-                setFeatureRules(incomingRules);
-                setAutoFeatureError("");
-            }
-            catch (error) {
-                if (cancelled) {
-                    return;
-                }
-                setFeatureRules([]);
-                setAutoFeatureError(formatWorkbenchError(extractWorkbenchError(error)).message);
-            }
-            finally {
-                if (!cancelled) {
-                    setAutoFeatureLoading(false);
-                }
-            }
-        };
-        loadAutomaticFeatures();
-        return () => {
-            cancelled = true;
-        };
-    }, [selectedTables, joins, fromDate, toDate, hasExplicitDateRange, isJoinStepComplete, isDateStepComplete]);
+        setAutoFeatureLoading(false);
+    }, [selectedTables, joins, fromDate, toDate]);
     const steps = useMemo(() => [
         { id: 1, label: "Select Tables", complete: selectedTables.length > 0, disabled: false },
         { id: 2, label: "Date Range", complete: isDateStepComplete, disabled: selectedTables.length === 0 },
         { id: 3, label: "Join Builder", complete: isJoinStepComplete, disabled: !requiresJoins || selectedTables.length === 0 || !isDateStepComplete },
-        { id: 4, label: "Human Outliers", complete: true, disabled: !canEditRules },
+        { id: 4, label: "Rule Anomalies", complete: true, disabled: !canEditRules },
         { id: 5, label: "Preview And Run", complete: Boolean(result), disabled: !canEditRules },
     ], [canEditRules, isDateStepComplete, isJoinStepComplete, requiresJoins, result, selectedTables.length]);
+    useEffect(() => {
+        const activeConfig = steps.find((step) => step.id === activeStep);
+        if (activeConfig && !activeConfig.disabled) {
+            return;
+        }
+        const fallbackStep = [...steps]
+            .filter((step) => step.id < activeStep && !step.disabled)
+            .pop();
+        if (fallbackStep) {
+            setActiveStep(fallbackStep.id);
+            return;
+        }
+        const firstAvailableStep = steps.find((step) => !step.disabled);
+        if (firstAvailableStep) {
+            setActiveStep(firstAvailableStep.id);
+        }
+    }, [activeStep, steps]);
     function goToStep(stepId) {
         const target = steps.find((step) => step.id === stepId);
         if (!target || target.disabled) {
@@ -240,15 +209,18 @@ export default function WorkbenchPage({ onRunComplete }) {
             return [...current, tableName];
         });
     }
-    function addOutlierRule() {
-        setOutlierRules((current) => [...current, DEFAULT_OUTLIER_RULE(current.length)]);
+    function addUserRule() {
+        setUserRules((current) => [...current, DEFAULT_USER_RULE(current.length)]);
     }
     function buildWorkbenchPayload() {
         if (selectedTables.length === 0) {
             throw new Error("Please select at least one table.");
         }
-        if (fromDate && toDate && fromDate > toDate) {
-            throw new Error("From date cannot be after To date.");
+        if (dateValidationError) {
+            throw new Error(dateValidationError);
+        }
+        if (!hasExplicitDateRange) {
+            throw new Error("Please select both From date and To date before running the workbench.");
         }
         const incompleteJoin = joins.find((join) => !join.left_table ||
             !join.left_column ||
@@ -258,7 +230,7 @@ export default function WorkbenchPage({ onRunComplete }) {
         if (incompleteJoin) {
             throw new Error("Please complete every join row before running the workbench.");
         }
-        const activeOutlierRules = outlierRules
+        const activeUserRules = userRules
             .filter((rule) => rule.first_column && availableColumns.has(rule.first_column))
             .map((rule) => ({
             ...rule,
@@ -275,16 +247,18 @@ export default function WorkbenchPage({ onRunComplete }) {
             second_column: featureUsesSecondColumn(rule.feature_type) ? rule.second_column || null : null,
             operator: featureUsesOperator(rule.feature_type) ? rule.operator || null : null,
         }));
+        const normalizedFromDate = normalizeDateInput(fromDate);
+        const normalizedToDate = normalizeDateInput(toDate);
         return {
             run_name: "Tulip anomaly workbench",
             selected_tables: selectedTables,
             joins,
             amount_field: amountField || null,
-            outlier_rules: activeOutlierRules,
+            user_rules: activeUserRules,
             feature_rules: activeFeatureRules,
             contamination: 0.02,
-            from_date: fromDate || null,
-            to_date: toDate || null,
+            from_date: normalizedFromDate,
+            to_date: normalizedToDate,
         };
     }
     async function executePreview() {
@@ -325,7 +299,7 @@ export default function WorkbenchPage({ onRunComplete }) {
                 datasetTable: data.metrics?.dataset_table,
                 selectedTables: data.metrics?.selected_tables,
                 totalRows: data.total_rows,
-                humanOutlierCount: data.human_outlier_count,
+                userRuleCount: data.user_rule_count,
                 mlAnomalyCount: data.ml_anomaly_count,
                 finalAnomalyCount: data.final_anomaly_count,
                 amountTotal: data.amount_total,
@@ -408,15 +382,22 @@ export default function WorkbenchPage({ onRunComplete }) {
           {runWarning ? <div style={warningBox}>{runWarning}</div> : null}
           {runError ? <div style={errorBox}>{runError}</div> : null}
           {autoFeatureError ? <div style={errorBox}>{autoFeatureError}</div> : null}
+          {dateValidationError ? <div style={errorBox}>{dateValidationError}</div> : null}
 
           <div style={dateGrid}>
             <div style={field}>
               <label htmlFor="from-date" style={label}>From date</label>
-              <input id="from-date" type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} disabled={!selectedTables.length} style={input}/>
+              <input id="from-date" type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} disabled={!selectedTables.length} style={{
+            ...input,
+            ...(fromDate && !normalizeDateInput(fromDate) ? invalidInput : {}),
+        }}/>
             </div>
             <div style={field}>
               <label htmlFor="to-date" style={label}>To date</label>
-              <input id="to-date" type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} disabled={!selectedTables.length} style={input}/>
+              <input id="to-date" type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} disabled={!selectedTables.length} style={{
+            ...input,
+            ...(toDate && !normalizeDateInput(toDate) ? invalidInput : {}),
+        }}/>
             </div>
           </div>
 
@@ -437,7 +418,7 @@ export default function WorkbenchPage({ onRunComplete }) {
                 <option value="inner">INNER JOIN</option>
                 <option value="left">LEFT JOIN</option>
                 <option value="right">RIGHT JOIN</option>
-                <option value="outer">FULL OUTER JOIN</option>
+                <option value="full">FULL OUTER JOIN</option>
               </select>
 
               <div style={joinTableField}>{join.right_table}</div>
@@ -449,18 +430,18 @@ export default function WorkbenchPage({ onRunComplete }) {
       </div>) : null}
 
       {activeStep === 4 ? (<div style={wizardPanel}>
-        <Card title="4. Human Outliers">
+        <Card title="4. Rule Anomaly">
           {autoFeatureError ? <div style={errorBox}>{autoFeatureError}</div> : null}
           <div style={actionBar}>
-            <button type="button" onClick={addOutlierRule} disabled={!canEditRules} style={secondaryButton}>Add Outlier Rule</button>
+            <button type="button" onClick={addUserRule} disabled={!canEditRules} style={secondaryButton}>Add User Rule</button>
           </div>
 
           <div style={stack}>
-            {outlierRules.map((rule, index) => {
-            return (<div key={index} style={outlierRuleRow}>
-                  <SearchableOptionSelect value={rule.first_column} onChange={(value) => updateList(setOutlierRules, index, { first_column: value })} options={columnOptions} placeholder="Column 1" compact disabled={!canEditRules}/>
+            {userRules.map((rule, index) => {
+            return (<div key={index} style={ruleRow}>
+                  <SearchableOptionSelect value={rule.first_column} onChange={(value) => updateList(setUserRules, index, { first_column: value })} options={columnOptions} placeholder="Column 1" compact disabled={!canEditRules}/>
 
-                  <select value={rule.operator} disabled={!canEditRules} onChange={(event) => updateList(setOutlierRules, index, { operator: event.target.value })} style={compactOperatorInput}>
+                  <select value={rule.operator} disabled={!canEditRules} onChange={(event) => updateList(setUserRules, index, { operator: event.target.value })} style={compactOperatorInput}>
                     <option value=">">{">"}</option>
                     <option value=">=">{">="}</option>
                     <option value="<">{"<"}</option>
@@ -471,9 +452,9 @@ export default function WorkbenchPage({ onRunComplete }) {
                     <option value="not null">not null</option>
                   </select>
 
-                  <SearchableOptionSelect value={rule.second_column} onChange={(value) => updateList(setOutlierRules, index, { second_column: value })} options={columnOptions} placeholder="Column 2" compact disabled={!canEditRules}/>
+                  <SearchableOptionSelect value={rule.second_column} onChange={(value) => updateList(setUserRules, index, { second_column: value })} options={columnOptions} placeholder="Column 2" compact disabled={!canEditRules}/>
 
-                  <button type="button" onClick={() => removeListItem(setOutlierRules, index)} disabled={!canEditRules} style={ruleRemoveButton} title="Remove" aria-label="Remove outlier rule">
+                  <button type="button" onClick={() => removeListItem(setUserRules, index)} disabled={!canEditRules} style={ruleRemoveButton} title="Remove" aria-label="Remove user rule">
                     x
                   </button>
                 </div>);
@@ -490,16 +471,16 @@ export default function WorkbenchPage({ onRunComplete }) {
 
           <div style={finalActionBox}>
             <div style={finalActionTitle}>Finish Setup</div>
-            <div style={finalActionText}>Preview the join setup first, then run Isolation Forest when the setup looks correct. ML features are loaded automatically from the selected tables, joins, and dates.</div>
+            <div style={finalActionText}>Preview the join setup first, then score the selected Postgres rows with the saved trained model.</div>
             <div style={statusRow}>
-              <div style={statusChip}>Automatic ML features: {autoFeatureLoading ? "Loading..." : featureRules.filter((rule) => rule.first_column).length}</div>
+              <div style={statusChip}>Saved model inference: ready</div>
             </div>
             <div style={actionBar}>
               <button type="button" onClick={executePreview} disabled={!canRun} style={previewResult && !previewing ? successButton : primaryButton}>
                 {previewing ? "Previewing..." : "Preview Join Setup"}
               </button>
               <button type="button" onClick={executeRun} disabled={!canRun} style={result && !running ? successButton : secondaryButton}>
-                {running ? "Running..." : result ? "Run Completed" : "Run Full Isolation Forest Workbench"}
+                {running ? "Running..." : result ? "Run Completed" : "Find Anomalies With Saved Model"}
               </button>
             </div>
           </div>
@@ -622,13 +603,65 @@ function featureUsesOperator(featureType) {
     return false;
 }
 function isDateSelectionValid(fromDate, toDate) {
+    const normalizedFromDate = normalizeDateInput(fromDate);
+    const normalizedToDate = normalizeDateInput(toDate);
     if (!fromDate && !toDate) {
         return true;
     }
-    if (fromDate && toDate) {
-        return fromDate <= toDate;
+    if ((fromDate && !normalizedFromDate) || (toDate && !normalizedToDate)) {
+        return false;
+    }
+    if (normalizedFromDate && normalizedToDate) {
+        return normalizedFromDate <= normalizedToDate;
     }
     return true;
+}
+function normalizeDateInput(value) {
+    const rawValue = String(value || "").trim();
+    if (!rawValue) {
+        return null;
+    }
+    const isoMatch = rawValue.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (isoMatch) {
+        const [, year, month, day] = isoMatch;
+        return isRealDateParts(Number(year), Number(month), Number(day))
+            ? `${year}-${month}-${day}`
+            : null;
+    }
+    const slashMatch = rawValue.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (slashMatch) {
+        const [, day, month, year] = slashMatch;
+        return isRealDateParts(Number(year), Number(month), Number(day))
+            ? `${year}-${month}-${day}`
+            : null;
+    }
+    return null;
+}
+function isRealDateParts(year, month, day) {
+    if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) {
+        return false;
+    }
+    if (year < 2000 || year > 2100) {
+        return false;
+    }
+    const candidate = new Date(Date.UTC(year, month - 1, day));
+    return candidate.getUTCFullYear() === year &&
+        candidate.getUTCMonth() === month - 1 &&
+        candidate.getUTCDate() === day;
+}
+function getDateValidationError(fromDate, toDate) {
+    const normalizedFromDate = normalizeDateInput(fromDate);
+    const normalizedToDate = normalizeDateInput(toDate);
+    if (fromDate && !normalizedFromDate) {
+        return "Enter a valid From date.";
+    }
+    if (toDate && !normalizedToDate) {
+        return "Enter a valid To date.";
+    }
+    if (normalizedFromDate && normalizedToDate && normalizedFromDate > normalizedToDate) {
+        return "From date cannot be after To date.";
+    }
+    return "";
 }
 const page = { display: "grid", gap: 18 };
 const stepper = {
@@ -665,6 +698,10 @@ const disabledStepButton = {
     opacity: 0.45,
     cursor: "not-allowed",
     background: "#f8fafc",
+};
+const invalidInput = {
+    borderColor: "#dc2626",
+    boxShadow: "0 0 0 1px rgba(220, 38, 38, 0.2)",
 };
 const stepCircle = {
     width: 34,
@@ -749,7 +786,7 @@ const joinTableField = {
     color: "#0f172a",
     fontWeight: 700,
 };
-const outlierRuleRow = {
+const ruleRow = {
     display: "grid",
     gridTemplateColumns: "minmax(112px, 1fr) 88px minmax(112px, 1fr) 38px",
     gap: 6,

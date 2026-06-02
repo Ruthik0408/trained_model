@@ -10,6 +10,7 @@ import pandas as pd
 
 from app.core.config import settings
 from app.schemas.workbench_schema import IsolationReasonRequest
+from app.services.workbench.utils import _select_series_column
 
 
 # Constants
@@ -59,13 +60,14 @@ def build_feature_explanation_signals(
     feature_frame: pd.DataFrame,
     transformed: np.ndarray,
     anomaly_indices: Any,
+    transformed_feature_labels: list[str] | None = None,
 ) -> dict[Any, list[dict[str, Any]]]:
     """
     Build per-row feature signals explaining why IF flagged each anomaly row.
 
-    Ranks StandardScaler-transformed features by absolute value — a large
-    absolute scaled value means that feature was far from the training median,
-    which is exactly what drives short path lengths in Isolation Forest.
+    Ranks transformed IF features by absolute value. Continuous numeric
+    features are standardized, while indicator-style features are preserved
+    as raw 0/1 values so the explanation signals still mirror model input.
 
     Returns:
         Dict mapping row-index → list of signal dicts.
@@ -73,7 +75,7 @@ def build_feature_explanation_signals(
     if feature_frame.empty or transformed is None:
         return {}
 
-    column_labels = _transformed_feature_labels(pipeline, feature_frame)
+    column_labels = list(transformed_feature_labels or _transformed_feature_labels(pipeline, feature_frame))
     transformed_array = np.asarray(transformed)
 
     n_cols = transformed_array.shape[1] if transformed_array.ndim == 2 else 0
@@ -110,6 +112,8 @@ def build_deterministic_isolation_reason(
     )
     result = _build_deterministic_explanation(mock_payload)
     cleaned = _clean_reason(result["reason"])
+    if cleaned and not cleaned.endswith("."):
+        cleaned = f"{cleaned}."
     return cleaned or None
 
 # Deterministic explanation builder — the real improvement
@@ -203,7 +207,7 @@ def _assemble_deterministic_sentence(
 
     # Append rule reasons that are not already paraphrased in the clauses
     for rule in rule_reasons[:2]:
-        rule_clean = re.sub(r"^OUTLIER::", "", rule).replace("_", " ").strip().lower()
+        rule_clean = re.sub(r"^(?:OUTLIER|RULE)::", "", rule).replace("_", " ").strip().lower()
         if rule_clean and not any(rule_clean[:20] in p.lower() for p in parts):
             parts.append(f"(rule: {rule_clean})")
 
@@ -245,7 +249,7 @@ def _different_feature_group(clause_a: str, clause_b: str) -> bool:
     return _first_content_word(clause_a) != _first_content_word(clause_b)
 
 
-# Signal extraction — ranked by scaled magnitude
+# Signal extraction — ranked by transformed magnitude
 
 def _build_magnitude_signals(
     feature_frame: pd.DataFrame,
@@ -253,11 +257,10 @@ def _build_magnitude_signals(
     selected_index: list[Any],
 ) -> dict[Any, list[dict[str, Any]]]:
     """
-    For each anomaly row, sort features by |scaled_value| descending.
+    For each anomaly row, sort features by |transformed_value| descending.
 
-    The scaled value is the StandardScaler output: (x - mean) / std.
-    A high absolute value = that feature is far from what is normal, which
-    directly drives short path lengths in Isolation Forest.
+    Continuous numeric features use standardized values.
+    Indicator-style features keep their raw 0/1 representation.
     """
     signals_by_index: dict[Any, list[dict[str, Any]]] = {}
     selected_rows = transformed_frame.loc[selected_index]
@@ -270,7 +273,8 @@ def _build_magnitude_signals(
         signals: list[dict[str, Any]] = []
 
         for position in ranked_positions:
-            feature_name = str(transformed_frame.columns[int(position)])
+            raw_feature_name = str(transformed_frame.columns[int(position)])
+            feature_name = _display_feature_name(raw_feature_name, feature_frame.columns)
             source_name = _source_feature_name(feature_name)
             feature_group = _signal_group_name(feature_name)
             if feature_group in seen:
@@ -287,11 +291,16 @@ def _build_magnitude_signals(
             signals.append(
                 {
                     "feature": feature_name,
-                    "value": _safe_float(raw_value),
+                    "value": _safe_signal_value(raw_value),
                     "scaled_value": _safe_float(scaled_val),
                     "strength": _safe_float(abs(scaled_val)),
                     "direction": "high" if scaled_val >= 0 else "low",
-                    "method": "scaled_magnitude",
+                    "method": "transformed_magnitude",
+                    "comparison": _build_signal_comparison(
+                        feature_frame,
+                        source_name,
+                        feature_name,
+                    ),
                 }
             )
 
@@ -322,7 +331,6 @@ def _translate_signals_to_clauses(
     • Amounts formatted with locale-style separators (1,24,500 → 1,24,500)
     • Date-gap direction explicitly stated ("longer/shorter than normal")
     • Missing fields phrased more naturally
-    • IQR outliers now mention the direction (high/low) if known
     """
     if not isinstance(feature_signals, list):
         return []
@@ -353,17 +361,6 @@ def _translate_one_signal(signal: dict[str, Any]) -> str | None:
             return "a required field is missing"
         return f"the {source} field is missing"
 
-    # ── IQR statistical outlier flag ──────────────────────────────────────
-    if feature.startswith("iqr_flag::"):
-        source = _readable_feature(feature[len("iqr_flag::") :]).strip()
-        direction_phrase = (
-            "unusually high" if direction == "high"
-            else "unusually low" if direction == "low"
-            else "a statistical outlier"
-        )
-        if not source:
-            return f"an amount field is {direction_phrase} by IQR analysis"
-        return f"the {source} is {direction_phrase} (IQR analysis)"
 
     # ── One-hot / encoded categorical feature (column::value) ─────────────
     if "::" in feature:
@@ -676,7 +673,92 @@ def _transformed_feature_labels(
 
 def _source_feature_name(feature_name: Any) -> str:
     text = str(feature_name)
+    if "::" in text:
+        return text.split("::", 1)[0]
     return text[: -len("__missing")] if text.endswith("__missing") else text
+
+
+def _display_feature_name(
+    feature_name: Any,
+    source_columns: Any,
+) -> str:
+    text = str(feature_name)
+    if text in source_columns or "::" in text or text.endswith("__missing"):
+        return text
+
+    matches = [
+        str(column)
+        for column in source_columns
+        if text.startswith(f"{column}_") and len(text) > len(str(column)) + 1
+    ]
+    if not matches:
+        return text
+
+    source_name = max(matches, key=len)
+    category_value = text[len(source_name) + 1 :]
+    if not category_value:
+        return text
+    return f"{source_name}::{category_value}"
+
+
+def _build_signal_comparison(
+    feature_frame: pd.DataFrame,
+    source_name: str,
+    feature_name: str,
+) -> dict[str, Any] | None:
+    series_name = feature_name if feature_name in feature_frame.columns else source_name
+    if series_name not in feature_frame.columns:
+        return None
+
+    series = _select_series_column(feature_frame, series_name)
+    non_missing = series.dropna()
+    if len(non_missing.index) == 0:
+        return None
+
+    if feature_name.endswith("__missing"):
+        total_count = int(len(series.index))
+        missing_count = int(series.isna().sum())
+        present_count = int(total_count - missing_count)
+        return {
+            "kind": "missing",
+            "total_count": total_count,
+            "present_count": present_count,
+            "missing_count": missing_count,
+            "present_ratio": _safe_float(present_count / total_count) if total_count else None,
+        }
+
+    if "::" in feature_name:
+        category_value = feature_name.split("::", 1)[1]
+        normalized_category = str(category_value).strip().lower()
+        active_count = int(
+            series.astype("string")
+            .str.strip()
+            .str.lower()
+            .eq(normalized_category)
+            .sum()
+        )
+        total_count = int(len(series.index))
+        return {
+            "kind": "category",
+            "total_count": total_count,
+            "match_count": active_count,
+            "match_ratio": _safe_float(active_count / total_count) if total_count else None,
+        }
+
+    numeric_series = pd.to_numeric(series, errors="coerce").dropna()
+    if len(numeric_series.index) == 0:
+        return None
+
+    return {
+        "kind": "numeric",
+        "count": int(len(numeric_series.index)),
+        "median": _safe_float(numeric_series.median()),
+        "p25": _safe_float(numeric_series.quantile(0.25)),
+        "p75": _safe_float(numeric_series.quantile(0.75)),
+        "min": _safe_float(numeric_series.min()),
+        "max": _safe_float(numeric_series.max()),
+        "mean": _safe_float(numeric_series.mean()),
+    }
 
 
 def _signal_group_name(feature_name: Any) -> str:
@@ -723,3 +805,12 @@ def _safe_float(value: Any) -> float | None:
     if np.isnan(numeric) or np.isinf(numeric):
         return None
     return numeric
+
+
+def _safe_signal_value(value: Any) -> Any:
+    numeric = _safe_float(value)
+    if numeric is not None:
+        return numeric
+    if value is None or pd.isna(value):
+        return None
+    return str(value)

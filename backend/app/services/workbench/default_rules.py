@@ -1,22 +1,24 @@
-from datetime import datetime, timezone
 import hashlib
 
 from app.schemas.workbench_schema import BuiltinRuleRequest, WorkbenchRunRequest
 from app.services.workbench.constants import (
-    BUILTIN_FEATURE_RULES_CACHE_TTL,
-    SINGLE_FEATURE_TYPES,
     _builtin_feature_rules_cache,
     logger,
 )
+from app.services.workbench.utils import  _is_date_like_column_name
 from app.services.workbench.source_db import _source_columns_map
 from app.services.workbench.sql_runtime import (
     _build_dynamic_date_gap_rules,
     _feature_column_presence_ratios,
     _has_enough_values_for_builtin_features,
-    _is_date_like_column_name,
     _joined_feature_column_presence_ratios,
     _safe_date_literal,
 )
+
+SINGLE_FEATURE_TYPES = [
+    "isweekend",
+    "isbusinesshour",
+]
 
 def builtin_feature_rules(
     payload: BuiltinRuleRequest | WorkbenchRunRequest | list[str],
@@ -57,11 +59,9 @@ def builtin_feature_rules(
         to_date,
     )
 
-    now = datetime.now(tz=timezone.utc).timestamp()
-    cached = _builtin_feature_rules_cache.get(cache_key)
-
-    if cached is not None and now - cached[0] < BUILTIN_FEATURE_RULES_CACHE_TTL:
-        return cached[1]
+    cached = _builtin_feature_rules_cache.get(repr(cache_key))
+    if cached is not None:
+        return cached
 
     table_frames = _source_columns_map(selected_tables)
 
@@ -136,5 +136,5 @@ def builtin_feature_rules(
         seen_rule_keys.add(rule_key)
         deduped_rules.append(rule)
 
-    _builtin_feature_rules_cache[cache_key] = (now, deduped_rules)
+    _builtin_feature_rules_cache.set(repr(cache_key), deduped_rules)
     return deduped_rules

@@ -1,4 +1,4 @@
-from sqlalchemy import Integer, JSON, String, Text
+from sqlalchemy import Integer, JSON, String
 from sqlalchemy.orm import Mapped, mapped_column
 from app.core.database import Base
 
@@ -17,11 +17,10 @@ class WorkbenchRun(Base):
     run_name: Mapped[str] = mapped_column(String(200), default="Ad hoc workbench run")
     source_tables_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
     join_config_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
-    outlier_rules_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
     feature_rules_json: Mapped[list | None] = mapped_column(JSON, nullable=True)
     amount_field: Mapped[str | None] = mapped_column(String(150), nullable=True)
     total_rows: Mapped[int] = mapped_column(Integer, default=0)
-    human_outlier_count: Mapped[int] = mapped_column(Integer, default=0)
+    user_rule_count: Mapped[int] = mapped_column(Integer, default=0)
     ml_anomaly_count: Mapped[int] = mapped_column(Integer, default=0)
     final_anomaly_count: Mapped[int] = mapped_column(Integer, default=0)
     selected_model: Mapped[str | None] = mapped_column(String(100), nullable=True)

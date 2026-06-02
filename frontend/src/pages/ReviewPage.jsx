@@ -140,6 +140,15 @@ export default function ReviewPage({ latestWorkbenchRun }) {
     const totalPages = Math.max(1, Math.ceil((tableData.total_rows || 0) / PAGE_SIZE));
     const canGoPrevious = pageOffset > 0;
     const canGoNext = pageOffset + PAGE_SIZE < (tableData.total_rows || 0);
+    const displayRuleCount = anomalyFilter === "rule"
+        ? tableData.total_rows || 0
+        : latestWorkbenchRun?.userRuleCount ?? latestWorkbenchRun?.userOutlierCount ?? 0;
+    const displayMlCount = anomalyFilter === "ml"
+        ? tableData.total_rows || 0
+        : latestWorkbenchRun?.mlAnomalyCount || 0;
+    const displayFinalCount = anomalyFilter === "all"
+        ? tableData.total_rows || 0
+        : latestWorkbenchRun?.finalAnomalyCount || activeDataset?.final_anomaly_count || 0;
     function handlePreviousPage() {
         setPageOffset((value) => Math.max(0, value - PAGE_SIZE));
     }
@@ -247,9 +256,9 @@ export default function ReviewPage({ latestWorkbenchRun }) {
           </div>
           <div style={runResultGrid}>
             <div style={runResultCard}><strong>Total rows</strong><div>{latestWorkbenchRun?.totalRows || activeDataset.total_rows || 0}</div></div>
-            <div style={runResultCard}><strong>Human outliers</strong><div>{latestWorkbenchRun?.humanOutlierCount || 0}</div></div>
-            <div style={runResultCard}><strong>ML anomalies</strong><div>{latestWorkbenchRun?.mlAnomalyCount || 0}</div></div>
-            <div style={runResultCard}><strong>Final anomalies</strong><div>{latestWorkbenchRun?.finalAnomalyCount || activeDataset.final_anomaly_count || 0}</div></div>
+            <div style={runResultCard}><strong>Rule Anomaly</strong><div>{displayRuleCount}</div></div>
+            <div style={runResultCard}><strong>ML anomalies</strong><div>{displayMlCount}</div></div>
+            <div style={runResultCard}><strong>Final anomalies</strong><div>{displayFinalCount}</div></div>
             <div style={runResultCard}><strong>Amount total</strong><div>{Number(latestWorkbenchRun?.amountTotal || tableData.total_amount || 0).toLocaleString()}</div></div>
           </div>
         </Card>) : null}

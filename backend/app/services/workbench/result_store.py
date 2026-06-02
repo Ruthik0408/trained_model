@@ -7,24 +7,25 @@ import pandas as pd
 from sqlalchemy import MetaData, Table, text
 from sqlalchemy.orm import Session
 
+from app.core.cache import invalidate_all_caches
 from app.core.models import WorkbenchRun
 from app.schemas.workbench_schema import WorkbenchRunRequest
 from app.services.workbench.constants import (
-    FEATURE_NAME_COLUMN,
     FEATURE_VALUES_COLUMN,
     FEEDBACK_SCORE_COLUMN,
     FEEDBACK_TO_SCORE,
-    HUMAN_RULE_COLUMN,
-    HUMAN_RULE_NAME_COLUMN,
+    FK_DAK_COLUMN,
     IF_SCORE_COLUMN,
     ISOLATION_RULE_COLUMN,
     ML_THRESHOLD_COLUMN,
     RESULT_SCHEMA,
-    REVIEW_PAYLOAD_COLUMN,
     RUN_ID_COLUMN,
     SCORE_TO_FEEDBACK,
+    SELECTED_TABLES_COLUMN,
     SERIAL_COLUMN,
     SYSTEM_COLUMNS,
+    USER_RULE_COLUMN,
+    USER_RULE_NAME_COLUMN,
     logger,
 )
 from app.services.workbench.source_db import (
@@ -39,9 +40,8 @@ from app.services.workbench.source_db import (
     _source_begin,
     _source_engine,
 )
-from app.services.workbench.sql_runtime import _feature_rule_aliases
 from app.services.workbench.utils import (
-    _round_storage_score,
+    _roundoff_score,
     _safe_json,
     _safe_numeric_scalar,
 )
@@ -65,7 +65,7 @@ def _presentable_reason_text(value: Any) -> str | None:
     return re.sub(
         r"\s+",
         " ",
-        text_value.replace("OUTLIER::", "").replace("_", " "),
+        text_value.replace("RULE::", "").replace("OUTLIER::", "").replace("_", " "),
     ).strip()
 
 
@@ -86,6 +86,38 @@ def _review_payload_for_row(
     return payload
 
 
+def _result_fk_dak_for_row(
+    row: pd.Series,
+    selected_tables: list[str],
+) -> int | None:
+    if "dak" in selected_tables:
+        numeric = _safe_numeric_scalar(row.get("dak.id"), default=None)
+        return int(numeric) if numeric is not None else None
+
+    for table_name in selected_tables:
+        numeric = _safe_numeric_scalar(row.get(f"{table_name}.fk_dak"), default=None)
+        if numeric is not None:
+            return int(numeric)
+
+    numeric = _safe_numeric_scalar(row.get("fk_dak"), default=None)
+    return int(numeric) if numeric is not None else None
+
+
+def _review_payload_cache_entries(
+    rows: pd.DataFrame,
+    feature_aliases: set[str],
+    inserted_ids: list[int],
+) -> dict[str, dict[str, Any]]:
+    payloads = [
+        _review_payload_for_row(row, feature_aliases)
+        for _, row in rows.iterrows()
+    ]
+    return {
+        str(int(record_id)): payload
+        for record_id, payload in zip(inserted_ids, payloads)
+    }
+
+
 @dataclass(frozen=True)
 class DatasetBuildInputs:
     joined: pd.DataFrame
@@ -93,10 +125,10 @@ class DatasetBuildInputs:
     payload: WorkbenchRunRequest
     dataset_table: str
     dataset_run_id: int
-    human_outlier_flag: pd.Series
-    human_reasons: list[str]
-    human_reason_series: pd.Series | None
-    builtin_reason_series: pd.Series | None
+    combined_rule_flag: pd.Series
+    user_reasons: list[str]
+    user_reason_series: pd.Series | None
+    default_reason_series: pd.Series | None
     isolation_scores: np.ndarray
     ml_flag: pd.Series
     ml_threshold: float
@@ -150,6 +182,9 @@ def update_dataset_feedback(db: Session, payload) -> dict[str, Any]:
         int(payload.record_id),
         {FEEDBACK_SCORE_COLUMN: feedback_score},
     )
+    invalidate_all_caches()
+    from app.services.dashboard_service import invalidate_dashboard_caches
+    invalidate_dashboard_caches(payload.dataset_table)
 
     return {
         "status": "ok",
@@ -181,11 +216,15 @@ def _coerce_insert_value(value: Any) -> Any:
 
 def _feedback_to_score(feedback: str) -> float:
     normalized = str(feedback or "").strip().lower()
+    normalized_scores = {
+        str(label).strip().lower(): float(score)
+        for label, score in FEEDBACK_TO_SCORE.items()
+    }
 
-    if normalized not in FEEDBACK_TO_SCORE:
-        raise ValueError("Feedback must be accept, reject, or maybe.")
+    if normalized not in normalized_scores:
+        raise ValueError("Feedback must be Accept, Reject, or Maybe.")
 
-    return float(FEEDBACK_TO_SCORE[normalized])
+    return float(normalized_scores[normalized])
 
 
 def _score_to_feedback(value: Any) -> str | None:
@@ -220,8 +259,8 @@ def _build_dataset_frame(inputs: DatasetBuildInputs) -> pd.DataFrame:
     filtered_feature_frame = inputs.feature_frame.loc[anomaly_mask]
     anomaly_index = filtered_feature_frame.index
 
-    filtered_human_outlier_flag = _aligned_series(
-        inputs.human_outlier_flag,
+    filtered_combined_rule_flag = _aligned_series(
+        inputs.combined_rule_flag,
         base_index,
         False,
     ).loc[anomaly_index].astype(bool)
@@ -232,14 +271,14 @@ def _build_dataset_frame(inputs: DatasetBuildInputs) -> pd.DataFrame:
         False,
     ).loc[anomaly_index].astype(bool)
 
-    filtered_human_reasons = _aligned_series(
-        inputs.human_reason_series,
+    filtered_user_reasons = _aligned_series(
+        inputs.user_reason_series,
         base_index,
         None,
     ).loc[anomaly_index]
 
-    filtered_builtin_reasons = _aligned_series(
-        inputs.builtin_reason_series,
+    filtered_default_reasons = _aligned_series(
+        inputs.default_reason_series,
         base_index,
         None,
     ).loc[anomaly_index]
@@ -249,8 +288,6 @@ def _build_dataset_frame(inputs: DatasetBuildInputs) -> pd.DataFrame:
     else:
         filtered_joined = inputs.joined.reindex(anomaly_index)
 
-    feature_aliases = set(_feature_rule_aliases(inputs.payload.feature_rules))
-
     logger.info(
         "Joined has %s rows; saving %s anomaly rows to %s.%s",
         len(inputs.joined),
@@ -259,14 +296,14 @@ def _build_dataset_frame(inputs: DatasetBuildInputs) -> pd.DataFrame:
         inputs.dataset_table,
     )
 
-    default_rule_reason = inputs.human_reasons or ["Human-defined outlier rule matched"]
+    default_rule_reason = inputs.user_reasons or ["User-defined rule matched"]
     explanation_signals = inputs.explanation_signals_override or {}
 
     dataset = pd.DataFrame(index=anomaly_index)
 
     dataset.insert(
         0,
-        FEATURE_NAME_COLUMN,
+        SELECTED_TABLES_COLUMN,
         _feature_name_for_tables(inputs.payload.selected_tables),
     )
 
@@ -275,27 +312,27 @@ def _build_dataset_frame(inputs: DatasetBuildInputs) -> pd.DataFrame:
         for row_index, row in filtered_feature_frame.iterrows()
     ]
 
-    human_rule_names: list[str | None] = []
+    user_rule_names: list[str | None] = []
 
-    for flag, reason, builtin_reason in zip(
-        filtered_human_outlier_flag,
-        filtered_human_reasons,
-        filtered_builtin_reasons,
+    for flag, reason, default_reason in zip(
+        filtered_combined_rule_flag,
+        filtered_user_reasons,
+        filtered_default_reasons,
     ):
         clean_reason = _presentable_reason_text(reason)
-        clean_builtin_reason = _presentable_reason_text(builtin_reason)
+        clean_default_reason = _presentable_reason_text(default_reason)
 
         if bool(flag) and clean_reason:
-            human_rule_names.append(clean_reason)
-        elif bool(flag) and clean_builtin_reason:
-            human_rule_names.append(clean_builtin_reason)
+            user_rule_names.append(clean_reason)
+        elif bool(flag) and clean_default_reason:
+            user_rule_names.append(clean_default_reason)
         elif bool(flag):
-            human_rule_names.append(", ".join(default_rule_reason))
+            user_rule_names.append(", ".join(default_rule_reason))
         else:
-            human_rule_names.append(None)
+            user_rule_names.append(None)
 
-    dataset[HUMAN_RULE_NAME_COLUMN] = human_rule_names
-    dataset[HUMAN_RULE_COLUMN] = [bool(flag) for flag in filtered_human_outlier_flag]
+    dataset[USER_RULE_NAME_COLUMN] = user_rule_names
+    dataset[USER_RULE_COLUMN] = [bool(flag) for flag in filtered_combined_rule_flag]
     dataset[ISOLATION_RULE_COLUMN] = [bool(flag) for flag in filtered_ml_flag]
 
     isolation_scores = np.asarray(inputs.isolation_scores)
@@ -307,28 +344,28 @@ def _build_dataset_frame(inputs: DatasetBuildInputs) -> pd.DataFrame:
         )
 
     dataset[IF_SCORE_COLUMN] = [
-        _round_storage_score(value)
+        _roundoff_score(value)
         for value in isolation_scores[anomaly_mask.to_numpy()]
     ]
 
-    dataset[ML_THRESHOLD_COLUMN] = _round_storage_score(inputs.ml_threshold)
+    dataset[ML_THRESHOLD_COLUMN] = _roundoff_score(inputs.ml_threshold)
     dataset[RUN_ID_COLUMN] = int(inputs.dataset_run_id)
 
-    dataset[REVIEW_PAYLOAD_COLUMN] = [
-        _review_payload_for_row(row, feature_aliases)
+    dataset[FK_DAK_COLUMN] = [
+        _result_fk_dak_for_row(row, inputs.payload.selected_tables)
         for _, row in filtered_joined.iterrows()
     ]
 
     ordered_columns = [
-        FEATURE_NAME_COLUMN,
+        SELECTED_TABLES_COLUMN,
         FEATURE_VALUES_COLUMN,
-        HUMAN_RULE_NAME_COLUMN,
-        HUMAN_RULE_COLUMN,
+        USER_RULE_NAME_COLUMN,
+        USER_RULE_COLUMN,
         ISOLATION_RULE_COLUMN,
         IF_SCORE_COLUMN,
         ML_THRESHOLD_COLUMN,
         RUN_ID_COLUMN,
-        REVIEW_PAYLOAD_COLUMN,
+        FK_DAK_COLUMN,
     ]
 
     dataset = dataset.loc[:, ordered_columns]
@@ -413,6 +450,9 @@ def _write_dataset_to_result(
 
     _clear_result_table_columns_cache(dataset_table)
     _clear_result_table_exists_cache(dataset_table)
+    invalidate_all_caches()
+    from app.services.dashboard_service import invalidate_dashboard_caches
+    invalidate_dashboard_caches(dataset_table)
 
     total_rows = _previous_dataset_row_count(dataset_table)
 
@@ -441,4 +481,3 @@ def _update_dataset_row(dataset_table: str, record_id: int, assignments: dict[st
         result = conn.execute(sql, params)
         if result.rowcount == 0:
             raise ValueError(f"Record {record_id} was not found in dataset {dataset_table}.")
-

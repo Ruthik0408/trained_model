@@ -1,33 +1,22 @@
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
+import time
 from typing import Any
 
-import joblib
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import IsolationForest
-from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
 from sqlalchemy.orm import Session
 
-from app.core.config import settings
 from app.core.errors import WorkbenchValidationError
 from app.core.models import WorkbenchRun
 from app.schemas.workbench_schema import WorkbenchRunRequest
 from app.services.llm_reason_service import build_feature_explanation_signals
 from app.services.workbench.constants import PREVIEW_ROW_LIMIT, RESULT_TABLE, logger
-from app.services.workbench.ml_pipeline import (
-    FeatureSelectionResult,
-    _add_statistical_outlier_signals,
-    _build_auto_feature_frame,
-    _prepare_isolation_forest_feature_frame,
-    _validate_isolation_forest_feature_frame,
-)
 from app.services.workbench.result_store import (
     DatasetBuildInputs,
     _build_dataset_frame,
+    _review_payload_cache_entries,
     _write_dataset_to_result,
 )
 from app.services.workbench.source_db import _next_dataset_run_id, _source_begin
@@ -39,6 +28,28 @@ from app.services.workbench.sql_runtime import (
     _resolve_column,
     _safe_date_literal,
 )
+from app.services.workbench.saved_model_inference import (
+    FeatureSelectionResult,
+    build_saved_model_feature_frame,
+    load_saved_model_artifact,
+    score_with_saved_model,
+)
+from app.services.workbench.valkey_artifacts import (
+    deserialize_dataframe,
+    get_isolation_forest_artifact,
+    get_preview_artifact,
+    get_run_execution_artifact,
+    normalize_explanation_signals,
+    serialize_dataframe,
+    serialize_ndarray,
+    serialize_pipeline,
+    serialize_series,
+    set_review_payload_artifact,
+    set_isolation_forest_artifact,
+    set_preview_artifact,
+    set_run_execution_artifact,
+)
+from app.services.workbench.utils import _select_series_column
 
 
 @dataclass(frozen=True)
@@ -48,9 +59,9 @@ class WorkbenchExecutionState:
     join_debug: dict[str, Any]
     warnings: list[str]
     executed_sql: str
-    human_reasons: list[str]
+    user_reasons: list[str]
     applied_feature_rule_count: int
-    applied_outlier_rule_count: int
+    applied_user_rule_count: int
     staging_table: str | None
     batch_id: str
     dataset_table: str
@@ -60,10 +71,10 @@ class WorkbenchExecutionState:
 @dataclass(frozen=True)
 class RuleFlagState:
     user_rule_flag: pd.Series
-    builtin_rule_flag: pd.Series
-    human_outlier_flag: pd.Series
-    human_reason_series: pd.Series | None
-    builtin_reason_series: pd.Series | None
+    default_rule_flag: pd.Series
+    combined_rule_flag: pd.Series
+    user_reason_series: pd.Series | None
+    default_reason_series: pd.Series | None
 
 
 @dataclass(frozen=True)
@@ -81,10 +92,40 @@ class IsolationForestState:
 
 
 def preview_workbench(payload: WorkbenchRunRequest) -> dict:
-    joined, source_row_counts, join_debug, warnings, executed_sql = _execute_sql_joined_frame(
-        payload,
-        for_preview=True,
-    )
+    preview_started_at = time.monotonic()
+    cached_artifact = get_preview_artifact(payload)
+    if cached_artifact is not None:
+        joined = deserialize_dataframe(cached_artifact["joined"])
+        source_row_counts = {
+            str(key): int(value)
+            for key, value in (cached_artifact.get("source_row_counts") or {}).items()
+        }
+        join_debug = [dict(item) for item in cached_artifact.get("join_debug") or []]
+        warnings = list(cached_artifact.get("warnings") or [])
+        executed_sql = str(cached_artifact.get("executed_sql") or "")
+        logger.info(
+            "Preview cache HIT: reused Valkey preview artifact for tables=%s",
+            payload.selected_tables,
+        )
+    else:
+        logger.info(
+            "Preview cache MISS: executing fresh SQL join for tables=%s",
+            payload.selected_tables,
+        )
+        joined, source_row_counts, join_debug, warnings, executed_sql = _execute_sql_joined_frame(
+            payload,
+            for_preview=True,
+        )
+        set_preview_artifact(
+            payload,
+            {
+                "joined": serialize_dataframe(joined),
+                "source_row_counts": source_row_counts,
+                "join_debug": [dict(item) for item in join_debug],
+                "warnings": list(warnings),
+                "executed_sql": executed_sql,
+            },
+        )
 
     preview_rows = (
         joined.head(PREVIEW_ROW_LIMIT)
@@ -92,6 +133,12 @@ def preview_workbench(payload: WorkbenchRunRequest) -> dict:
         .to_dict(orient="records")
     )
 
+    logger.info(
+        "Preview completed for tables=%s in %.2fs with %d preview rows",
+        payload.selected_tables,
+        time.monotonic() - preview_started_at,
+        len(preview_rows),
+    )
     return {
         "mode": "preview",
         "total_rows_previewed": int(len(joined)),
@@ -110,29 +157,76 @@ def preview_workbench(payload: WorkbenchRunRequest) -> dict:
 
 
 def run_workbench(db: Session, payload: WorkbenchRunRequest) -> dict:
+    run_started_at = time.monotonic()
     logger.info(
-        "Starting workbench run for tables: %s, feature_rules: %s, outlier_rules: %s",
+        "Starting workbench run for tables: %s, feature_rules: %s, user_rules: %s",
         payload.selected_tables,
         len(payload.feature_rules),
-        len(payload.outlier_rules),
+        len(payload.user_rules),
     )
 
-    # Keep all temp-table reads inside this single source transaction.
-    # The workbench staging table is created with ON COMMIT DROP, so it is
-    # only valid until this _source_begin() context exits.
-    with _source_begin() as source_conn:
-        execution = _execute_workbench(payload, source_conn)
+    cached_execution_artifact = get_run_execution_artifact(payload)
+    cached_if_artifact = get_isolation_forest_artifact(payload)
 
+    if cached_execution_artifact is not None and cached_if_artifact is not None:
+        cache_reuse_started_at = time.monotonic()
+        logger.info(
+            "Run cache HIT: reusing Valkey execution and IF artifacts for tables=%s",
+            payload.selected_tables,
+        )
+        execution = _execution_state_from_artifact(payload, cached_execution_artifact)
         if execution.joined.empty:
             return _persist_empty_run(db, payload, execution)
-
         rule_flags = _extract_rule_flags(execution.joined)
-        model_state = _run_isolation_forest(payload, execution, source_conn, rule_flags)
+        model_state = _isolation_forest_state_from_artifact(cached_if_artifact)
+        logger.info(
+            "Run cache reuse completed in %.2fs for tables=%s",
+            time.monotonic() - cache_reuse_started_at,
+            payload.selected_tables,
+        )
+    else:
+        fresh_run_started_at = time.monotonic()
+        logger.info(
+            "Run cache MISS: executing fresh SQL workbench pipeline for tables=%s",
+            payload.selected_tables,
+        )
+        # Keep all temp-table reads inside this single source transaction.
+        # The workbench staging table is created with ON COMMIT DROP, so it is
+        # only valid until this _source_begin() context exits.
+        with _source_begin() as source_conn:
+            execution = _execute_workbench(payload, source_conn)
 
+            if execution.joined.empty:
+                return _persist_empty_run(db, payload, execution)
+
+            rule_flags = _extract_rule_flags(execution.joined)
+            model_state = _run_isolation_forest(payload, execution, source_conn, rule_flags)
+
+        set_run_execution_artifact(payload, _execution_artifact_from_state(execution))
+        set_isolation_forest_artifact(payload, _isolation_forest_artifact_from_state(model_state))
+        logger.info(
+            "Fresh SQL workbench pipeline completed in %.2fs for tables=%s",
+            time.monotonic() - fresh_run_started_at,
+            payload.selected_tables,
+        )
+
+    amount_started_at = time.monotonic()
     amount_total = _calculate_amount_total(payload, model_state.filtered_joined)
+    logger.info(
+        "Amount total calculation completed in %.2fs for tables=%s",
+        time.monotonic() - amount_started_at,
+        payload.selected_tables,
+    )
 
+    persist_run_started_at = time.monotonic()
     run = _create_run_record(db, payload, execution, rule_flags, model_state)
+    logger.info(
+        "WorkbenchRun record persisted in %.2fs with run_id=%s",
+        time.monotonic() - persist_run_started_at,
+        run.run_id,
+    )
 
+    dataset_build_started_at = time.monotonic()
     dataset_frame = _build_dataset_frame(
         DatasetBuildInputs(
             joined=execution.joined,
@@ -140,10 +234,10 @@ def run_workbench(db: Session, payload: WorkbenchRunRequest) -> dict:
             payload=payload,
             dataset_table=execution.dataset_table,
             dataset_run_id=execution.dataset_run_id,
-            human_outlier_flag=rule_flags.human_outlier_flag,
-            human_reasons=execution.human_reasons,
-            human_reason_series=rule_flags.human_reason_series,
-            builtin_reason_series=rule_flags.builtin_reason_series,
+            combined_rule_flag=rule_flags.combined_rule_flag,
+            user_reasons=execution.user_reasons,
+            user_reason_series=rule_flags.user_reason_series,
+            default_reason_series=rule_flags.default_reason_series,
             isolation_scores=model_state.isolation_scores,
             ml_flag=model_state.ml_flag,
             ml_threshold=model_state.ml_threshold,
@@ -152,13 +246,31 @@ def run_workbench(db: Session, payload: WorkbenchRunRequest) -> dict:
             explanation_signals_override=model_state.explanation_signals,
         )
     )
+    logger.info(
+        "ML_Features dataset frame built in %.2fs with %d rows and %d columns",
+        time.monotonic() - dataset_build_started_at,
+        len(dataset_frame),
+        len(dataset_frame.columns),
+    )
 
+    write_started_at = time.monotonic()
     dataset_storage = _write_dataset_to_result(dataset_frame, execution.dataset_table)
+    logger.info(
+        "ML_Features write completed in %.2fs with %d inserted ids",
+        time.monotonic() - write_started_at,
+        len(dataset_storage.get("inserted_ids") or []),
+    )
 
+    builtin_reason_started_at = time.monotonic()
     builtin_reason_by_record_id = _build_builtin_reason_lookup(
         rule_flags,
         model_state,
         dataset_storage,
+    )
+    logger.info(
+        "Built builtin reason lookup in %.2fs with %d mapped rows",
+        time.monotonic() - builtin_reason_started_at,
+        len(builtin_reason_by_record_id),
     )
 
     logger.info(
@@ -167,6 +279,26 @@ def run_workbench(db: Session, payload: WorkbenchRunRequest) -> dict:
         dataset_storage["row_count"],
     )
 
+    feature_aliases = set(_feature_rule_aliases(payload.feature_rules))
+    review_payload_started_at = time.monotonic()
+    set_review_payload_artifact(
+        int(run.run_id),
+        {
+            "dataset_table": execution.dataset_table,
+            "rows": _review_payload_cache_entries(
+                model_state.filtered_joined,
+                feature_aliases,
+                dataset_storage.get("inserted_ids") or [],
+            ),
+        },
+    )
+    logger.info(
+        "Stored review payload artifact in Valkey in %.2fs for run_id=%s",
+        time.monotonic() - review_payload_started_at,
+        run.run_id,
+    )
+
+    metrics_started_at = time.monotonic()
     run.metrics_json = _build_persisted_metrics(
         payload,
         execution,
@@ -175,37 +307,57 @@ def run_workbench(db: Session, payload: WorkbenchRunRequest) -> dict:
         dataset_storage,
         builtin_reason_by_record_id,
     )
+    logger.info(
+        "Metrics payload prepared in %.2fs for run_id=%s",
+        time.monotonic() - metrics_started_at,
+        run.run_id,
+    )
 
+    commit_started_at = time.monotonic()
     db.commit()
     db.refresh(run)
+    logger.info(
+        "Run commit/refresh completed in %.2fs for run_id=%s",
+        time.monotonic() - commit_started_at,
+        run.run_id,
+    )
 
-    model_path = Path(settings.active_model_path)
-    model_path.parent.mkdir(parents=True, exist_ok=True)
-    joblib.dump(model_state.pipeline, model_path)
+    logger.info(
+        "Workbench run FINISHED in %.2fs for run_id=%s tables=%s final_anomalies=%d",
+        time.monotonic() - run_started_at,
+        run.run_id,
+        payload.selected_tables,
+        int(model_state.final_flag.sum()) if hasattr(model_state.final_flag, "sum") else 0,
+    )
 
     return _build_run_response(run, amount_total=amount_total)
 
 
 def _execute_workbench(payload: WorkbenchRunRequest, source_conn) -> WorkbenchExecutionState:
+    execute_started_at = time.monotonic()
     (
         joined,
         source_row_counts,
         join_debug,
         join_warnings,
         executed_sql,
-        human_reasons,
+        user_reasons,
         applied_feature_rule_count,
         sql_pushdown_warnings,
-        applied_outlier_rule_count,
+        applied_user_rule_count,
         staging_table,
     ) = _execute_sql_workbench_frame(payload, source_conn)
 
     warnings = [*join_warnings, *sql_pushdown_warnings]
 
     logger.info(
-        "Joined %d rows from %d tables",
+        "SQL workbench execution completed in %.2fs; joined %d rows from %d tables; applied_feature_rules=%d applied_user_rules=%d staging_table=%s",
+        time.monotonic() - execute_started_at,
         len(joined),
         len(payload.selected_tables),
+        int(applied_feature_rule_count),
+        int(applied_user_rule_count),
+        staging_table,
     )
 
     return WorkbenchExecutionState(
@@ -214,12 +366,51 @@ def _execute_workbench(payload: WorkbenchRunRequest, source_conn) -> WorkbenchEx
         join_debug=join_debug,
         warnings=warnings,
         executed_sql=executed_sql,
-        human_reasons=human_reasons,
+        user_reasons=user_reasons,
         applied_feature_rule_count=int(applied_feature_rule_count),
-        applied_outlier_rule_count=int(applied_outlier_rule_count),
+        applied_user_rule_count=int(applied_user_rule_count),
         staging_table=staging_table,
         batch_id=f"workbench_{datetime.now(tz=timezone.utc).strftime('%Y%m%d_%H%M%S')}",
         dataset_table=RESULT_TABLE,
+        dataset_run_id=_next_dataset_run_id(RESULT_TABLE),
+    )
+
+
+def _execution_artifact_from_state(
+    execution: WorkbenchExecutionState,
+) -> dict[str, Any]:
+    return {
+        "joined": serialize_dataframe(execution.joined),
+        "source_row_counts": execution.source_row_counts,
+        "join_debug": [dict(item) for item in execution.join_debug],
+        "warnings": list(execution.warnings),
+        "executed_sql": execution.executed_sql,
+        "user_reasons": list(execution.user_reasons),
+        "applied_feature_rule_count": execution.applied_feature_rule_count,
+        "applied_user_rule_count": execution.applied_user_rule_count,
+        "dataset_table": execution.dataset_table,
+    }
+
+
+def _execution_state_from_artifact(
+    payload: WorkbenchRunRequest,
+    artifact: dict[str, Any],
+) -> WorkbenchExecutionState:
+    return WorkbenchExecutionState(
+        joined=deserialize_dataframe(artifact["joined"]),
+        source_row_counts={
+            str(key): int(value)
+            for key, value in (artifact.get("source_row_counts") or {}).items()
+        },
+        join_debug=[dict(item) for item in artifact.get("join_debug") or []],
+        warnings=list(artifact.get("warnings") or []),
+        executed_sql=str(artifact.get("executed_sql") or ""),
+        user_reasons=[str(item) for item in artifact.get("user_reasons") or []],
+        applied_feature_rule_count=int(artifact.get("applied_feature_rule_count") or 0),
+        applied_user_rule_count=int(artifact.get("applied_user_rule_count") or 0),
+        staging_table=None,
+        batch_id=f"workbench_{datetime.now(tz=timezone.utc).strftime('%Y%m%d_%H%M%S')}",
+        dataset_table=str(artifact.get("dataset_table") or RESULT_TABLE),
         dataset_run_id=_next_dataset_run_id(RESULT_TABLE),
     )
 
@@ -233,11 +424,10 @@ def _persist_empty_run(
         run_name=payload.run_name,
         source_tables_json=payload.selected_tables,
         join_config_json=[item.model_dump() for item in payload.joins],
-        outlier_rules_json=[item.model_dump() for item in payload.outlier_rules],
         feature_rules_json=[item.model_dump() for item in payload.feature_rules],
         amount_field=payload.amount_field,
         total_rows=0,
-        human_outlier_count=0,
+        user_rule_count=0,
         ml_anomaly_count=0,
         final_anomaly_count=0,
         selected_model="IsolationForest",
@@ -254,31 +444,31 @@ def _persist_empty_run(
 
 def _extract_rule_flags(joined: pd.DataFrame) -> RuleFlagState:
     user_rule_flag = _pop_rule_flag(joined, "__ml_sql_rule_flag")
-    builtin_rule_flag = _pop_rule_flag(joined, "sql_rule_flag")
+    default_rule_flag = _pop_rule_flag(joined, "sql_rule_flag")
 
-    human_reason_series = (
+    user_reason_series = (
         joined.pop("__ml_sql_rule_reasons")
         if "__ml_sql_rule_reasons" in joined.columns
         else None
     )
 
-    builtin_reason_series = (
+    default_reason_series = (
         joined.pop("sql_rule_reasons")
         if "sql_rule_reasons" in joined.columns
         else None
     )
 
-    if builtin_rule_flag.any() and builtin_reason_series is None:
-        builtin_reason_series = builtin_rule_flag.map(
-            lambda flag: "OUTLIER::Built-in SQL anomaly rule" if bool(flag) else None
+    if default_rule_flag.any() and default_reason_series is None:
+        default_reason_series = default_rule_flag.map(
+            lambda flag: "RULE::Default SQL rule" if bool(flag) else None
         )
 
     return RuleFlagState(
         user_rule_flag=user_rule_flag,
-        builtin_rule_flag=builtin_rule_flag,
-        human_outlier_flag=user_rule_flag | builtin_rule_flag,
-        human_reason_series=human_reason_series,
-        builtin_reason_series=builtin_reason_series,
+        default_rule_flag=default_rule_flag,
+        combined_rule_flag=user_rule_flag | default_rule_flag,
+        user_reason_series=user_reason_series,
+        default_reason_series=default_reason_series,
     )
 
 
@@ -289,150 +479,6 @@ def _pop_rule_flag(joined: pd.DataFrame, column_name: str) -> pd.Series:
     return joined.pop(column_name).map(
         lambda value: bool(value) if pd.notna(value) else False
     )
-
-
-def _build_feature_frame(
-    joined: pd.DataFrame,
-    payload: WorkbenchRunRequest,
-) -> tuple[pd.DataFrame, FeatureSelectionResult]:
-    sql_feature_cols = [
-        column
-        for column in _feature_rule_aliases(payload.feature_rules)
-        if column in joined.columns
-    ]
-
-    excluded_columns = {
-        "__ml_sql_rule_flag",
-        "__ml_sql_rule_reasons",
-        "sql_rule_flag",
-        "sql_rule_reasons",
-        *sql_feature_cols,
-    }
-
-    features = _build_auto_feature_frame(
-        joined,
-        excluded_columns=excluded_columns,
-    )
-
-    logger.info(
-        "Added %d auto-selected non-identifier source columns to IF input",
-        len(features.columns),
-    )
-
-    if sql_feature_cols:
-        extra = joined[sql_feature_cols].apply(pd.to_numeric, errors="coerce")
-        features = pd.concat([features, extra], axis=1)
-        logger.info(
-            "Added %d explicit feature-rule columns to IF input",
-            len(sql_feature_cols),
-        )
-
-    features = _add_statistical_outlier_signals(features)
-
-    logger.info(
-        "Feature set has %d columns after statistical signals",
-        len(features.columns),
-    )
-
-    selection_result = _prepare_isolation_forest_feature_frame(features)
-    feature_frame = _validate_isolation_forest_feature_frame(
-        selection_result.feature_frame
-    )
-
-    logger.info(
-        "Feature frame has %d rows and %d columns",
-        len(feature_frame),
-        len(feature_frame.columns),
-    )
-
-    return feature_frame, selection_result
-
-
-def _build_isolation_forest_pipeline(contamination: float | str) -> Pipeline:
-    return Pipeline(
-        steps=[
-            (
-                "imputer",
-                SimpleImputer(
-                    strategy="median",
-                    add_indicator=True,
-                    keep_empty_features=True,
-                ),
-            ),
-            ("scaler", StandardScaler()),
-            (
-                "model",
-                IsolationForest(
-                    contamination=contamination,
-                    random_state=settings.random_state,
-                ),
-            ),
-        ]
-    )
-
-
-def _fit_and_score_isolation_forest(
-    feature_frame: pd.DataFrame,
-    pipeline: Pipeline,
-    joined_index: pd.Index,
-) -> tuple[np.ndarray, np.ndarray, pd.Series]:
-    try:
-        pipeline.fit(feature_frame)
-    except Exception as exc:
-        raise WorkbenchValidationError(
-            "Isolation Forest training failed on the engineered feature set.",
-            suggestion=(
-                "Reduce unstable feature rules, inspect missing-value-heavy columns, "
-                "and retry with a simpler feature set."
-            ),
-            details={
-                "feature_count": int(feature_frame.shape[1]),
-                "row_count": int(len(feature_frame.index)),
-                "original_error": str(exc),
-            },
-        ) from exc
-
-    try:
-        imputed = pipeline.named_steps["imputer"].transform(feature_frame)
-        transformed = pipeline.named_steps["scaler"].transform(imputed)
-
-        isolation_scores = -pipeline.named_steps["model"].score_samples(transformed)
-
-        ml_flag = pd.Series(
-            pipeline.named_steps["model"].predict(transformed) == -1,
-            index=joined_index,
-            dtype=bool,
-        )
-
-    except Exception as exc:
-        raise WorkbenchValidationError(
-            "Isolation Forest scoring failed.",
-            suggestion=(
-                "Verify the engineered feature set still has consistent numeric columns "
-                "after preprocessing."
-            ),
-            details={
-                "feature_count": int(feature_frame.shape[1]),
-                "row_count": int(len(feature_frame.index)),
-                "original_error": str(exc),
-            },
-        ) from exc
-
-    return transformed, isolation_scores, ml_flag
-
-
-def _resolve_ml_threshold(
-    contamination: float | str,
-    model: IsolationForest,
-    isolation_scores: np.ndarray,
-) -> float:
-    if contamination == "auto":
-        return float(-model.offset_)
-
-    contamination_value = float(contamination)
-    quantile = max(0.0, min(1.0, 1.0 - contamination_value))
-
-    return float(np.quantile(isolation_scores, quantile))
 
 
 def _coerce_numeric_row_ids(index_values: list[Any]) -> list[int]:
@@ -453,28 +499,46 @@ def _run_isolation_forest(
     source_conn,
     rule_flags: RuleFlagState,
 ) -> IsolationForestState:
-    feature_frame, feature_selection = _build_feature_frame(execution.joined, payload)
+    if_started_at = time.monotonic()
+    logger.info("Saved Isolation Forest inference START for tables=%s", payload.selected_tables)
 
-    pipeline = _build_isolation_forest_pipeline(payload.contamination)
+    if not execution.staging_table:
+        raise WorkbenchValidationError(
+            "Saved model inference requires a live staged Postgres result.",
+            suggestion="Run the workbench again so the selected Postgres rows can be scored.",
+        )
 
-    transformed, isolation_scores, ml_flag = _fit_and_score_isolation_forest(
-        feature_frame=feature_frame,
-        pipeline=pipeline,
-        joined_index=feature_frame.index,
+    artifact = load_saved_model_artifact(payload)
+    feature_frame, feature_selection = build_saved_model_feature_frame(
+        source_conn,
+        execution.staging_table,
+        artifact,
+    )
+    logger.info(
+        "Saved model feature preparation completed for dataset=%s: %d selected columns; sample=%s",
+        artifact.get("dataset_name"),
+        len(feature_selection.selected_columns),
+        feature_selection.selected_columns[:20],
     )
 
-    ml_threshold = _resolve_ml_threshold(
-        payload.contamination,
-        pipeline.named_steps["model"],
-        isolation_scores,
+    transformed, isolation_scores, ml_flag, ml_threshold = score_with_saved_model(
+        feature_frame,
+        artifact,
+    )
+    pipeline = artifact["pipeline"]
+    logger.info(
+        "Saved Isolation Forest scoring completed: rows=%d columns=%d ml_anomalies=%d",
+        len(feature_frame.index),
+        len(feature_frame.columns),
+        int(ml_flag.sum()),
     )
 
-    human_outlier_flag = rule_flags.human_outlier_flag.reindex(
+    combined_rule_flag = rule_flags.combined_rule_flag.reindex(
         feature_frame.index,
         fill_value=False,
     )
 
-    final_flag = human_outlier_flag | ml_flag
+    final_flag = combined_rule_flag | ml_flag
 
     ml_feature_index = feature_frame.index[ml_flag]
 
@@ -483,6 +547,15 @@ def _run_isolation_forest(
         feature_frame,
         transformed,
         ml_feature_index,
+        transformed_feature_labels=[
+            str(label)
+            for label in artifact.get("transformed_feature_names") or []
+        ],
+    )
+    logger.info(
+        "Saved model inference skipped retraining and scored %d ML anomaly rows with %d explanation signal sets",
+        len(ml_feature_index),
+        len(explanation_signals),
     )
 
     anomaly_index_values = final_flag[final_flag].index.tolist()
@@ -498,6 +571,14 @@ def _run_isolation_forest(
     else:
         filtered_joined = execution.joined.iloc[0:0].copy()
 
+    logger.info(
+        "Saved Isolation Forest inference FINISHED in %.2fs; total_final_anomalies=%d payload_rows=%d threshold=%.4f",
+        time.monotonic() - if_started_at,
+        int(final_flag.sum()),
+        len(filtered_joined),
+        float(ml_threshold),
+    )
+
     return IsolationForestState(
         feature_frame=feature_frame,
         feature_selection=feature_selection,
@@ -512,6 +593,33 @@ def _run_isolation_forest(
     )
 
 
+def _isolation_forest_artifact_from_state(
+    model_state: IsolationForestState,
+) -> dict[str, Any]:
+    return {
+        "feature_frame": serialize_dataframe(model_state.feature_frame),
+        "feature_selection": {
+            "selected_columns": list(model_state.feature_selection.selected_columns),
+            "dropped_all_missing_columns": list(
+                model_state.feature_selection.dropped_all_missing_columns
+            ),
+            "dropped_constant_columns": list(
+                model_state.feature_selection.dropped_constant_columns
+            ),
+        },
+        "pipeline": serialize_pipeline(model_state.pipeline),
+        "transformed": serialize_ndarray(model_state.transformed),
+        "isolation_scores": serialize_ndarray(model_state.isolation_scores),
+        "ml_flag": serialize_series(model_state.ml_flag),
+        "ml_threshold": float(model_state.ml_threshold),
+        "final_flag": serialize_series(model_state.final_flag),
+        "explanation_signals": normalize_explanation_signals(
+            model_state.explanation_signals
+        ),
+        "filtered_joined": serialize_dataframe(model_state.filtered_joined),
+    }
+
+
 def _calculate_amount_total(
     payload: WorkbenchRunRequest,
     filtered_joined: pd.DataFrame,
@@ -519,7 +627,10 @@ def _calculate_amount_total(
     if not payload.amount_field or filtered_joined.empty:
         return 0.0
 
-    amount_column = _resolve_column(filtered_joined, payload.amount_field)
+    if payload.amount_field in filtered_joined.columns:
+        amount_column = payload.amount_field
+    else:
+        amount_column = _resolve_column(filtered_joined, payload.amount_field)
     if amount_column is None or amount_column not in filtered_joined.columns:
         logger.warning(
             "Amount field '%s' not found in filtered results. Returning 0.0",
@@ -527,8 +638,10 @@ def _calculate_amount_total(
         )
         return 0.0
 
+    amount_series = _select_series_column(filtered_joined, amount_column)
+
     return float(
-        pd.to_numeric(filtered_joined[amount_column], errors="coerce")
+        pd.to_numeric(amount_series, errors="coerce")
         .fillna(0)
         .sum()
     )
@@ -541,15 +654,20 @@ def _create_run_record(
     rule_flags: RuleFlagState,
     model_state: IsolationForestState,
 ) -> WorkbenchRun:
+    reviewable_rule_count = int(
+        rule_flags.combined_rule_flag.reindex(
+            model_state.final_flag.index,
+            fill_value=False,
+        ).sum()
+    )
     run = WorkbenchRun(
         run_name=payload.run_name,
         source_tables_json=payload.selected_tables,
         join_config_json=[item.model_dump() for item in payload.joins],
-        outlier_rules_json=[item.model_dump() for item in payload.outlier_rules],
         feature_rules_json=[item.model_dump() for item in payload.feature_rules],
         amount_field=payload.amount_field,
         total_rows=int(len(execution.joined)),
-        human_outlier_count=int(rule_flags.human_outlier_flag.sum()),
+        user_rule_count=reviewable_rule_count,
         ml_anomaly_count=int(model_state.ml_flag.sum()),
         final_anomaly_count=int(model_state.final_flag.sum()),
         selected_model="IsolationForest",
@@ -588,9 +706,9 @@ def _base_metrics(
         "ml_run_id": execution.dataset_run_id,
         "from_date": _safe_date_literal(payload.from_date),
         "to_date": _safe_date_literal(payload.to_date),
-        "requested_outlier_rule_count": int(len(payload.outlier_rules)),
+        "requested_user_rule_count": int(len(payload.user_rules)),
         "requested_feature_rule_count": int(len(payload.feature_rules)),
-        "applied_outlier_rule_count": execution.applied_outlier_rule_count,
+        "applied_user_rule_count": execution.applied_user_rule_count,
         "applied_feature_rule_count": execution.applied_feature_rule_count,
         "warnings": execution.warnings,
     }
@@ -601,11 +719,11 @@ def _build_builtin_reason_lookup(
     model_state: IsolationForestState,
     dataset_storage: dict[str, Any],
 ) -> dict[str, str]:
-    if rule_flags.builtin_reason_series is None:
+    if rule_flags.default_reason_series is None:
         return {}
 
     # Get reasons aligned to the final_flag rows (preserving original index)
-    filtered_builtin_reasons = rule_flags.builtin_reason_series.reindex(
+    filtered_builtin_reasons = rule_flags.default_reason_series.reindex(
         model_state.final_flag.index
     ).loc[model_state.final_flag]
 
@@ -666,7 +784,7 @@ def _build_run_response(run: WorkbenchRun, amount_total: float) -> dict[str, Any
         "run_id": run.run_id,
         "run_name": run.run_name,
         "total_rows": run.total_rows,
-        "human_outlier_count": run.human_outlier_count,
+        "user_rule_count": run.user_rule_count,
         "ml_anomaly_count": run.ml_anomaly_count,
         "final_anomaly_count": run.final_anomaly_count,
         "amount_total": amount_total,

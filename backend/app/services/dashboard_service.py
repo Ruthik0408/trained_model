@@ -1,29 +1,30 @@
 import json
 import math
 import logging
-import time
 from typing import Any
 
 import pandas as pd
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from app.core.cache import DATASET_SUMMARY_CACHE, QUERY_RESULT_CACHE, TTLCache
 from app.core.models import WorkbenchRun
+from app.services.llm_reason_service import build_deterministic_isolation_reason
 from app.services.workbench.constants import (
-    FEATURE_NAME_COLUMN,
     FEATURE_VALUES_COLUMN,
     FEEDBACK_SCORE_COLUMN,
-    HUMAN_RULE_COLUMN,
-    HUMAN_RULE_NAME_COLUMN,
+    FK_DAK_COLUMN,
     IF_SCORE_COLUMN,
     ISOLATION_RULE_COLUMN,
     ML_FEATURES_TABLE,
     ML_THRESHOLD_COLUMN,
     RESULT_SCHEMA,
-    REVIEW_PAYLOAD_COLUMN,
     RUN_ID_COLUMN,
+    SELECTED_TABLES_COLUMN,
     SERIAL_COLUMN,
     SYSTEM_COLUMNS,
+    USER_RULE_COLUMN,
+    USER_RULE_NAME_COLUMN,
 )
 from app.services.workbench.result_store import _score_to_feedback
 from app.services.workbench.source_db import (
@@ -32,27 +33,34 @@ from app.services.workbench.source_db import (
     _result_table_exists,
     _result_table_ref,
     _source_connect,
+    _source_columns_map,
+    _source_table_ref,
 )
 from app.services.workbench.utils import (
     _safe_json,
     _safe_numeric_scalar,
 )
+from app.services.workbench.valkey_artifacts import get_review_payload_artifact
 
 logger = logging.getLogger(__name__)
 DEFAULT_REVIEW_PAGE_SIZE = 50
-LATEST_DATASET_TABLE_CACHE_TTL = 5.0
-_latest_dataset_table_cache: dict[str, Any] = {"value": None, "timestamp": 0.0}
-_latest_run_id_cache: dict[str, tuple[float, int | None]] = {}
+_latest_dataset_cache = TTLCache(ttl_seconds=5.0, namespace="latest_dataset")
+_latest_run_id_cache = TTLCache(ttl_seconds=5.0, namespace="latest_run_id")
+
+def _sql_truthy(column_name: str) -> str:
+    column_ref = _quote(column_name)
+    return f"LOWER(BTRIM({column_ref}::text)) IN ('true', 't', '1', 'yes', 'y')"
+
 
 _ANOMALY_FILTER_CLAUSES: dict[str, str] = {
-    "rule": f"WHERE COALESCE({_quote(HUMAN_RULE_COLUMN)}, false) = true",
-    "ml": f"WHERE COALESCE({_quote(ISOLATION_RULE_COLUMN)}, false) = true",
+    "rule": f"WHERE {_sql_truthy(USER_RULE_COLUMN)}",
+    "ml": f"WHERE {_sql_truthy(ISOLATION_RULE_COLUMN)}",
     "reviewed": f"WHERE {_quote(FEEDBACK_SCORE_COLUMN)} IS NOT NULL",
     "not_reviewed": f"WHERE {_quote(FEEDBACK_SCORE_COLUMN)} IS NULL",
     "all": (
         "WHERE ("
-        f"COALESCE({_quote(HUMAN_RULE_COLUMN)}, false) = true OR "
-        f"COALESCE({_quote(ISOLATION_RULE_COLUMN)}, false) = true"
+        f"{_sql_truthy(USER_RULE_COLUMN)} OR "
+        f"{_sql_truthy(ISOLATION_RULE_COLUMN)}"
         ")"
     ),
 }
@@ -66,6 +74,13 @@ def review_table_data(
     offset: int = 0,
     run_id: int | None = None,
 ) -> dict[str, Any]:
+    cache_key = (
+        f"review_table:{dataset_table or 'latest'}:{anomaly_filter}:"
+        f"{limit or DEFAULT_REVIEW_PAGE_SIZE}:{offset}:{run_id or 'latest'}"
+    )
+    cached = QUERY_RESULT_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
     selected_dataset = dataset_table or _latest_dataset_table(db)
     if not selected_dataset:
         return {
@@ -77,7 +92,13 @@ def review_table_data(
 
     selected_run_id = run_id if run_id is not None else _latest_run_id_for_dataset(db, selected_dataset)
     selected_ml_run_id = _ml_run_id_for_app_run(db, selected_run_id)
-    summary = _dataset_summary(selected_dataset, anomaly_filter=anomaly_filter, run_id=selected_ml_run_id)
+    summary = _dataset_summary(
+        db,
+        selected_dataset,
+        anomaly_filter=anomaly_filter,
+        run_id=selected_ml_run_id,
+        app_run_id=selected_run_id,
+    )
     review_data = review_rows_data(
         db,
         dataset_table=selected_dataset,
@@ -138,7 +159,7 @@ def review_table_data(
                 "risk_score": round(risk_score, 2),
             }
         )
-    return {
+    result = {
         "rows": rows,
         "total_amount": float(summary["total_amount"]),
         "total_rows": int(summary["total_rows"]),
@@ -146,6 +167,8 @@ def review_table_data(
         "run_id": selected_run_id,
         "pagination": review_data.get("pagination", {}),
     }
+    QUERY_RESULT_CACHE.set(cache_key, result)
+    return result
 
 def review_rows_data(
     db: Session,
@@ -156,6 +179,13 @@ def review_rows_data(
     offset: int = 0,
     run_id: int | None = None,
 ) -> dict[str, Any]:
+    cache_key = (
+        f"review_rows:{dataset_table or 'latest'}:{anomaly_filter}:"
+        f"{limit or DEFAULT_REVIEW_PAGE_SIZE}:{offset}:{run_id or 'latest'}"
+    )
+    cached = QUERY_RESULT_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
     selected_dataset = dataset_table or _latest_dataset_table(db)
     if not selected_dataset:
         return {
@@ -170,6 +200,7 @@ def review_rows_data(
     page_limit = max(1, int(limit or DEFAULT_REVIEW_PAGE_SIZE))
     page_offset = max(0, int(offset or 0))
     builtin_reason_by_record_id: dict[str, str] = {}
+    run: WorkbenchRun | None = None
     if selected_run_id is not None:
         run = db.query(WorkbenchRun).filter(WorkbenchRun.run_id == selected_run_id).first()
         if run and isinstance(run.metrics_json, dict):
@@ -177,7 +208,13 @@ def review_rows_data(
             if isinstance(raw_map, dict):
                 builtin_reason_by_record_id = {str(key): str(value) for key, value in raw_map.items() if value is not None}
 
-    summary = _dataset_summary(selected_dataset, anomaly_filter=anomaly_filter, run_id=selected_ml_run_id)
+    summary = _dataset_summary(
+        db,
+        selected_dataset,
+        anomaly_filter=anomaly_filter,
+        run_id=selected_ml_run_id,
+        app_run_id=selected_run_id,
+    )
     df = _dataset_frame(
         selected_dataset,
         anomaly_filter=anomaly_filter,
@@ -188,6 +225,7 @@ def review_rows_data(
     rows = [_dataset_row_to_prediction(row, builtin_reason_by_record_id) for _, row in df.iterrows()]
     for row in rows:
         row["dataset_table"] = selected_dataset
+    rows = _rehydrate_prediction_payloads_with_run(run if selected_run_id is not None else None, rows)
     rows = _enrich_payload_rows(rows)
     total_amount = sum(_payload_amount(row["row_payload_json"]) for row in rows)
     logger.info(
@@ -198,7 +236,7 @@ def review_rows_data(
         len(rows),
         summary["total_rows"],
     )
-    return {
+    result = {
         "dataset_table": selected_dataset,
         "run_id": selected_run_id,
         "rows": rows,
@@ -214,6 +252,8 @@ def review_rows_data(
             "page_count": int(len(rows)),
         },
     }
+    QUERY_RESULT_CACHE.set(cache_key, result)
+    return result
 
 def report_data(
     db: Session,
@@ -221,6 +261,10 @@ def report_data(
     *,
     run_id: int | None = None,
 ) -> dict[str, Any]:
+    cache_key = f"report:{dataset_table or 'latest'}:{run_id or 'latest'}"
+    cached = QUERY_RESULT_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
     selected_run: WorkbenchRun | None = None
 
     if run_id is not None:
@@ -256,7 +300,13 @@ def report_data(
     selected_run_id = int(selected_run.run_id)
     selected_ml_run_id = _ml_run_id_for_app_run(db, selected_run_id)
     summary = (
-        _dataset_summary(selected_dataset, anomaly_filter="all", run_id=selected_ml_run_id)
+        _dataset_summary(
+            db,
+            selected_dataset,
+            anomaly_filter="all",
+            run_id=selected_ml_run_id,
+            app_run_id=selected_run_id,
+        )
         if selected_dataset
         else {"total_rows": 0, "total_amount": 0.0}
     )
@@ -267,7 +317,7 @@ def report_data(
     )
     anomaly_count = int(selected_run.final_anomaly_count or summary.get("total_rows") or 0)
 
-    return {
+    result = {
         "run_id": selected_run_id,
         "dataset_table": selected_dataset,
         "run_name": selected_run.run_name,
@@ -282,20 +332,41 @@ def report_data(
         "to_date": metrics.get("to_date"),
         "selected_model": selected_run.selected_model,
     }
+    QUERY_RESULT_CACHE.set(cache_key, result)
+    return result
+
+
+def invalidate_dashboard_caches(dataset_table: str | None = None) -> None:
+    QUERY_RESULT_CACHE.invalidate()
+    DATASET_SUMMARY_CACHE.invalidate()
+    _latest_dataset_cache.invalidate()
+    if dataset_table:
+        _latest_run_id_cache.invalidate(dataset_table)
+    else:
+        _latest_run_id_cache.invalidate()
 
 def _latest_dataset_table(db: Session) -> str | None:
+    cached = _latest_dataset_cache.get("value")
+    if cached is not None:
+        return cached
     for latest_run in _iter_recent_runs(db):
         metrics = latest_run.metrics_json or {}
         dataset_table = metrics.get("dataset_table")
         if dataset_table and _result_table_exists(dataset_table):
+            _latest_dataset_cache.set("value", dataset_table)
             return dataset_table
     return None
 
 def _latest_run_id_for_dataset(db: Session, dataset_table: str) -> int | None:
+    cached = _latest_run_id_cache.get(dataset_table)
+    if cached is not None:
+        return int(cached) if cached is not None else None
     for run in _iter_recent_runs(db):
         metrics = run.metrics_json or {}
         if metrics.get("dataset_table") == dataset_table:
-            return int(run.run_id)
+            value = int(run.run_id)
+            _latest_run_id_cache.set(dataset_table, value)
+            return value
     return None
 
 def _ml_run_id_for_app_run(db: Session, app_run_id: int | None) -> int | None:
@@ -326,13 +397,46 @@ def _iter_recent_runs(db: Session, batch_size: int = 100):
         offset += batch_size
 
 def _dataset_summary(
+    db: Session,
     dataset_table: str,
     *,
     anomaly_filter: str = "all",
     run_id: int | None = None,
+    app_run_id: int | None = None,
 ) -> dict[str, Any]:
+    cache_key = (
+        f"dataset_summary:{dataset_table}:{anomaly_filter}:"
+        f"{run_id or 'all'}:{app_run_id or 'latest'}"
+    )
+    cached = DATASET_SUMMARY_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
     if not _result_table_exists(dataset_table):
         return {"total_rows": 0, "total_amount": 0.0}
+
+    if app_run_id is not None:
+        run = db.query(WorkbenchRun).filter(WorkbenchRun.run_id == int(app_run_id)).first()
+        payload_rows = _review_payload_rows_for_run(run)
+        if payload_rows:
+            df = _dataset_frame(
+                dataset_table,
+                anomaly_filter=anomaly_filter,
+                run_id=run_id,
+            )
+            total_amount = 0.0
+            for _, row in df.iterrows():
+                record_id = row.get(SERIAL_COLUMN)
+                if record_id is None:
+                    continue
+                payload = payload_rows.get(str(int(record_id)))
+                if isinstance(payload, dict):
+                    total_amount += _payload_amount(payload)
+            result = {
+                "total_rows": int(len(df.index)),
+                "total_amount": float(total_amount),
+            }
+            DATASET_SUMMARY_CACHE.set(cache_key, result)
+            return result
 
     normalized_summary_filter = (anomaly_filter or "all").strip().lower()
     where_clause = _add_run_filter(
@@ -355,12 +459,18 @@ def _dataset_summary(
     if not row:
         return {"total_rows": 0, "total_amount": 0.0}
 
-    return {
+    result = {
         "total_rows": int(row.get("total_rows") or 0),
         "total_amount": float(row.get("total_amount") or 0.0),
     }
+    DATASET_SUMMARY_CACHE.set(cache_key, result)
+    return result
 
 def _feedback_summary(dataset_table: str, run_id: int | None = None) -> dict[str, int]:
+    cache_key = f"feedback_summary:{dataset_table}:{run_id or 'all'}"
+    cached = DATASET_SUMMARY_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
     if not _result_table_exists(dataset_table):
         return {"reviewed_count": 0, "pending_count": 0, "accepted_count": 0}
 
@@ -392,11 +502,13 @@ def _feedback_summary(dataset_table: str, run_id: int | None = None) -> dict[str
         row = conn.execute(sql).mappings().first()
     if not row:
         return {"reviewed_count": 0, "pending_count": 0, "accepted_count": 0}
-    return {
+    result = {
         "reviewed_count": int(row.get("reviewed_count") or 0),
         "pending_count": int(row.get("pending_count") or 0),
         "accepted_count": int(row.get("accepted_count") or 0),
     }
+    DATASET_SUMMARY_CACHE.set(cache_key, result)
+    return result
 
 def _dataset_query_filter(anomaly_filter: str) -> str:
     normalized = (anomaly_filter or "all").strip().lower()
@@ -439,20 +551,20 @@ def _dataset_frame(
         column_name
         for column_name in (
             SERIAL_COLUMN,
-            FEATURE_NAME_COLUMN,
-            HUMAN_RULE_NAME_COLUMN,
-            HUMAN_RULE_COLUMN,
+            SELECTED_TABLES_COLUMN,
+            USER_RULE_NAME_COLUMN,
+            USER_RULE_COLUMN,
             ISOLATION_RULE_COLUMN,
             IF_SCORE_COLUMN,
             ML_THRESHOLD_COLUMN,
             FEEDBACK_SCORE_COLUMN,
             RUN_ID_COLUMN,
-            REVIEW_PAYLOAD_COLUMN,
+            FK_DAK_COLUMN,
             FEATURE_VALUES_COLUMN,
         )
         if column_name in available_columns
     ]
-    if REVIEW_PAYLOAD_COLUMN in available_columns and compact_columns:
+    if compact_columns:
         selected_columns = ", ".join(_quote(column_name) for column_name in compact_columns)
     sql = (
         f"SELECT {selected_columns} FROM {_result_table_ref(dataset_table)} "
@@ -470,7 +582,7 @@ def _dataset_row_to_prediction(
     row: pd.Series,
     builtin_reason_by_record_id: dict[str, str] | None = None,
 ) -> dict[str, Any]:
-    rule_reason = row.get(HUMAN_RULE_NAME_COLUMN)
+    rule_reason = row.get(USER_RULE_NAME_COLUMN)
     reason_list = [rule_reason] if rule_reason else []
     payload = _dataset_payload(row)
     feature_payload = _parse_json_text(row.get(FEATURE_VALUES_COLUMN), {})
@@ -482,9 +594,9 @@ def _dataset_row_to_prediction(
     llm_if_reason = None
     llm_if_reason_model = None
     llm_if_reason_fallback = False
-    payload["review_key"] = row.get(FEATURE_NAME_COLUMN)
-    human_rule = bool(row.get(HUMAN_RULE_COLUMN))
-    isolation_rule = bool(row.get(ISOLATION_RULE_COLUMN))
+    payload["review_key"] = row.get(SELECTED_TABLES_COLUMN)
+    user_rule = _safe_bool(row.get(USER_RULE_COLUMN))
+    isolation_rule = _safe_bool(row.get(ISOLATION_RULE_COLUMN))
     if not isolation_rule:
         ml_feature_signals = []
         llm_if_reason = None
@@ -498,18 +610,30 @@ def _dataset_row_to_prediction(
         record_id = row.get("id")
     if record_id is None:
         record_id = row.get("s.no")
+    numeric_record_id = _safe_numeric_scalar(record_id, default=None)
+    if numeric_record_id is None:
+        raise ValueError(f"Review row is missing a valid record id: {record_id!r}")
+    record_id_int = int(numeric_record_id)
+    builtin_reason = None
     if builtin_reason_by_record_id:
-        builtin_reason = builtin_reason_by_record_id.get(str(int(record_id))) if record_id is not None else None
+        builtin_reason = builtin_reason_by_record_id.get(str(record_id_int))
         if builtin_reason and builtin_reason not in reason_list:
             reason_list.append(builtin_reason)
+    ml_reason = (
+        build_deterministic_isolation_reason(ml_feature_signals, payload)
+        if isolation_rule and ml_feature_signals
+        else None
+    )
+    if ml_reason and ml_reason not in reason_list:
+        reason_list.append(ml_reason)
     return {
-        "prediction_id": int(record_id),
-        "source_record_id": int(record_id),
+        "prediction_id": record_id_int,
+        "source_record_id": record_id_int,
         "dataset_table": ML_FEATURES_TABLE,
         "batch_id": None,
-        "rule_flag": human_rule,
+        "rule_flag": user_rule,
         "rule_codes": rule_reason,
-        "rule_score": 1.0 if human_rule else 0.0,
+        "rule_score": 1.0 if user_rule else 0.0,
         "ml_score": if_score,
         "raw_ml_score": if_score,
         "ml_threshold": ml_threshold,
@@ -518,7 +642,8 @@ def _dataset_row_to_prediction(
         "review_status": "REVIEWED" if feedback else "PENDING_REVIEW",
         "feedback": feedback,
         "reasons_json": {
-            "human_outlier_flag": human_rule,
+            "user_rule_flag": user_rule,
+            "default_rule_flag": bool(builtin_reason),
             "ml_anomaly_flag": isolation_rule,
             "reason_list": reason_list,
             "if_score": if_score,
@@ -532,10 +657,139 @@ def _dataset_row_to_prediction(
         "row_payload_json": payload,
     }
 
+
+def _safe_bool(value: Any) -> bool:
+    if value is None or pd.isna(value):
+        return False
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "t", "yes", "y"}
+    return bool(value)
+
+
+def _review_payload_rows_for_run(run: WorkbenchRun | None) -> dict[str, dict[str, Any]]:
+    if run is None:
+        return {}
+    artifact = get_review_payload_artifact(int(run.run_id))
+    if not isinstance(artifact, dict):
+        return {}
+    raw_rows = artifact.get("rows") or {}
+    if not isinstance(raw_rows, dict):
+        return {}
+    return {
+        str(key): dict(value)
+        for key, value in raw_rows.items()
+        if isinstance(value, dict)
+    }
+
+
+def _rehydrate_prediction_payloads(
+    app_run_id: int | None,
+    rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    if app_run_id is None or not rows:
+        return rows
+
+    artifact = get_review_payload_artifact(int(app_run_id))
+    if not isinstance(artifact, dict):
+        return rows
+
+    raw_rows = artifact.get("rows") or {}
+    if not isinstance(raw_rows, dict):
+        return rows
+
+    for row in rows:
+        record_id = row.get("prediction_id")
+        if record_id is None:
+            continue
+        payload = raw_rows.get(str(int(record_id)))
+        if isinstance(payload, dict):
+            row["row_payload_json"] = payload
+    return rows
+
+
+def _rehydrate_prediction_payloads_with_run(
+    run: WorkbenchRun | None,
+    rows: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    rows = _rehydrate_prediction_payloads(int(run.run_id), rows) if run is not None else rows
+    if run is None or not rows:
+        return rows
+
+    selected_tables = list(run.source_tables_json or [])
+    if not selected_tables:
+        metrics = run.metrics_json or {}
+        selected_tables = list(metrics.get("selected_tables") or [])
+
+    for row in rows:
+        payload = row.get("row_payload_json") or {}
+        if _payload_has_business_data(payload):
+            continue
+        fk_dak_value = _safe_numeric_scalar(payload.get(FK_DAK_COLUMN), default=None)
+        if fk_dak_value is None:
+            continue
+        rebuilt_payload = _source_payload_for_fk_dak(int(fk_dak_value), selected_tables)
+        if rebuilt_payload:
+            rebuilt_payload["review_key"] = payload.get("review_key")
+            row["row_payload_json"] = rebuilt_payload
+    return rows
+
+
+def _payload_has_business_data(payload: dict[str, Any]) -> bool:
+    if not isinstance(payload, dict):
+        return False
+    return any(
+        key not in {FK_DAK_COLUMN, "review_key"}
+        for key in payload.keys()
+    )
+
+
+def _source_payload_for_fk_dak(
+    fk_dak: int,
+    selected_tables: list[str],
+) -> dict[str, Any]:
+    if fk_dak <= 0 or not selected_tables:
+        return {}
+
+    payload: dict[str, Any] = {}
+
+    try:
+        source_columns = _source_columns_map(selected_tables)
+        with _source_connect() as conn:
+            for table_name in selected_tables:
+                table_columns = source_columns.get(table_name) or []
+                if not table_columns:
+                    continue
+
+                available_columns = {str(item.get("column_name")) for item in table_columns}
+                if table_name == "dak" and "id" in available_columns:
+                    where_column = "id"
+                elif "fk_dak" in available_columns:
+                    where_column = "fk_dak"
+                else:
+                    continue
+
+                order_by = ' ORDER BY "id" ASC' if "id" in available_columns else ""
+                sql = text(
+                    f"SELECT * FROM {_source_table_ref(table_name)} "
+                    f"WHERE {_quote(where_column)} = :fk_dak"
+                    f"{order_by} LIMIT 1"
+                )
+                row = conn.execute(sql, {"fk_dak": int(fk_dak)}).mappings().first()
+                if not row:
+                    continue
+
+                for column_name, value in row.items():
+                    payload[f"{table_name}.{column_name}"] = _safe_json(value)
+    except Exception as exc:
+        logger.warning("Could not rebuild source payload for fk_dak=%s: %s", fk_dak, exc)
+
+    return payload
+
 def _dataset_payload(row: pd.Series) -> dict[str, Any]:
-    review_payload = _parse_json_text(row.get(REVIEW_PAYLOAD_COLUMN), None)
-    if isinstance(review_payload, dict):
-        return {str(column): _safe_json(value) for column, value in review_payload.items()}
+    fk_dak_value = row.get(FK_DAK_COLUMN)
+    numeric_fk_dak = _safe_numeric_scalar(fk_dak_value, default=None)
+    if numeric_fk_dak is not None:
+        return {FK_DAK_COLUMN: int(numeric_fk_dak)}
 
     feature_payload = _parse_json_text(row.get(FEATURE_VALUES_COLUMN), None)
     if isinstance(feature_payload, dict):
@@ -650,11 +904,15 @@ def _fetch_name_map(
     id_list = ",".join(str(int(value)) for value in sorted(ids))
     sql = text(
         f"SELECT {_quote(id_column)} AS row_id, {_quote(value_column)} AS row_value "
-        f"FROM {RESULT_SCHEMA}.{_quote(table_name)} "
+        f"FROM {_source_table_ref(table_name)} "
         f"WHERE {_quote(id_column)} IN ({id_list})"
     )
-    with _source_connect() as conn:
-        rows = conn.execute(sql).mappings().all()
+    try:
+        with _source_connect() as conn:
+            rows = conn.execute(sql).mappings().all()
+    except Exception as exc:
+        logger.warning("Skipping optional lookup table %s: %s", table_name, exc)
+        return {}
     return {
         int(row["row_id"]): str(row["row_value"]).strip()
         for row in rows
@@ -671,25 +929,4 @@ def _payload_lookup_ids(payload: dict[str, Any], aliases: list[str]) -> set[int]
     return ids
 
 def _dashboard_amount_sql() -> str:
-    candidates = [
-        "dak.amount",
-        "bill.amount_passed",
-        "bill.amount",
-        "cheque_slip.amount",
-        "schedule3.schedule3_amount",
-        "amount",
-        "amount_passed",
-        "amount_claimed",
-        "invoice_amount",
-    ]
-    parts = []
-    payload_column = _quote(REVIEW_PAYLOAD_COLUMN)
-    for key in candidates:
-        expr = f"NULLIF(({payload_column}::jsonb ->> '{key}'), '')"
-        parts.append(
-            "CASE "
-            f"WHEN {expr} IS NOT NULL AND {expr} ~ '^[+-]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)$' "
-            f"THEN ({expr})::double precision "
-            "ELSE NULL END"
-        )
-    return f"COALESCE({', '.join(parts)}, 0.0)"
+    return "0.0"

@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import date, datetime
 import time
 from typing import Any
 from uuid import uuid4
@@ -7,16 +7,14 @@ import pandas as pd
 from sqlalchemy import bindparam, text
 from sqlalchemy.exc import SQLAlchemyError
 
+from app.core.cache import TTLCache
 from app.core.config import settings
-from app.schemas.workbench_schema import BuiltinRuleRequest, FeatureRuleInput, OutlierRuleInput, WorkbenchRunRequest
+from app.schemas.workbench_schema import BuiltinRuleRequest, FeatureRuleInput, UserRuleInput, WorkbenchRunRequest
 from app.services.workbench.constants import (
     DATE_FILTER_COLUMN_PRIORITY,
-    DATE_SEQUENCE_STAGE_ALIASES,
     ENABLE_EXPENSIVE_JOIN_DEBUG,
-    MIN_FEATURE_COLUMN_PRESENT_RATIO,
     PREVIEW_ROW_LIMIT,
     RESULT_TABLE,
-    SAME_TABLE_DATE_SEQUENCE_STAGES,
     SQL_RULE_FLAG_COLUMN,
     SQL_RULE_REASONS_COLUMN,
     TEMP_ROW_ID_COLUMN,
@@ -27,7 +25,6 @@ from app.services.workbench.constants import (
 from app.services.workbench.source_db import (
     _approx_table_row_count,
     _index_name,
-    _is_date_like_column_name,
     _previous_dataset_row_count,
     _quote,
     _source_begin,
@@ -38,11 +35,37 @@ from app.services.workbench.source_db import (
     _validate_identifier,
     _validate_selected_tables,
 )
-from app.services.workbench.utils import _is_identifier_like_column, _safe_json, _safe_rule_name
+from app.services.workbench.utils import (
+    _is_date_like_column_name,
+    _safe_json,
+    _safe_rule_name,
+)
+
+
+DATE_SEQUENCE_STAGE_ALIASES = [
+    ("invoice_date", ["invoice_date"]),
+    ("bill_date", ["bill_date"]),
+    ("reference_date", ["reference_date"]),
+    ("auditor_stage", ["auditor_date", "aud_date", "auditor_disposal_date"]),
+    ("aao_stage", ["aao_date", "aao_disposal_date"]),
+    ("ao_stage", ["ao_date", "ao_disposal_date"]),
+    ("go_date", ["go_date"]),
+    ("dp_sheet_date", ["dp_sheet_date"]),
+    ("cmp_date", ["cmp_date", "cmp_batch_date", "cmp_file_gen_date"]),
+    ("disposal_date", ["disposal_date"]),
+]
+SAME_TABLE_DATE_SEQUENCE_STAGES = {
+    "auditor_stage",
+    "aao_stage",
+    "ao_stage",
+    "go_date",
+    "disposal_date",
+}
+MIN_FEATURE_COLUMN_PRESENT_RATIO = 0.70
 
 
 _JOIN_SQL_CACHE_TTL_SECONDS = 60.0
-_join_sql_cache: dict[tuple[Any, ...], tuple[float, str, list[dict[str, Any]], list[str]]] = {}
+_join_sql_cache = TTLCache(ttl_seconds=_JOIN_SQL_CACHE_TTL_SECONDS, namespace="join_sql")
 
 
 def _dataset_table_name(_selected_tables: list[str]) -> str:
@@ -53,6 +76,7 @@ def _join_sql_cache_key(
     payload: BuiltinRuleRequest | WorkbenchRunRequest,
     *,
     row_limit: int | None,
+    projection_mode: str,
 ) -> tuple[Any, ...]:
     return (
         tuple(str(table_name) for table_name in payload.selected_tables),
@@ -69,6 +93,7 @@ def _join_sql_cache_key(
         _safe_date_literal(getattr(payload, "from_date", None)),
         _safe_date_literal(getattr(payload, "to_date", None)),
         int(row_limit) if row_limit is not None else None,
+        str(projection_mode),
     )
 
 
@@ -76,40 +101,49 @@ def _get_cached_join_sql(
     payload: BuiltinRuleRequest | WorkbenchRunRequest,
     *,
     row_limit: int | None,
+    projection_mode: str,
 ) -> tuple[str, list[dict[str, Any]], list[str]] | None:
-    cache_key = _join_sql_cache_key(payload, row_limit=row_limit)
-    cached = _join_sql_cache.get(cache_key)
+    cache_key = _join_sql_cache_key(
+        payload,
+        row_limit=row_limit,
+        projection_mode=projection_mode,
+    )
+    cached = _join_sql_cache.get(repr(cache_key))
     if cached is None:
         return None
 
-    cached_at, sql, join_debug, warnings = cached
-    now = datetime.now(tz=timezone.utc).timestamp()
-    if now - cached_at >= _JOIN_SQL_CACHE_TTL_SECONDS:
-        _join_sql_cache.pop(cache_key, None)
-        return None
-
+    sql = str(cached.get("sql") or "")
+    join_debug = [dict(item) for item in cached.get("join_debug") or []]
+    warnings = list(cached.get("warnings") or [])
     logger.info(
         "Reusing cached workbench join SQL for tables=%s row_limit=%s",
         payload.selected_tables,
         row_limit,
     )
-    return sql, [dict(item) for item in join_debug], list(warnings)
+    return sql, join_debug, warnings
 
 
 def _store_cached_join_sql(
     payload: BuiltinRuleRequest | WorkbenchRunRequest,
     *,
     row_limit: int | None,
+    projection_mode: str,
     sql: str,
     join_debug: list[dict[str, Any]],
     warnings: list[str],
 ) -> None:
-    cache_key = _join_sql_cache_key(payload, row_limit=row_limit)
-    _join_sql_cache[cache_key] = (
-        datetime.now(tz=timezone.utc).timestamp(),
-        sql,
-        [dict(item) for item in join_debug],
-        list(warnings),
+    cache_key = _join_sql_cache_key(
+        payload,
+        row_limit=row_limit,
+        projection_mode=projection_mode,
+    )
+    _join_sql_cache.set(
+        repr(cache_key),
+        {
+            "sql": sql,
+            "join_debug": [dict(item) for item in join_debug],
+            "warnings": list(warnings),
+        },
     )
 
 def _feature_column_presence_ratios(
@@ -149,7 +183,12 @@ def _joined_feature_column_presence_ratios(
     payload: BuiltinRuleRequest | WorkbenchRunRequest,
     table_frames: dict[str, list[dict]],
 ) -> dict[str, float]:
-    sql, _join_debug, _warnings = _get_or_build_join_sql(payload, table_frames, row_limit=None)
+    sql, _join_debug, _warnings = _get_or_build_join_sql(
+        payload,
+        table_frames,
+        row_limit=None,
+        projection_mode="full",
+    )
     date_columns = [
         f"{table_name}.{column['column_name']}"
         for table_name, columns in table_frames.items()
@@ -195,14 +234,52 @@ def _builtin_stage_column_matches(available: dict[str, str]) -> dict[str, list[s
         normalized_plain = plain_column.strip().lower()
         if not _is_date_like_column_name(normalized_plain, data_type):
             continue
-        matches_by_alias.setdefault(normalized_plain, []).append(qualified_name)
+        for _stage_name, aliases in DATE_SEQUENCE_STAGE_ALIASES:
+            for alias in aliases:
+                matched_alias = _matching_stage_alias(normalized_plain, alias)
+                if matched_alias is None:
+                    continue
+                matches_by_alias.setdefault(matched_alias, []).append(qualified_name)
     return matches_by_alias
 
-def _same_table_date_sequence_pair(left_stage_name: str, right_stage_name: str) -> bool:
-    return (
-        left_stage_name in SAME_TABLE_DATE_SEQUENCE_STAGES
-        and right_stage_name in SAME_TABLE_DATE_SEQUENCE_STAGES
-    )
+def _matching_stage_alias(column_name: str, alias: str) -> str | None:
+    normalized_column = str(column_name).strip().lower()
+    normalized_alias = str(alias).strip().lower()
+    if normalized_column == normalized_alias:
+        return normalized_alias
+    suffix = f"_{normalized_alias}"
+    if normalized_column.endswith(suffix):
+        return normalized_alias
+    return None
+
+def _date_sequence_scope(
+    qualified_name: str,
+    matched_aliases: list[str],
+) -> tuple[str, str]:
+    table_name, plain_column = qualified_name.split(".", 1)
+    normalized_plain = plain_column.strip().lower()
+    for alias in matched_aliases:
+        matched_alias = _matching_stage_alias(normalized_plain, alias)
+        if matched_alias is None:
+            continue
+        if normalized_plain == matched_alias:
+            return table_name, ""
+        return table_name, normalized_plain[: -(len(matched_alias) + 1)]
+    return table_name, ""
+
+def _same_date_sequence_scope(
+    left_column: str,
+    left_aliases: list[str],
+    right_column: str,
+    right_aliases: list[str],
+) -> bool:
+    left_table, left_scope = _date_sequence_scope(left_column, left_aliases)
+    right_table, right_scope = _date_sequence_scope(right_column, right_aliases)
+
+    if left_scope or right_scope:
+        return bool(left_scope) and left_scope == right_scope
+
+    return left_table == right_table
 
 def _build_dynamic_date_gap_rules(available: dict[str, str]) -> list[dict]:
     matches_by_alias = _builtin_stage_column_matches(available)
@@ -219,15 +296,14 @@ def _build_dynamic_date_gap_rules(available: dict[str, str]) -> list[dict]:
     for index in range(len(stage_columns) - 1):
         left_stage_name, left_columns = stage_columns[index]
         right_stage_name, right_columns = stage_columns[index + 1]
+        left_aliases = next(aliases for stage_name, aliases in DATE_SEQUENCE_STAGE_ALIASES if stage_name == left_stage_name)
+        right_aliases = next(aliases for stage_name, aliases in DATE_SEQUENCE_STAGE_ALIASES if stage_name == right_stage_name)
         for left_column in left_columns:
             for right_column in right_columns:
                 if left_column == right_column:
                     continue
-                if _same_table_date_sequence_pair(left_stage_name, right_stage_name):
-                    left_table = left_column.split(".", 1)[0]
-                    right_table = right_column.split(".", 1)[0]
-                    if left_table != right_table:
-                        continue
+                if not _same_date_sequence_scope(left_column, left_aliases, right_column, right_aliases):
+                    continue
                 pair_key = (right_column, left_column)
                 if pair_key in seen_pairs:
                     continue
@@ -262,13 +338,12 @@ def _sql_join_keyword(join_type: str) -> str:
         "left outer": "LEFT JOIN",
         "right": "RIGHT JOIN",
         "right outer": "RIGHT JOIN",
-        "outer": "FULL OUTER JOIN",
         "full": "FULL OUTER JOIN",
         "full outer": "FULL OUTER JOIN",
     }
     if normalized not in mapping:
         raise ValueError(
-            f"Unsupported join type '{join_type}'. Supported types: inner, left, right, outer/full."
+            f"Unsupported join type '{join_type}'. Supported types: inner, left, right, full."
         )
     return mapping[normalized]
 
@@ -346,13 +421,47 @@ def _sql_common_key_sample(
     )
     return [_safe_json(row[0]) for row in conn.execute(sql, {"sample_limit": safe_size}).fetchall()]
 
-def _build_join_select_list(selected_tables: list[str], source_columns: dict[str, list[dict]]) -> str:
-    parts: list[str] = []
+def _payload_locator_column(table_name: str) -> str:
+    return f"__ml_locator__{table_name}"
+
+
+def _iter_projected_source_columns(
+    selected_tables: list[str],
+    source_columns: dict[str, list[dict]],
+    projected_columns: set[str] | None,
+):
     for table_name in selected_tables:
         for column in source_columns[table_name]:
-            column_name = column["column_name"]
+            column_name = str(column["column_name"])
+            qualified_name = f"{table_name}.{column_name}"
+            if projected_columns is not None and qualified_name not in projected_columns:
+                continue
+            yield table_name, column_name, column
+
+
+def _build_join_select_list(
+    selected_tables: list[str],
+    source_columns: dict[str, list[dict]],
+    *,
+    projected_columns: set[str] | None = None,
+    include_locators: bool = False,
+    cast_datetimes_as_text: bool = True,
+) -> str:
+    parts: list[str] = []
+    if include_locators:
+        for table_name in selected_tables:
+            locator_name = _payload_locator_column(table_name)
+            parts.append(
+                f"CAST({_quote(table_name)}.ctid AS text) AS {_quote(locator_name)}"
+            )
+
+    for table_name, column_name, column in _iter_projected_source_columns(
+        selected_tables,
+        source_columns,
+        projected_columns,
+    ):
             source_expr = f"{_quote(table_name)}.{_quote(column_name)}"
-            if _type_family(column.get("data_type")) == "datetime":
+            if cast_datetimes_as_text and _type_family(column.get("data_type")) == "datetime":
                 source_expr = f"CAST({source_expr} AS text)"
             parts.append(f"{source_expr} AS {_quote(f'{table_name}.{column_name}')}")
     if not parts:
@@ -478,6 +587,7 @@ def _build_sql_feature_expression(
         return _sql_boolean_as_double(f"EXTRACT(HOUR FROM {first_ts}) BETWEEN 8 AND 21")
     raise ValueError(f"Unsupported feature type: {rule.feature_type}")
 
+
 def _build_sql_feature_selects(
     selected_tables: list[str],
     source_columns: dict[str, list[dict]],
@@ -492,14 +602,10 @@ def _build_sql_feature_selects(
 
     for index, rule in enumerate(rules, start=1):
         rule_name = _safe_rule_name(rule.name, f"Feature {index}")
-        column_alias = f"{rule_name}"
+        column_alias = rule_name
         while column_alias in used_aliases:
             column_alias = f"{column_alias}_{len(used_aliases) + 1}"
         try:
-            feature_columns = [rule.first_column, rule.second_column]
-            if any(_is_identifier_like_column(column) for column in feature_columns if column):
-                warnings.append(f"Skipped feature rule '{rule_name}': identifier columns are not used as ML features.")
-                continue
             expr = _build_sql_feature_expression(selected_tables, source_columns, rule, alias=alias)
             selects.append(f"{expr} AS {_quote(column_alias)}")
             used_aliases.add(column_alias)
@@ -507,6 +613,7 @@ def _build_sql_feature_selects(
         except Exception as exc:
             warnings.append(f"Skipped feature rule '{rule_name}': {exc}")
     return selects, warnings, applied_count
+
 
 def _feature_rule_aliases(rules: list[FeatureRuleInput]) -> list[str]:
     aliases: list[str] = []
@@ -518,6 +625,119 @@ def _feature_rule_aliases(rules: list[FeatureRuleInput]) -> list[str]:
         used_aliases.add(column_alias)
         aliases.append(column_alias)
     return aliases
+
+
+def _qualified_builtin_scoring_columns(
+    selected_tables: list[str],
+    source_columns: dict[str, list[dict]],
+) -> set[str]:
+    required: set[str] = set()
+    selected_set = set(selected_tables)
+
+    def add_if_present(table_name: str, column_name: str) -> None:
+        if table_name not in selected_set:
+            return
+        table_column_names = {
+            str(item["column_name"])
+            for item in source_columns.get(table_name, [])
+        }
+        if column_name in table_column_names:
+            required.add(f"{table_name}.{column_name}")
+
+    for table_name in ("bill", "gem_bill"):
+        add_if_present(table_name, "record_status")
+        add_if_present(table_name, "invoice_date")
+        if f"{table_name}.invoice_no" in {
+            f"{table_name}.{str(item['column_name'])}"
+            for item in source_columns.get(table_name, [])
+        }:
+            add_if_present(table_name, "invoice_no")
+        else:
+            add_if_present(table_name, "invoice_number")
+
+    add_if_present("cmp_scroll", "payment_reference_no")
+    add_if_present("cmp_scroll", "cda_name")
+
+    add_if_present("cheque_slip", "fk_ecs_payment_mode")
+    add_if_present("cheque_slip", "fk_dak")
+    add_if_present("cheque_slip", "record_status")
+    add_if_present("cheque_slip", "approved")
+    add_if_present("cheque_slip", "fk_aao")
+    add_if_present("cheque_slip", "fk_ao")
+    add_if_present("cheque_slip", "fk_go")
+    add_if_present("cheque_slip", "fk_auditor")
+
+    add_if_present("cmp_scroll", "payment_reference_no")
+
+    for _stage_name, aliases in DATE_SEQUENCE_STAGE_ALIASES:
+        for table_name in selected_tables:
+            table_column_names = {
+                str(item["column_name"])
+                for item in source_columns.get(table_name, [])
+            }
+            for column_name in table_column_names:
+                normalized_column = column_name.strip().lower()
+                if any(_matching_stage_alias(normalized_column, alias) for alias in aliases):
+                    required.add(f"{table_name}.{column_name}")
+
+    return required
+
+
+def _qualified_rule_source_columns(
+    payload: WorkbenchRunRequest,
+    source_columns: dict[str, list[dict]],
+) -> set[str]:
+    required: set[str] = set()
+    for rule in payload.feature_rules:
+        for column_name in (rule.first_column, rule.second_column):
+            if not column_name:
+                continue
+            try:
+                joined_name, _meta = _joined_column_meta(
+                    payload.selected_tables,
+                    source_columns,
+                    column_name,
+                )
+            except Exception:
+                continue
+            required.add(joined_name)
+
+    for rule in payload.user_rules:
+        for column_name in (rule.first_column, rule.second_column):
+            if not column_name:
+                continue
+            try:
+                joined_name, _meta = _joined_column_meta(
+                    payload.selected_tables,
+                    source_columns,
+                    column_name,
+                )
+            except Exception:
+                continue
+            required.add(joined_name)
+    return required
+
+
+def _qualified_auto_feature_columns(
+    payload: WorkbenchRunRequest,
+    source_columns: dict[str, list[dict]],
+) -> set[str]:
+    columns: set[str] = set()
+    for table_name in payload.selected_tables:
+        for item in source_columns.get(table_name, []):
+            columns.add(f"{table_name}.{item['column_name']}")
+    return columns
+
+
+def _scoring_projection_columns(
+    payload: WorkbenchRunRequest,
+    source_columns: dict[str, list[dict]],
+) -> set[str]:
+    return (
+        _qualified_auto_feature_columns(payload, source_columns)
+        | _qualified_rule_source_columns(payload, source_columns)
+        | _qualified_builtin_scoring_columns(payload.selected_tables, source_columns)
+    )
 
 
 def _is_datetime_meta(meta: dict[str, Any] | None) -> bool:
@@ -561,10 +781,10 @@ def _sql_datetime_comparison(
     params[param_name] = _parse_rule_timestamp_literal(rule_value)
     return f"({left_ts} {operator} CAST(:{param_name} AS timestamp))"
 
-def _build_sql_outlier_predicate(
+def _build_sql_user_rule_predicate(
     selected_tables: list[str],
     source_columns: dict[str, list[dict]],
-    rule: OutlierRuleInput,
+    rule: UserRuleInput,
     params: dict[str, Any],
     *,
     alias: str,
@@ -621,12 +841,12 @@ def _build_sql_outlier_predicate(
         params[param_name] = None if rule.value is None else str(rule.value)
         comparator = "=" if operator == "=" else "<>"
         return f"(CAST({first_expr} AS text) {comparator} :{param_name})"
-    raise ValueError(f"Unsupported outlier operator: {rule.operator}")
+    raise ValueError(f"Unsupported user rule operator: {rule.operator}")
 
-def _build_sql_outlier_flag(
+def _build_sql_user_rule_flag(
     selected_tables: list[str],
     source_columns: dict[str, list[dict]],
-    rules: list[OutlierRuleInput],
+    rules: list[UserRuleInput],
     *,
     alias: str = "src",
 ) -> tuple[str, str, dict[str, Any], list[str], list[str], int]:
@@ -641,10 +861,10 @@ def _build_sql_outlier_flag(
     applied_count = 0
 
     for index, rule in enumerate(rules, start=1):
-        rule_name = _safe_rule_name(rule.name, f"Outlier rule {index}")
+        rule_name = _safe_rule_name(rule.name, f"User rule {index}")
         try:
-            predicate = _build_sql_outlier_predicate(selected_tables, source_columns, rule, params, alias=alias)
-            label = f"OUTLIER::{rule_name}"
+            predicate = _build_sql_user_rule_predicate(selected_tables, source_columns, rule, params, alias=alias)
+            label = f"RULE::{rule_name}"
             label_param = _next_param_name(params, "rule_label")
             params[label_param] = label
             predicates.append(predicate)
@@ -652,7 +872,7 @@ def _build_sql_outlier_flag(
             labels.append(label)
             applied_count += 1
         except Exception as exc:
-            warnings.append(f"Skipped outlier rule '{rule_name}': {exc}")
+            warnings.append(f"Skipped user rule '{rule_name}': {exc}")
 
     if not predicates:
         return "FALSE", "NULL::text", params, [], warnings, applied_count
@@ -672,32 +892,32 @@ def _build_sql_workbench_query(
         alias="src",
     )
     (
-        outlier_expr,
-        outlier_reason_expr,
+        user_rule_expr,
+        user_rule_reason_expr,
         params,
-        outlier_labels,
-        outlier_warnings,
-        applied_outlier_rule_count,
-    ) = _build_sql_outlier_flag(
+        user_rule_labels,
+        user_rule_warnings,
+        applied_user_rule_count,
+    ) = _build_sql_user_rule_flag(
         payload.selected_tables,
         source_columns,
-        payload.outlier_rules,
+        payload.user_rules,
         alias="src",
     )
 
     select_parts = ["src.*"]
     select_parts.extend(feature_selects)
-    select_parts.append(f"{outlier_expr} AS {_quote('__ml_sql_rule_flag')}")
-    select_parts.append(f"{outlier_reason_expr} AS {_quote('__ml_sql_rule_reasons')}")
+    select_parts.append(f"{user_rule_expr} AS {_quote('__ml_sql_rule_flag')}")
+    select_parts.append(f"{user_rule_reason_expr} AS {_quote('__ml_sql_rule_reasons')}")
     sql = "WITH src AS (\n" + joined_sql + "\n)\nSELECT\n    " + ",\n    ".join(select_parts) + "\nFROM src"
     return (
         sql,
         params,
-        outlier_labels,
+        user_rule_labels,
         applied_feature_rule_count,
         feature_warnings,
-        outlier_warnings,
-        applied_outlier_rule_count,
+        user_rule_warnings,
+        applied_user_rule_count,
     )
 
 def _build_source_table_ref(table_name: str) -> str:
@@ -920,17 +1140,18 @@ def _build_date_sequence_anomaly_conditions(
         exprs: list[tuple[str, str]] = []
 
         for table_name in joined_tables:
-            table_columns = {
+            table_columns = [
                 str(column.get("column_name"))
                 for column in source_columns.get(table_name, [])
-            }
+            ]
 
-            for alias in aliases:
-                if alias in table_columns:
+            for column_name in table_columns:
+                normalized_column = column_name.strip().lower()
+                if any(_matching_stage_alias(normalized_column, alias) for alias in aliases):
                     exprs.append(
                         (
-                            table_name,
-                            _safe_sql_date_expr(f'base."{table_name}.{alias}"'),
+                            f"{table_name}.{column_name}",
+                            _safe_sql_date_expr(f'base."{table_name}.{column_name}"'),
                         )
                     )
 
@@ -947,11 +1168,13 @@ def _build_date_sequence_anomaly_conditions(
     for index in range(len(stage_exprs) - 1):
         left_label, left_exprs = stage_exprs[index]
         right_label, right_exprs = stage_exprs[index + 1]
+        left_aliases = next(aliases for stage_name, aliases in DATE_SEQUENCE_STAGE_ALIASES if stage_name == left_label)
+        right_aliases = next(aliases for stage_name, aliases in DATE_SEQUENCE_STAGE_ALIASES if stage_name == right_label)
         predicate_parts: list[str] = []
 
-        for left_table_name, left_expr in left_exprs:
-            for right_table_name, right_expr in right_exprs:
-                if _same_table_date_sequence_pair(left_label, right_label) and left_table_name != right_table_name:
+        for left_column_name, left_expr in left_exprs:
+            for right_column_name, right_expr in right_exprs:
+                if not _same_date_sequence_scope(left_column_name, left_aliases, right_column_name, right_aliases):
                     continue
                 predicate_parts.append(
                     f"""
@@ -992,43 +1215,6 @@ def _build_sql_anomaly_expressions(
             str(column.get("column_name"))
             for column in source_columns.get(table, [])
         }
-
-    # Duplicate invoice check: bill / gem_bill
-    for table_name in ("bill", "gem_bill"):
-        if not has_table(table_name):
-            continue
-
-        cols = table_cols(table_name)
-        invoice_column = next(
-            (col for col in ("invoice_no", "invoice_number") if col in cols),
-            None,
-        )
-
-        if not invoice_column:
-            continue
-
-        required_cols = {"invoice_date", "record_status"}
-        if not required_cols.issubset(cols):
-            continue
-
-        conditions.append((
-            f"""
-            (
-                base."{table_name}.record_status" = 'V'
-                AND base."{table_name}.{invoice_column}" IS NOT NULL
-                AND base."{table_name}.invoice_date" IS NOT NULL
-                AND (
-                    SELECT COUNT(*)
-                    FROM {_source_table_only_ref(table_name)} b2
-                    WHERE b2.record_status = 'V'
-                      AND b2.{invoice_column} = base."{table_name}.{invoice_column}"
-                      AND {_safe_sql_date_expr(f'b2.invoice_date')}
-                          = {_safe_sql_date_expr(f'base."{table_name}.invoice_date"')}
-                ) > 1
-            )
-            """,
-            f"{table_name} has duplicate valid invoice number + invoice_date",
-        ))
 
     # CMP scroll payment_reference_no must exist in ECS
     if has_table("cmp_scroll") and has_table("ecs"):
@@ -1171,6 +1357,7 @@ def _build_join_sql(
     source_columns: dict[str, list[dict]],
     *,
     row_limit: int | None,
+    projection_mode: str,
 ) -> tuple[str, list[dict[str, Any]], list[str]]:
     _validate_join_payload_tables(payload, source_columns)
 
@@ -1179,7 +1366,19 @@ def _build_join_sql(
     first_table = selected_tables[0]
     joined_aliases: set[str] = {first_table}
     used_tables: set[str] = {first_table}
-    select_clause = _build_join_select_list(selected_tables, source_columns)
+    scoring_projection = projection_mode == "scoring"
+    projected_columns = (
+        _scoring_projection_columns(payload, source_columns)
+        if scoring_projection
+        else None
+    )
+    select_clause = _build_join_select_list(
+        selected_tables,
+        source_columns,
+        projected_columns=projected_columns,
+        include_locators=scoring_projection,
+        cast_datetimes_as_text=not scoring_projection,
+    )
     first_source_ref = _build_source_table_ref(first_table)
     from_clause = f"FROM {first_source_ref}"
 
@@ -1263,7 +1462,11 @@ def _build_join_sql(
             f"{safe_limit}. This is a final-result limit, not a per-table source limit."
         )
 
-    logger.info("Workbench SQL join query built: %s", sql)
+    logger.info(
+        "Workbench SQL join query built in projection_mode=%s with projected_source_columns=%s",
+        projection_mode,
+        "ALL" if projected_columns is None else len(projected_columns),
+    )
 
     anomaly_conditions, anomaly_ctes, anomaly_outer_joins = _build_sql_anomaly_expressions(list(used_tables), source_columns)
     if anomaly_conditions:
@@ -1299,15 +1502,26 @@ def _get_or_build_join_sql(
     source_columns: dict[str, list[dict]],
     *,
     row_limit: int | None,
+    projection_mode: str,
 ) -> tuple[str, list[dict[str, Any]], list[str]]:
-    cached = _get_cached_join_sql(payload, row_limit=row_limit)
+    cached = _get_cached_join_sql(
+        payload,
+        row_limit=row_limit,
+        projection_mode=projection_mode,
+    )
     if cached is not None:
         return cached
 
-    sql, join_debug, warnings = _build_join_sql(payload, source_columns, row_limit=row_limit)
+    sql, join_debug, warnings = _build_join_sql(
+        payload,
+        source_columns,
+        row_limit=row_limit,
+        projection_mode=projection_mode,
+    )
     _store_cached_join_sql(
         payload,
         row_limit=row_limit,
+        projection_mode=projection_mode,
         sql=sql,
         join_debug=join_debug,
         warnings=warnings,
@@ -1378,7 +1592,12 @@ def _execute_sql_joined_frame(
 ) -> tuple[pd.DataFrame, dict[str, int], list[dict[str, Any]], list[str], str]:
     row_limit = PREVIEW_ROW_LIMIT if for_preview else None
     source_columns = _source_columns_map(payload.selected_tables)
-    sql, join_debug, warnings = _get_or_build_join_sql(payload, source_columns, row_limit=row_limit)
+    sql, join_debug, warnings = _get_or_build_join_sql(
+        payload,
+        source_columns,
+        row_limit=row_limit,
+        projection_mode="full",
+    )
     warnings.extend(_ensure_join_indexes(payload, source_columns))
     warnings.extend(_ensure_date_filter_indexes(payload, source_columns))
 
@@ -1407,17 +1626,22 @@ def _execute_sql_workbench_frame(
     conn,
 ) -> tuple[pd.DataFrame, dict[str, int], list[dict[str, Any]], list[str], str, list[str], int, list[str], int, str]:
     source_columns = _source_columns_map(payload.selected_tables)
-    joined_sql, join_debug, warnings = _get_or_build_join_sql(payload, source_columns, row_limit=None)
+    joined_sql, join_debug, warnings = _get_or_build_join_sql(
+        payload,
+        source_columns,
+        row_limit=None,
+        projection_mode="scoring",
+    )
     warnings.extend(_ensure_join_indexes(payload, source_columns))
     warnings.extend(_ensure_date_filter_indexes(payload, source_columns))
     (
         workbench_sql,
         params,
-        outlier_labels,
+        user_rule_labels,
         applied_feature_rule_count,
         feature_warnings,
-        outlier_warnings,
-        applied_outlier_rule_count,
+        user_rule_warnings,
+        applied_user_rule_count,
     ) = _build_sql_workbench_query(payload, source_columns, joined_sql)
 
     source_row_counts: dict[str, int] = {}
@@ -1446,10 +1670,10 @@ def _execute_sql_workbench_frame(
         join_debug,
         warnings,
         joined_sql,
-        outlier_labels,
+        user_rule_labels,
         applied_feature_rule_count,
-        feature_warnings + outlier_warnings,
-        applied_outlier_rule_count,
+        feature_warnings + user_rule_warnings,
+        applied_user_rule_count,
         staging_table,
     )
 
@@ -1491,14 +1715,85 @@ def _materialize_workbench_temp_table(conn, workbench_sql: str, params: dict[str
     )
     return temp_table, row_count
 
-def _drop_workbench_temp_table(temp_table: str | None) -> None:
-    # Temp tables now live only for the current transaction and are removed by
-    # PostgreSQL via ON COMMIT DROP, so there is no cross-session cleanup to do.
-    return
-
 def _temp_table_columns(conn, temp_table: str) -> list[str]:
     result = conn.execute(text(f"SELECT * FROM {_workbench_temp_table_ref(temp_table)} LIMIT 0"))
     return [str(column) for column in result.keys()]
+
+
+def _read_temp_scoring_frame(
+    conn,
+    temp_table: str,
+    payload: WorkbenchRunRequest,
+) -> pd.DataFrame:
+    del payload
+
+    available_columns = _temp_table_columns(conn, temp_table)
+    required_columns = [
+        TEMP_ROW_ID_COLUMN,
+        USER_RULE_FLAG_COLUMN,
+        USER_RULE_REASONS_COLUMN,
+        SQL_RULE_FLAG_COLUMN,
+        SQL_RULE_REASONS_COLUMN,
+    ]
+    candidate_columns = [
+        column
+        for column in available_columns
+        if column not in required_columns
+    ]
+    _total_rows, present_ratios = _temp_table_column_presence_ratios(
+        conn,
+        temp_table,
+        candidate_columns,
+    )
+    min_present_ratio = max(0.0, min(float(settings.anomaly_feature_min_present_ratio), 1.0))
+    kept_candidate_columns = [
+        column
+        for column in candidate_columns
+        if present_ratios.get(column, 0.0) >= min_present_ratio
+    ]
+    dropped_sparse_columns = [
+        column
+        for column in candidate_columns
+        if column not in kept_candidate_columns
+    ]
+
+    if dropped_sparse_columns:
+        logger.info(
+            "Skipped %d sparse scoring columns from temp table %s with present ratio below %.2f: %s",
+            len(dropped_sparse_columns),
+            temp_table,
+            min_present_ratio,
+            [
+                {
+                    "column": column,
+                    "present_ratio": round(float(present_ratios.get(column, 0.0)), 3),
+                }
+                for column in dropped_sparse_columns[:20]
+            ],
+        )
+
+    selected_columns = [
+        column
+        for column in required_columns
+        if column in available_columns and column != TEMP_ROW_ID_COLUMN
+    ]
+    selected_columns.extend(kept_candidate_columns)
+    selected_columns.insert(0, TEMP_ROW_ID_COLUMN)
+    select_sql = ", ".join(_quote(column) for column in selected_columns)
+    df = pd.read_sql_query(
+        text(
+            f"""
+            SELECT {select_sql}
+            FROM {_workbench_temp_table_ref(temp_table)}
+            ORDER BY {_quote(TEMP_ROW_ID_COLUMN)}
+            """
+        ),
+        conn,
+    )
+    if TEMP_ROW_ID_COLUMN in df.columns:
+        df = df.set_index(TEMP_ROW_ID_COLUMN, drop=True)
+    logger.info("Loaded %s scoring columns from temp table %s", len(df.columns), temp_table)
+    return df
 
 
 def _temp_table_column_presence_ratios(
@@ -1555,113 +1850,7 @@ def _log_workbench_query_plan(conn, workbench_sql: str, params: dict[str, Any]) 
         plan_text[:12000],
     )
 
-def _read_temp_scoring_frame(
-    conn,
-    temp_table: str,
-    payload: WorkbenchRunRequest,
-) -> pd.DataFrame:
-    available_columns = _temp_table_columns(conn, temp_table)
-    source_columns = _source_columns_map(payload.selected_tables)
-    raw_date_columns = {
-        f"{table_name}.{column['column_name']}"
-        for table_name, columns in source_columns.items()
-        for column in columns
-        if _is_date_like_column_name(str(column["column_name"]), column.get("data_type"))
-    }
-    required_columns = [
-        TEMP_ROW_ID_COLUMN,
-        USER_RULE_FLAG_COLUMN,
-        USER_RULE_REASONS_COLUMN,
-        SQL_RULE_FLAG_COLUMN,
-        SQL_RULE_REASONS_COLUMN,
-    ]
-    candidate_columns = [
-        column
-        for column in available_columns
-        if (
-            column not in required_columns
-            and column not in raw_date_columns
-            and not _is_identifier_like_column(column)
-        )
-    ]
-    dropped_date_columns = [
-        column
-        for column in available_columns
-        if column in raw_date_columns
-    ]
-    if dropped_date_columns:
-        logger.info(
-            "Skipped %d raw date/time scoring columns from temp table %s: %s",
-            len(dropped_date_columns),
-            temp_table,
-            dropped_date_columns[:20],
-        )
-    dropped_identifier_columns = [
-        column
-        for column in available_columns
-        if column not in required_columns and _is_identifier_like_column(column)
-    ]
-    if dropped_identifier_columns:
-        logger.info(
-            "Skipped %d identifier-like scoring columns from temp table %s: %s",
-            len(dropped_identifier_columns),
-            temp_table,
-            dropped_identifier_columns[:20],
-        )
-    _total_rows, present_ratios = _temp_table_column_presence_ratios(
-        conn,
-        temp_table,
-        candidate_columns,
-    )
-    min_present_ratio = max(0.0, min(float(settings.anomaly_feature_min_present_ratio), 1.0))
-    kept_candidate_columns = [
-        column
-        for column in candidate_columns
-        if present_ratios.get(column, 0.0) >= min_present_ratio
-    ]
-    dropped_sparse_columns = [
-        column
-        for column in candidate_columns
-        if column not in kept_candidate_columns
-    ]
 
-    if dropped_sparse_columns:
-        logger.info(
-            "Skipped %d sparse scoring columns from temp table %s with present ratio below %.2f: %s",
-            len(dropped_sparse_columns),
-            temp_table,
-            min_present_ratio,
-            [
-                {
-                    "column": column,
-                    "present_ratio": round(float(present_ratios.get(column, 0.0)), 3),
-                }
-                for column in dropped_sparse_columns[:20]
-            ],
-        )
-
-    selected_columns = [
-        column
-        for column in required_columns
-        if column in available_columns and column != TEMP_ROW_ID_COLUMN
-    ]
-    selected_columns.extend(kept_candidate_columns)
-    selected_columns.insert(0, TEMP_ROW_ID_COLUMN)
-    select_sql = ", ".join(_quote(column) for column in selected_columns)
-    df = pd.read_sql_query(
-        text(
-            f"""
-            SELECT {select_sql}
-            FROM {_workbench_temp_table_ref(temp_table)}
-            ORDER BY {_quote(TEMP_ROW_ID_COLUMN)}
-            """
-        ),
-        conn,
-    )
-    if TEMP_ROW_ID_COLUMN in df.columns:
-        df = df.set_index(TEMP_ROW_ID_COLUMN, drop=True)
-    logger.info("Loaded %s scoring columns from temp table %s", len(df.columns), temp_table)
-    return df
 
 def _read_temp_anomaly_payload_frame(
     conn,
@@ -1673,16 +1862,12 @@ def _read_temp_anomaly_payload_frame(
         return pd.DataFrame()
     started_at = time.monotonic()
     available_columns = _temp_table_columns(conn, temp_table)
-    excluded = {
-        TEMP_ROW_ID_COLUMN,
-        USER_RULE_FLAG_COLUMN,
-        USER_RULE_REASONS_COLUMN,
-        SQL_RULE_FLAG_COLUMN,
-        SQL_RULE_REASONS_COLUMN,
-        *_feature_rule_aliases(payload.feature_rules),
-    }
-    payload_columns = [column for column in available_columns if column not in excluded]
-    select_columns = [_quote(TEMP_ROW_ID_COLUMN), *[_quote(column) for column in payload_columns]]
+    locator_columns = [
+        _payload_locator_column(table_name)
+        for table_name in payload.selected_tables
+        if _payload_locator_column(table_name) in available_columns
+    ]
+    select_columns = [_quote(TEMP_ROW_ID_COLUMN), *[_quote(column) for column in locator_columns]]
     frames: list[pd.DataFrame] = []
     chunk_size = 5000
     for start in range(0, len(row_ids), chunk_size):
@@ -1702,20 +1887,105 @@ def _read_temp_anomaly_payload_frame(
                 params={"row_ids": [int(row_id) for row_id in chunk]},
             )
         )
-    df = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
-    if TEMP_ROW_ID_COLUMN in df.columns:
-        df = df.set_index(TEMP_ROW_ID_COLUMN, drop=True)
+    locator_frame = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+    if TEMP_ROW_ID_COLUMN in locator_frame.columns:
+        locator_frame = locator_frame.set_index(TEMP_ROW_ID_COLUMN, drop=True)
+
+    row_payloads: dict[int, dict[str, Any]] = {
+        int(row_id): {}
+        for row_id in locator_frame.index.tolist()
+    }
+
+    source_columns = _source_columns_map(payload.selected_tables)
+    for table_name in payload.selected_tables:
+        locator_column = _payload_locator_column(table_name)
+        if locator_column not in locator_frame.columns:
+            continue
+        table_locators = [
+            str(value)
+            for value in locator_frame[locator_column].dropna().astype(str).tolist()
+            if str(value).strip()
+        ]
+        if not table_locators:
+            continue
+        locator_to_payload = _table_payload_by_locator(
+            conn,
+            table_name,
+            source_columns.get(table_name, []),
+            table_locators,
+        )
+        for row_id, locator in locator_frame[locator_column].items():
+            if pd.isna(locator):
+                continue
+            payload_values = locator_to_payload.get(str(locator))
+            if payload_values:
+                row_payloads[int(row_id)].update(payload_values)
+
+    df = pd.DataFrame.from_dict(row_payloads, orient="index")
+    if not df.empty:
+        df.index.name = TEMP_ROW_ID_COLUMN
     logger.info(
-        "Loaded %s anomaly payload rows from temp table %s in %.2fs",
-        len(df),
+        "Loaded %s anomaly payload rows from source tables via locators from temp table %s in %.2fs",
+        len(locator_frame),
         temp_table,
         time.monotonic() - started_at,
     )
     return df
 
+
+def _table_payload_by_locator(
+    conn,
+    table_name: str,
+    columns: list[dict[str, Any]],
+    locators: list[str],
+) -> dict[str, dict[str, Any]]:
+    unique_locators = sorted({str(locator).strip() for locator in locators if str(locator).strip()})
+    if not unique_locators:
+        return {}
+
+    select_parts = ['CAST(ctid AS text) AS "__ml_locator__"']
+    for column in columns:
+        column_name = str(column["column_name"])
+        source_expr = f"{_quote(column_name)}"
+        if _type_family(column.get("data_type")) == "datetime":
+            source_expr = f"CAST({source_expr} AS text)"
+        select_parts.append(
+            f'{source_expr} AS {_quote(f"{table_name}.{column_name}")}'
+        )
+
+    query = text(
+        f"""
+        SELECT {", ".join(select_parts)}
+        FROM {_source_table_only_ref(table_name)}
+        WHERE CAST(ctid AS text) IN :locators
+        """
+    ).bindparams(bindparam("locators", expanding=True))
+
+    frame = pd.read_sql_query(query, conn, params={"locators": unique_locators})
+    if frame.empty:
+        return {}
+
+    result: dict[str, dict[str, Any]] = {}
+    for _, row in frame.iterrows():
+        locator = str(row.get("__ml_locator__") or "").strip()
+        if not locator:
+            continue
+        payload = {
+            str(column): _safe_json(value)
+            for column, value in row.items()
+            if str(column) != "__ml_locator__"
+        }
+        result[locator] = payload
+    return result
+
 def _resolve_column(df: pd.DataFrame, column_name: str) -> str:
-    if column_name in df.columns:
+    exact_matches = [column for column in df.columns if column == column_name]
+    if len(exact_matches) == 1:
         return column_name
+    if len(exact_matches) > 1:
+        raise ValueError(
+            f"Column is ambiguous: {column_name}. Duplicate exact matches found."
+        )
     matches = [column for column in df.columns if column.endswith(f".{column_name}")]
     if len(matches) == 1:
         return matches[0]

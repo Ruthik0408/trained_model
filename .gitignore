@@ -4,4 +4,5 @@ __pycache__/
 node_modules/
 .env
 *.db
-
+.pytest_cache/
+frontend/dist/

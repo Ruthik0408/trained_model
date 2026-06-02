@@ -1,6 +1,36 @@
+import re
 from typing import Annotated, Literal
+from datetime import date   
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
-from pydantic import BaseModel, ConfigDict, Field
+
+_SAFE_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_SAFE_COLUMN_REFERENCE_RE = re.compile(
+    r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?$"
+)
+
+
+def _validate_safe_identifier(value: str, field_name: str) -> str:
+    text_value = str(value).strip()
+    if not text_value:
+        raise ValueError(f"{field_name} cannot be empty.")
+    if not _SAFE_IDENTIFIER_RE.fullmatch(text_value):
+        raise ValueError(
+            f"{field_name} must use only letters, numbers, and underscores, "
+            "and cannot start with a number."
+        )
+    return text_value
+
+
+def _validate_safe_column_reference(value: str, field_name: str) -> str:
+    text_value = str(value).strip()
+    if not text_value:
+        raise ValueError(f"{field_name} cannot be empty.")
+    if not _SAFE_COLUMN_REFERENCE_RE.fullmatch(text_value):
+        raise ValueError(
+            f"{field_name} must be a safe column reference like 'amount' or 'bills.amount'."
+        )
+    return text_value
 
 class JoinConfig(BaseModel):
     """Describes how two source tables should be joined for a workbench run."""
@@ -21,10 +51,20 @@ class JoinConfig(BaseModel):
     left_column: str
     right_table: str
     right_column: str
-    join_type: str = Field(default="inner", pattern=r"^(inner|left|right|outer)$")
+    join_type: str = Field(default="inner", pattern=r"^(inner|left|right|full)$")
 
-class OutlierRuleInput(BaseModel):
-    """Represents a SQL-style rule that marks a row as human-defined anomalous."""
+    @field_validator("left_table", "right_table")
+    @classmethod
+    def validate_join_tables(cls, value: str, info: ValidationInfo) -> str:
+        return _validate_safe_identifier(value, info.field_name)
+
+    @field_validator("left_column", "right_column")
+    @classmethod
+    def validate_join_columns(cls, value: str, info: ValidationInfo) -> str:
+        return _validate_safe_column_reference(value, info.field_name)
+
+class UserRuleInput(BaseModel):
+    """Represents a SQL-style rule that marks a row through user-defined rule logic."""
 
     model_config = ConfigDict(
         json_schema_extra={
@@ -45,6 +85,13 @@ class OutlierRuleInput(BaseModel):
     )
     value: str | None = None
     second_value: str | None = None
+
+    @field_validator("first_column", "second_column")
+    @classmethod
+    def validate_column_references(cls, value: str | None, info: ValidationInfo) -> str | None:
+        if value is None:
+            return None
+        return _validate_safe_column_reference(value, info.field_name)
 
 class FeatureRuleInput(BaseModel):
     """Defines a derived feature used by the Isolation Forest pipeline."""
@@ -70,16 +117,18 @@ class FeatureRuleInput(BaseModel):
     name: str
     feature_type: str = Field(
         pattern=(
-            r"^(numeric|difference|ratio|sum|missingflag|daysbetween|"
-            r"isweekend|isbusinesshour)$"
+            r"^(numeric|difference|ratio|sum|missingflag|daysbetween|isweekend|isbusinesshour)$"
         )
     )
     first_column: str
     second_column: str | None = None
-    operator: str | None = Field(
-        default=None,
-        pattern=r"^(=|!=|>|>=|<|<=|null|not null)$",
-    )
+
+    @field_validator("first_column", "second_column")
+    @classmethod
+    def validate_column_references(cls, value: str | None, info: ValidationInfo) -> str | None:
+        if value is None:
+            return None
+        return _validate_safe_column_reference(value, info.field_name)
 
 class WorkbenchRunRequest(BaseModel):
     """Payload for previewing or executing an anomaly workbench run.
@@ -91,6 +140,7 @@ class WorkbenchRunRequest(BaseModel):
     """
 
     model_config = ConfigDict(
+        populate_by_name=True,
         json_schema_extra={
             "example": {
                 "run_name": "Vendor amount anomaly scan",
@@ -105,7 +155,7 @@ class WorkbenchRunRequest(BaseModel):
                     }
                 ],
                 "amount_field": "bills.amount",
-                "outlier_rules": [
+                "user_rules": [
                     {
                         "name": "Large amount threshold",
                         "first_column": "bills.amount",
@@ -133,11 +183,34 @@ class WorkbenchRunRequest(BaseModel):
     selected_tables: list[str] = Field(min_length=1, max_length=3)
     joins: list[JoinConfig] = Field(default_factory=list)
     amount_field: str | None = None
-    outlier_rules: list[OutlierRuleInput] = Field(default_factory=list)
+    user_rules: list[UserRuleInput] = Field(
+        default_factory=list,
+        validation_alias=AliasChoices("user_rules", "outlier_rules"),
+        serialization_alias="user_rules",
+    )
     feature_rules: list[FeatureRuleInput] = Field(default_factory=list)
     contamination: Literal["auto"] | Annotated[float, Field(gt=0.0, lt=1.0)] = "auto"
-    from_date: str | None = None
-    to_date: str | None = None
+    from_date: date | None = None
+    to_date: date | None = None
+
+    @field_validator("selected_tables")
+    @classmethod
+    def validate_selected_tables(cls, value: list[str]) -> list[str]:
+        return [_validate_safe_identifier(item, "selected_tables") for item in value]
+
+    @field_validator("amount_field")
+    @classmethod
+    def validate_amount_field(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _validate_safe_column_reference(value, "amount_field")
+
+    @field_validator("source_database")
+    @classmethod
+    def validate_source_database(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _validate_safe_identifier(value, "source_database")
 
 
 class BuiltinRuleRequest(BaseModel):
@@ -163,18 +236,47 @@ class BuiltinRuleRequest(BaseModel):
     )
 
     source_database: str | None = None
-    selected_tables: list[str] = Field(default_factory=list)
+    selected_tables: list[str] = Field(min_length=1, max_length=3)
     joins: list[JoinConfig] = Field(default_factory=list)
-    from_date: str | None = None
-    to_date: str | None = None
+    from_date: date | None = None
+    to_date: date | None = None
+
+    @field_validator("selected_tables")
+    @classmethod
+    def validate_selected_tables(cls, value: list[str]) -> list[str]:
+        return [_validate_safe_identifier(item, "selected_tables") for item in value]
+
+    @field_validator("source_database")
+    @classmethod
+    def validate_source_database(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _validate_safe_identifier(value, "source_database")
 
 class ColumnInfo(BaseModel):
     table_name: str
     column_name: str
     data_type: str
+
+    @field_validator("table_name")
+    @classmethod
+    def validate_table_name(cls, value: str, info: ValidationInfo) -> str:
+        return _validate_safe_identifier(value, info.field_name)
+
+    @field_validator("column_name")
+    @classmethod
+    def validate_column_name(cls, value: str) -> str:
+        return _validate_safe_column_reference(value, "column_name")
+
+
 class TableInfo(BaseModel):
     table_name: str
     columns: list[ColumnInfo]
+
+    @field_validator("table_name")
+    @classmethod
+    def validate_table_name(cls, value: str) -> str:
+        return _validate_safe_identifier(value, "table_name")
 class WorkbenchRunResponse(BaseModel):
     """Summary returned after a successful workbench execution."""
 
@@ -184,7 +286,7 @@ class WorkbenchRunResponse(BaseModel):
                 "run_id": 42,
                 "run_name": "Vendor amount anomaly scan",
                 "total_rows": 1280,
-                "human_outlier_count": 12,
+                "user_rule_count": 12,
                 "ml_anomaly_count": 64,
                 "final_anomaly_count": 70,
                 "amount_total": 845230.75,
@@ -201,19 +303,19 @@ class WorkbenchRunResponse(BaseModel):
     run_id: int
     run_name: str
     total_rows: int
-    human_outlier_count: int
+    user_rule_count: int
+    selected_model: str | None = None
     ml_anomaly_count: int
     final_anomaly_count: int
-    amount_total: float
-    selected_model: str
+    amount_total: float | None = None
     metrics: dict
 class ReviewTableRow(BaseModel):
     serial_no: int
     prediction_id: int
     anomaly: str
     reason: str | None = None
-    amount: float
-    total_amount: float
+    amount: float | None = None
+    total_amount: float = 0.0
     review_status: str | None = None
     feedback: str | None = None
     bill_no: str | None = None
@@ -224,7 +326,7 @@ class ReviewTableRow(BaseModel):
     risk_score: float | None = None
 class ReviewTableResponse(BaseModel):
     rows: list[ReviewTableRow]
-    total_amount: float
+    total_amount: float = 0.0
     total_rows: int
     dataset_table: str | None = None
     run_id: int | None = None
@@ -233,7 +335,7 @@ class LatestRunReport(BaseModel):
     run_name: str | None = None
     selected_tables: list[str] = Field(default_factory=list)
     total_rows: int | None = None
-    human_outlier_count: int | None = None
+    user_rule_count: int | None = None
     ml_anomaly_count: int | None = None
     final_anomaly_count: int | None = None
     selected_model: str | None = None
@@ -255,8 +357,8 @@ class ReportResponse(BaseModel):
     pending_count: int = 0
     accepted_count: int = 0
     amount: float = 0.0
-    from_date: str | None = None
-    to_date: str | None = None
+    from_date: date | None = None
+    to_date: date | None = None
     selected_model: str | None = None
 class DatasetFeedbackRequest(BaseModel):
     """Review feedback attached to a persisted anomaly record."""
@@ -266,14 +368,19 @@ class DatasetFeedbackRequest(BaseModel):
             "example": {
                 "dataset_table": "ML_Features",
                 "record_id": 101,
-                "feedback": "accept",
+                "feedback": "Accept",
             }
         }
     )
 
     dataset_table: str
     record_id: int
-    feedback: str = Field(pattern=r"^(accept|reject|maybe|ACCEPT|REJECT|MAYBE)$")
+    feedback: str = Field(pattern=r"^(accept|reject|maybe|Accept|Reject|Maybe)$")
+
+    @field_validator("dataset_table")
+    @classmethod
+    def validate_dataset_table(cls, value: str) -> str:
+        return _validate_safe_identifier(value, "dataset_table")
 
 
 class IsolationReasonRequest(BaseModel):
@@ -304,3 +411,10 @@ class IsolationReasonRequest(BaseModel):
     existing_reasons: list[str] = Field(default_factory=list)
     feature_signals: list[dict] = Field(default_factory=list)
     row_payload: dict = Field(default_factory=dict)
+
+    @field_validator("dataset_table")
+    @classmethod
+    def validate_dataset_table(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return _validate_safe_identifier(value, "dataset_table")

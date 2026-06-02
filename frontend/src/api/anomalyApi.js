@@ -44,8 +44,6 @@ function getConfigWithSignal(signal) {
 // API functions with cache support and better error handling
 // All functions support optional AbortSignal for request cancellation
 export const getWorkbenchTables = (signal) => api.get(API_ENDPOINTS.TABLES, getConfigWithSignal(signal));
-export const getWorkbenchConnection = (signal) => api.get(API_ENDPOINTS.CONNECTION, getConfigWithSignal(signal));
-export const getWorkbenchDefaultFeatureRules = (payload, signal) => api.post(API_ENDPOINTS.DEFAULT_RULES, payload, getConfigWithSignal(signal));
 export const previewWorkbench = (payload, signal) => api.post(API_ENDPOINTS.PREVIEW, payload, getConfigWithSignal(signal));
 export const runWorkbench = (payload, signal) => api.post(API_ENDPOINTS.RUN, payload, getConfigWithSignal(signal));
 
@@ -55,27 +53,6 @@ export const getWorkbenchDatasets = (signal) => {
     if (cached)
         return Promise.resolve({ data: cached });
     return api.get(API_ENDPOINTS.DATASETS, getConfigWithSignal(signal)).then((response) => {
-        setCacheData(cacheKey, response.data);
-        return response;
-    });
-};
-
-export const getReviewTable = (datasetTable, anomalyFilter, runId, limit, offset, signal) => {
-    const params = {
-        dataset_table: datasetTable,
-        anomaly_filter: anomalyFilter,
-        run_id: runId,
-        limit,
-        offset,
-    };
-    const cacheKey = getCacheKey(API_ENDPOINTS.REVIEW_TABLE, params);
-    const cached = getCachedData(cacheKey, CACHE_CONFIG.DATA_TTL_MS);
-    if (cached)
-        return Promise.resolve({ data: cached });
-    return api.get(API_ENDPOINTS.REVIEW_TABLE, {
-        params,
-        ...getConfigWithSignal(signal),
-    }).then((response) => {
         setCacheData(cacheKey, response.data);
         return response;
     });

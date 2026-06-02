@@ -862,7 +862,7 @@ function gradId(tone) {
 function formatReason(value) {
     if (!value)
         return "No reason";
-    return value.replace(/^OUTLIER::/i, "").replace(/_/g, " ").replace(/\s+/g, " ").trim();
+    return value.replace(/^(?:OUTLIER|RULE)::/i, "").replace(/_/g, " ").replace(/\s+/g, " ").trim();
 }
 function simplifyReason(reason) {
     const normalized = reason.toLowerCase();
@@ -949,9 +949,9 @@ function formatShortDate(date) {
 }
 function mapReviewStatus(value, feedback) {
     const normalizedFeedback = String(feedback || "").toLowerCase();
-    if (normalizedFeedback === "accept")
+    if (normalizedFeedback === "Accept")
         return "Approved";
-    if (normalizedFeedback === "reject" || normalizedFeedback === "maybe")
+    if (normalizedFeedback === "Reject" || normalizedFeedback === "Maybe")
         return "Under Review";
     const normalized = (value || "").toUpperCase();
     if (normalized === "REVIEWED")

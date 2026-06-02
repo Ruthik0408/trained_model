@@ -30,10 +30,12 @@ export default function PredictionRow({ item, onAction, selectedTables = [], }) 
     const businessDetails = useMemo(() => businessSections.flatMap((section) => section.rows), [businessSections]);
     const metrics = useMemo(() => getReviewMetrics(item, payload, reasons), [item, payload, reasons]);
     const baseReasonList = useMemo(() => getBaseReasonList(item, reasons), [item, reasons]);
-    const mlSignalList = useMemo(() => getMlSignalList(reasons, payload, baseReasonList), [reasons, payload, baseReasonList]);
+    const mlSignalItems = useMemo(() => getMlSignalItems(reasons, payload, baseReasonList), [reasons, payload, baseReasonList]);
+    const displayReasonItems = useMemo(() => getDisplayReasonItems(baseReasonList, mlSignalItems), [baseReasonList, mlSignalItems]);
     const [saving, setSaving] = useState(null);
     const [showAllColumns, setShowAllColumns] = useState(false);
     const [columnSearch, setColumnSearch] = useState("");
+    const [expandedReasonKeys, setExpandedReasonKeys] = useState([]);
     const activeFeedback = typeof item?.feedback === "string" ? item.feedback.toLowerCase() : "";
     const sortedColumns = useMemo(() => Object.entries(payload).sort(([left], [right]) => left.localeCompare(right)), [payload]);
     const visibleColumns = useMemo(() => sortedColumns.filter(([key]) => isVisiblePayloadKey(key, selectedTables)), [sortedColumns, selectedTables]);
@@ -54,6 +56,9 @@ export default function PredictionRow({ item, onAction, selectedTables = [], }) 
             return defaultSelectedColumns;
         });
     }, [visibleColumns, defaultSelectedColumns]);
+    useEffect(() => {
+        setExpandedReasonKeys([]);
+    }, [item?.prediction_id]);
     const normalizedSearch = columnSearch.trim().toLowerCase();
     const allColumns = useMemo(() => visibleColumns.filter(([key]) => key.toLowerCase().includes(normalizedSearch)), [visibleColumns, normalizedSearch]);
     const selectedColumnEntries = useMemo(() => selectedColumns
@@ -110,14 +115,9 @@ export default function PredictionRow({ item, onAction, selectedTables = [], }) 
             </div>
           </div>
 
-          {baseReasonList.length > 0 ? (<div style={reasonBox}>
+          {displayReasonItems.length > 0 ? (<div style={reasonBox}>
               <div style={reasonTitle}>Why anomaly</div>
-              {baseReasonList.map((reason) => (<div key={reason} style={reasonItem}>{formatReason(reason)}</div>))}
-              {mlSignalList.map((signal) => (<div key={signal} style={reasonItem}>{signal}</div>))}
-            </div>) : null}
-          {baseReasonList.length === 0 && mlSignalList.length > 0 ? (<div style={reasonBox}>
-              <div style={reasonTitle}>Why anomaly</div>
-              {mlSignalList.map((signal) => (<div key={signal} style={reasonItem}>{signal}</div>))}
+              {displayReasonItems.map((reasonItem) => renderReasonItem(reasonItem, expandedReasonKeys, setExpandedReasonKeys))}
             </div>) : null}
 
           <div style={toolbarRow}>
@@ -130,33 +130,33 @@ export default function PredictionRow({ item, onAction, selectedTables = [], }) 
         <section style={decisionPanel}>
           <div style={sectionTitle}>Review Decision</div>
           <div style={helperText}>
-            Use <strong>accept</strong> when this is a valid anomaly, <strong>reject</strong>
-            when it is a false positive, and <strong>maybe</strong> when it needs follow-up.
+            Use <strong>Accept</strong> when this is a valid anomaly, <strong>Reject</strong>
+            when it is a false positive, and <strong>Maybe</strong> when it needs follow-up.
           </div>
           {activeFeedback ? (<div style={feedbackState}>
               Current selection: <strong>{activeFeedback}</strong>
             </div>) : null}
           <div style={actionRow}>
-            <button type="button" onClick={() => submit("accept")} disabled={saving !== null} style={{
+            <button type="button" onClick={() => submit("Accept")} disabled={saving !== null} style={{
             ...actionButton,
             background: "#0f766e",
-            ...(activeFeedback === "accept" ? activeActionButton : {}),
+            ...(activeFeedback === "Accept" ? activeActionButton : {}),
         }}>
-              {saving === "accept" ? "Saving..." : "Accept"}
+              {saving === "Accept" ? "Saving..." : "Accept"}
             </button>
-            <button type="button" onClick={() => submit("reject")} disabled={saving !== null} style={{
+            <button type="button" onClick={() => submit("Reject")} disabled={saving !== null} style={{
             ...actionButton,
             background: "#b91c1c",
-            ...(activeFeedback === "reject" ? activeActionButton : {}),
+            ...(activeFeedback === "Reject" ? activeActionButton : {}),
         }}>
-              {saving === "reject" ? "Saving..." : "Reject"}
+              {saving === "Reject" ? "Saving..." : "Reject"}
             </button>
-            <button type="button" onClick={() => submit("maybe")} disabled={saving !== null} style={{
+            <button type="button" onClick={() => submit("Maybe")} disabled={saving !== null} style={{
             ...actionButton,
             background: "#b45309",
-            ...(activeFeedback === "maybe" ? activeActionButton : {}),
+            ...(activeFeedback === "Maybe" ? activeActionButton : {}),
         }}>
-              {saving === "maybe" ? "Saving..." : "Maybe"}
+              {saving === "Maybe" ? "Saving..." : "Maybe"}
             </button>
           </div>
         </section>
@@ -223,9 +223,11 @@ function getReviewMetrics(item, payload, reasons) {
     const ruleAnomaly = Number(reasons.rule_anomaly ??
         payload.rule_anomaly ??
         item.rule_flag ??
-        reasons.human_outlier_flag ??
+        reasons.user_rule_flag ??
+        reasons.default_rule_flag ??
         0);
-    const ruleCount = Number(reasons.rule_count ?? payload.rule_count ?? reasonList.length ?? 0);
+    const explicitRuleCount = firstDefined(reasons.rule_count, payload.rule_count);
+    const ruleCount = Number(explicitRuleCount ?? (ruleAnomaly ? 1 : 0));
     const ifScore = firstDefined(reasons.if_score, payload.if_score, reasons.isolation_score, item.raw_ml_score, item.ml_score);
     const mlThreshold = firstDefined(reasons.ml_threshold, payload.ml_threshold, item.ml_threshold);
     const ensembleScore = firstDefined(reasons.ensemble_score, payload.ensemble_score, item.ml_score, item.final_score);
@@ -238,20 +240,174 @@ function getBaseReasonList(item, reasons) {
             ? [item.rule_codes]
             : [];
     const splitReasons = rawReasons
-        .flatMap((reason) => String(reason || "").split(","))
+        .flatMap(splitReasonText)
         .map((reason) => reason.trim())
         .filter(Boolean);
     return dedupeReasons(splitReasons);
 }
-function getMlSignalList(reasons, payload, baseReasonList) {
+
+function splitReasonText(reason) {
+    const text = String(reason || "").trim();
+    if (!text) {
+        return [];
+    }
+    if (/[.!?]/.test(text)) {
+        return [text];
+    }
+    return text.split(",");
+}
+function getMlSignalItems(reasons, payload, baseReasonList) {
     const signals = Array.isArray(reasons?.ml_feature_signals) ? reasons.ml_feature_signals : [];
     const groupedSignals = collapseMlSignals(signals);
-    const blockedReasons = new Set((baseReasonList || []).map((reason) => normalizeReasonText(reason)));
-    return dedupeReasons(groupedSignals
-        .map((signal) => formatMlSignal(signal, payload))
-        .filter(Boolean)
-        .filter((reason) => !blockedReasons.has(normalizeReasonText(reason)))
-        .slice(0, 3));
+    void baseReasonList;
+    return groupedSignals
+        .map((signal) => ({
+        key: String(signal?.feature || Math.random()),
+        text: formatMlSignal(signal, payload),
+        details: formatMlSignalComparison(signal, payload),
+    }))
+        .filter((item) => item.text)
+        .slice(0, 3);
+}
+function getDisplayReasonItems(baseReasonList, mlSignalItems) {
+    const signalByText = new Map((mlSignalItems || []).map((item) => [normalizeReasonText(item.text), item]));
+    const items = [];
+    for (const reason of baseReasonList || []) {
+        const text = formatReason(reason);
+        const normalized = normalizeReasonText(text);
+        const signalMatch = signalByText.get(normalized);
+        if (!signalMatch && isCoveredByMlSignal(text, mlSignalItems)) {
+            continue;
+        }
+        items.push({
+            key: signalMatch?.key || normalized || text,
+            text,
+            details: Array.isArray(signalMatch?.details) ? signalMatch.details : [],
+        });
+        signalByText.delete(normalized);
+    }
+    for (const signalItem of signalByText.values()) {
+        items.push(signalItem);
+    }
+    return items;
+}
+
+function isCoveredByMlSignal(reasonText, mlSignalItems) {
+    if (!Array.isArray(mlSignalItems) || mlSignalItems.length === 0) {
+        return false;
+    }
+    const reasonTokens = contentTokens(reasonText);
+    if (reasonTokens.length < 5) {
+        return false;
+    }
+    return mlSignalItems.some((item) => {
+        const signalTokens = contentTokens(item?.text);
+        if (signalTokens.length < 5) {
+            return false;
+        }
+        const signalSet = new Set(signalTokens);
+        const overlap = reasonTokens.filter((token) => signalSet.has(token)).length;
+        return overlap / Math.min(reasonTokens.length, signalTokens.length) >= 0.65;
+    });
+}
+
+function contentTokens(value) {
+    const stopWords = new Set(["the", "is", "a", "an", "and", "or", "to", "from", "of", "for", "with", "which", "this", "that", "normal", "usual"]);
+    return normalizeReasonText(value)
+        .split(" ")
+        .filter((token) => token.length > 1 && !stopWords.has(token));
+}
+function renderReasonItem(signalItem, expandedReasonKeys, setExpandedReasonKeys) {
+    const isExpanded = expandedReasonKeys.includes(signalItem.key);
+    const hasDetails = signalItem.details.length > 0;
+    return (<div key={signalItem.key} style={reasonItemBlock}>
+      <div style={reasonItemRow}>
+        <div style={reasonItem}>{signalItem.text}</div>
+        {hasDetails ? (<button type="button" onClick={() => setExpandedReasonKeys((current) => current.includes(signalItem.key)
+                ? current.filter((item) => item !== signalItem.key)
+                : [...current, signalItem.key])} style={reasonExpandButton}>
+            {isExpanded ? "▲" : "▼"}
+          </button>) : null}
+      </div>
+      {isExpanded && hasDetails ? (<div style={reasonDetailBox}>
+          {signalItem.details.map((detail) => (<div key={detail} style={reasonDetailItem}>{detail}</div>))}
+        </div>) : null}
+    </div>);
+}
+function formatMlSignalComparison(signal, payload) {
+    const comparison = signal?.comparison;
+    const parsed = parseMlSignalFeature(signal.feature);
+    const currentValue = formatComparisonValue(parsed, signal?.value);
+    if (!comparison || typeof comparison !== "object") {
+        return currentValue ? [`Current value: ${currentValue}`] : [];
+    }
+    if (comparison.kind === "numeric") {
+        const details = [];
+        if (currentValue) {
+            details.push(`${comparisonCurrentLabel(parsed)}: ${currentValue}`);
+        }
+        const median = formatComparisonValue(parsed, comparison.median);
+        const p25 = formatComparisonValue(parsed, comparison.p25);
+        const p75 = formatComparisonValue(parsed, comparison.p75);
+        const min = formatComparisonValue(parsed, comparison.min);
+        const max = formatComparisonValue(parsed, comparison.max);
+        if (median) {
+            details.push(`${comparisonTypicalLabel(parsed)}: ${median}`);
+        }
+        if (p25 || p75) {
+            details.push(`${comparisonUsualRangeLabel(parsed)}: ${p25 || "NA"} to ${p75 || "NA"}`);
+        }
+        if (min || max) {
+            details.push(`Observed range: ${min || "NA"} to ${max || "NA"}`);
+        }
+        return details;
+    }
+    if (comparison.kind === "category") {
+        const ratio = toFiniteNumber(comparison.match_ratio);
+        const matchCount = toFiniteNumber(comparison.match_count);
+        const totalCount = toFiniteNumber(comparison.total_count);
+        const details = [];
+        if (currentValue) {
+            details.push(`Current value: ${currentValue}`);
+        }
+        if (ratio !== null && totalCount !== null) {
+            details.push(`Rows with this value: ${trimTrailingZeros(ratio * 100)}% (${Math.trunc(matchCount || 0)} of ${Math.trunc(totalCount)})`);
+        }
+        return details;
+    }
+    if (comparison.kind === "missing") {
+        const ratio = toFiniteNumber(comparison.present_ratio);
+        const presentCount = toFiniteNumber(comparison.present_count);
+        const totalCount = toFiniteNumber(comparison.total_count);
+        if (ratio !== null && totalCount !== null) {
+            return [`Rows where this field is present: ${trimTrailingZeros(ratio * 100)}% (${Math.trunc(presentCount || 0)} of ${Math.trunc(totalCount)})`];
+        }
+    }
+    return [];
+}
+function formatComparisonValue(parsed, value) {
+    const formatted = formatMeaningfulDisplayValue(parsed, value);
+    if (!formatted) {
+        return formatted;
+    }
+    if (parsed.kind === "date_gap") {
+        const numeric = toFiniteNumber(value);
+        if (numeric === null) {
+            return formatted;
+        }
+        const rounded = Math.round(Math.abs(numeric));
+        return `${rounded} ${rounded === 1 ? "day" : "days"}`;
+    }
+    return formatted;
+}
+function comparisonCurrentLabel(parsed) {
+    return parsed.kind === "date_gap" ? "Current gap" : "Current value";
+}
+function comparisonTypicalLabel(parsed) {
+    return parsed.kind === "date_gap" ? "Typical gap" : "Typical value";
+}
+function comparisonUsualRangeLabel(parsed) {
+    return parsed.kind === "date_gap" ? "Usual gap range" : "Usual range";
 }
 function collapseMlSignals(signals) {
     const grouped = new Map();
@@ -436,6 +592,14 @@ function formatNumericSignalReason(parsed, signal) {
         return `${parsed.label} is ${direction === "low" ? "lower" : "higher"} than usual.`;
     }
     if (looksLikeIdentifierField(parsed.field)) {
+        if (Number.isFinite(numeric) && numeric >= 0 && numeric <= 1) {
+            const percentText = `${trimTrailingZeros(numeric * 100)}%`;
+            const entityLabel = describeFrequencyEncodedField(parsed.label);
+            if (direction === "low") {
+                return `${parsed.label} is uncommon for similar records; this ${entityLabel} appears in about ${percentText} of rows.`;
+            }
+            return `${parsed.label} is more common than usual for similar records; this ${entityLabel} appears in about ${percentText} of rows.`;
+        }
         if (displayValue) {
             return `${parsed.label} does not match the usual pattern for similar records (recorded value: ${displayValue}).`;
         }
@@ -705,6 +869,12 @@ function normalizeKey(value) {
         .toLowerCase()
         .replace(/[^a-z0-9]/g, "");
 }
+function describeFrequencyEncodedField(label) {
+    const cleaned = String(label || "")
+        .replace(/^Fk\s+/i, "")
+        .trim();
+    return cleaned || "value";
+}
 function firstDefined(...values) {
     for (const value of values) {
         if (value !== undefined && value !== null && value !== "") {
@@ -729,7 +899,7 @@ function displayValue(value) {
 }
 function formatReason(value) {
     return value
-        .replace(/^OUTLIER::/i, "")
+        .replace(/^(?:OUTLIER|RULE)::/i, "")
         .replace(/_/g, " ");
 }
 function normalizeReasonText(value) {
@@ -803,6 +973,39 @@ const reasonItem = {
     color: "#1c1917",
     fontSize: 13,
     fontWeight: 700,
+};
+const reasonItemBlock = {
+    display: "grid",
+    gap: 6,
+};
+const reasonItemRow = {
+    display: "flex",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 10,
+};
+const reasonExpandButton = {
+    border: "1px solid #fdba74",
+    background: "#fff",
+    color: "#9a3412",
+    borderRadius: 8,
+    fontSize: 11,
+    fontWeight: 800,
+    lineHeight: 1,
+    padding: "6px 8px",
+    cursor: "pointer",
+    flex: "0 0 auto",
+};
+const reasonDetailBox = {
+    borderLeft: "2px solid #fdba74",
+    paddingLeft: 10,
+    display: "grid",
+    gap: 4,
+};
+const reasonDetailItem = {
+    color: "#92400e",
+    fontSize: 12,
+    fontWeight: 600,
 };
 const reasonMuted = {
     color: "#92400e",

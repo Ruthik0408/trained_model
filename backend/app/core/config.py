@@ -69,6 +69,23 @@ def _build_app_db_url() -> str:
     return f"postgresql+psycopg2://{user}@{host}:{port}/{app_db_name}"
 
 
+def _trained_model_dir() -> str:
+    explicit = os.getenv("TULIP_TRAINED_MODEL_DIR", "").strip()
+    if explicit:
+        return explicit
+
+    candidates = [
+        BASE_DIR / "artifacts" / "models",
+        PROJECT_DIR / "artifacts" / "models",
+        WORKSPACE_DIR / "backend" / "artifacts" / "models",
+        PROJECT_DIR.parent.parent / "backend" / "artifacts" / "models",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return str(candidate)
+    return str(candidates[0])
+
+
 class Settings(BaseModel):
     app_name: str = "Tulip 2.0 Anomaly System"
     db_url: str = _build_app_db_url()
@@ -94,6 +111,7 @@ class Settings(BaseModel):
     source_db_pool_timeout_seconds: int = int(str(os.getenv("TULIP_SOURCE_DB_POOL_TIMEOUT_SECONDS", "30")))
     source_db_pool_recycle_seconds: int = int(str(os.getenv("TULIP_SOURCE_DB_POOL_RECYCLE_SECONDS", "3600")))
     active_model_path: str = str(MODEL_DIR / "active_model.joblib")
+    trained_model_dir: str = _trained_model_dir()
     random_state: int = 42
     ollama_base_url: str = str(os.getenv("TULIP_OLLAMA_BASE_URL", "http://localhost:11434")).rstrip("/")
     anomaly_reason_model: str = str(os.getenv("TULIP_ANOMALY_REASON_MODEL", "qwen3:4b")).strip()
@@ -117,6 +135,13 @@ class Settings(BaseModel):
     rate_limit_enabled: bool = str(os.getenv("TULIP_RATE_LIMIT_ENABLED", "true")) in {"1", "true", "yes", "on"}
     rate_limit_requests: int = int(str(os.getenv("TULIP_RATE_LIMIT_REQUESTS", "120")))
     rate_limit_window_seconds: int = int(str(os.getenv("TULIP_RATE_LIMIT_WINDOW_SECONDS", "60")))
+    valkey_host: str = str(os.getenv("VALKEY_HOST", "localhost"))
+    valkey_port: int = int(str(os.getenv("VALKEY_PORT", "6379")))
+    valkey_db: int = int(str(os.getenv("VALKEY_DB", "0")))
+    valkey_password: str = str(os.getenv("VALKEY_PASSWORD", ""))
+    valkey_enabled: bool = str(os.getenv("TULIP_VALKEY_ENABLED", "true")).lower() in {"1", "true", "yes", "on"}
+    valkey_key_prefix: str = str(os.getenv("TULIP_VALKEY_KEY_PREFIX", "tulip"))
+    valkey_socket_timeout_seconds: float = float(str(os.getenv("TULIP_VALKEY_SOCKET_TIMEOUT_SECONDS", "1.5")))
     anomaly_feature_min_score: float = float(str(os.getenv("TULIP_ANOMALY_FEATURE_MIN_SCORE", "0.15")))
     anomaly_feature_min_present_ratio: float = float(str(os.getenv("TULIP_ANOMALY_FEATURE_MIN_PRESENT_RATIO", "0.5")))
     workbench_explain_analyze: bool = str(os.getenv("TULIP_WORKBENCH_EXPLAIN_ANALYZE", "false")).lower() in {

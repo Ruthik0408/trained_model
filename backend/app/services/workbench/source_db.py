@@ -32,7 +32,6 @@ def list_source_tables() -> list[dict]:
         ORDER BY table_name, ordinal_position
         """
     )
-
     grouped: dict[str, list[dict]] = {}
 
     with _source_connect() as conn:
@@ -109,24 +108,10 @@ def _friendly_source_db_error(exc: Exception) -> str:
     message = str(exc).strip()
     lowered = message.lower()
 
-    missing_database_match = re.search(
-        r'database "([^"]+)" does not exist',
-        message,
-        flags=re.IGNORECASE,
-    )
-
-    if missing_database_match:
-        missing_database = missing_database_match.group(1)
-        return (
-            f'PostgreSQL database "{missing_database}" does not exist on '
-            f"{settings.source_db_host}:{settings.source_db_port}. "
-            "Update TULIP_SOURCE_DB_NAME in your .env to the exact database name."
-        )
-
     if "too many clients already" in lowered:
         return (
-            "PostgreSQL has no free client connections right now. "
-            "Reduce concurrent workbench/scheduler jobs and use a smaller SQLAlchemy pool."
+            "PostgreSQL is currently handling too many database connections at the same time. "
+            "Please wait a moment and try again, or reduce the number of simultaneous jobs/users."
         )
 
     if "timeout" in lowered and "queuepool" in lowered:
@@ -143,7 +128,7 @@ def _friendly_source_db_error(exc: Exception) -> str:
             f"TULIP_SOURCE_DB_NAME={settings.source_db_name}, "
             "and the source DB credentials."
         )
-
+    
     return message
 
 
@@ -223,8 +208,8 @@ def _normalize_storage_columns(df: pd.DataFrame) -> pd.DataFrame:
     normalized.columns = renamed
     return normalized
 
-
 def _source_table_ref(table_name: str) -> str:
+    _validate_identifier(table_name, "source table")
     return f"{_quote(settings.source_db_schema)}.{_quote(table_name)}"
 
 
@@ -243,16 +228,6 @@ def _source_columns_map(
         out[table_name] = item["columns"]
 
     return out
-
-
-def _is_date_like_column_name(column_name: str, data_type: str | None = None) -> bool:
-    lower_name = str(column_name).strip().lower()
-    lower_type = str(data_type or "").strip().lower()
-
-    return any(token in lower_type for token in ["date", "time"]) or any(
-        token in lower_name
-        for token in ["date", "time", "created_at", "updated_at", "timestamp"]
-    )
 
 
 def _approx_table_row_count(conn, table_name: str) -> int:
@@ -292,7 +267,7 @@ def _validate_selected_tables(
 
     if missing:
         raise ValueError(
-            f"Selected source tables not found in schema "
+            f"Selected source tables not found in schema"
             f"'{settings.source_db_schema}': {missing}"
         )
 
@@ -361,6 +336,7 @@ def _source_column_meta(
 
 
 def _validate_identifier(value: str, label: str) -> None:
+    value = str(value)
     if not _SAFE_IDENTIFIER_RE.match(value):
         raise ValueError(f"Unsafe SQL identifier for {label}: {value!r}")
 
@@ -406,12 +382,15 @@ def _next_dataset_run_id(dataset_table: str) -> int:
     return int(current_max or 0) + 1
 
 
-@lru_cache(maxsize=64)
 def _result_table_exists(dataset_table: str) -> bool:
     if not dataset_table:
         return False
 
     _validate_identifier(dataset_table, "dataset_table")
+    cache_key = f"result_table_exists:{dataset_table}"
+    cached = TABLE_METADATA_CACHE.get(cache_key)
+    if cached is not None:
+        return bool(cached)
 
     sql = text(
         """
@@ -425,7 +404,7 @@ def _result_table_exists(dataset_table: str) -> bool:
 
     try:
         with _source_connect() as conn:
-            return (
+            exists = (
                 conn.execute(
                     sql,
                     {
@@ -435,6 +414,8 @@ def _result_table_exists(dataset_table: str) -> bool:
                 ).scalar()
                 == 1
             )
+            TABLE_METADATA_CACHE.set(cache_key, bool(exists))
+            return bool(exists)
     except (SQLAlchemyError, ValueError) as exc:
         logger.warning(
             "Unable to verify result table %s.%s: %s",
@@ -446,16 +427,21 @@ def _result_table_exists(dataset_table: str) -> bool:
 
 
 def _clear_result_table_exists_cache(dataset_table: str | None = None) -> None:
-    # functools.lru_cache cannot clear one key safely here, so clear full cache.
-    _result_table_exists.cache_clear()
+    if dataset_table:
+        TABLE_METADATA_CACHE.invalidate(f"result_table_exists:{dataset_table}")
+        return
+    TABLE_METADATA_CACHE.invalidate_prefix("result_table_exists:")
 
 
-@lru_cache(maxsize=64)
 def _result_table_columns(dataset_table: str) -> frozenset[str]:
     if not dataset_table:
         return frozenset()
 
     _validate_identifier(dataset_table, "dataset_table")
+    cache_key = f"result_table_columns:{dataset_table}"
+    cached = TABLE_METADATA_CACHE.get(cache_key)
+    if cached is not None:
+        return frozenset(str(column) for column in cached)
 
     sql = text(
         """
@@ -468,7 +454,7 @@ def _result_table_columns(dataset_table: str) -> frozenset[str]:
     )
 
     with _source_connect() as conn:
-        return frozenset(
+        columns = frozenset(
             str(row.column_name)
             for row in conn.execute(
                 sql,
@@ -478,13 +464,12 @@ def _result_table_columns(dataset_table: str) -> frozenset[str]:
                 },
             )
         )
+    TABLE_METADATA_CACHE.set(cache_key, sorted(columns))
+    return columns
 
 
 def _clear_result_table_columns_cache(dataset_table: str | None = None) -> None:
-    # functools.lru_cache cannot clear one key safely here, so clear full cache.
-    _result_table_columns.cache_clear()
-
-
-def _clear_result_metadata_cache() -> None:
-    _result_table_exists.cache_clear()
-    _result_table_columns.cache_clear()
+    if dataset_table:
+        TABLE_METADATA_CACHE.invalidate(f"result_table_columns:{dataset_table}")
+        return
+    TABLE_METADATA_CACHE.invalidate_prefix("result_table_columns:")

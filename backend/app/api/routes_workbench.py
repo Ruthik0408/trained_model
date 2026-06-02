@@ -1,7 +1,8 @@
 
 import logging
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import OperationalError
 
@@ -24,6 +25,7 @@ from app.services.workbench.source_db import list_source_tables, source_connecti
 
 router = APIRouter(prefix="/api/workbench", tags=["workbench"])
 logger = logging.getLogger(__name__)
+SAFE_IDENTIFIER_PATTERN = r"^[A-Za-z_][A-Za-z0-9_]*$"
 
 
 def _log_request(request: Request, message: str) -> None:
@@ -49,9 +51,16 @@ def get_tables(request: Request):
     except ConnectionError as exc:
         logger.warning("Connection error fetching tables: %s", exc)
         raise HTTPException(status_code=503, detail="Cannot connect to source database")
-    except Exception:
-        logger.exception("Error fetching tables")
-        raise HTTPException(status_code=500, detail="Failed to retrieve tables")
+    except Exception as exc:
+        status = source_connection_status()
+        if not status.get("connected"):
+            logger.warning("Source metadata unavailable while fetching tables: %s", status)
+            raise HTTPException(status_code=503, detail=status)
+        logger.exception("Error fetching tables: %s", exc)
+        raise HTTPException(
+            status_code=500,
+            detail=str(exc) or "Failed to retrieve tables",
+        )
 
 
 @router.get(
@@ -206,7 +215,7 @@ def dataset_list_route(request: Request, db: Session = Depends(get_db)):
 )
 def review_table_route(
     request: Request,
-    dataset_table: str | None = None,
+    dataset_table: Annotated[str | None, Query(pattern=SAFE_IDENTIFIER_PATTERN)] = None,
     anomaly_filter: str = "all",
     limit: int | None = None,
     offset: int = 0,
@@ -236,7 +245,7 @@ def review_table_route(
 @router.get("/review-rows", summary="Get review rows")
 def review_rows_route(
     request: Request,
-    dataset_table: str | None = None,
+    dataset_table: Annotated[str | None, Query(pattern=SAFE_IDENTIFIER_PATTERN)] = None,
     anomaly_filter: str = "all",
     limit: int | None = None,
     offset: int = 0,
@@ -295,7 +304,7 @@ def dataset_feedback_route(
 )
 def report_route(
     request: Request,
-    dataset_table: str | None = None,
+    dataset_table: Annotated[str | None, Query(pattern=SAFE_IDENTIFIER_PATTERN)] = None,
     run_id: int | None = None,
     db: Session = Depends(get_db),
 ):

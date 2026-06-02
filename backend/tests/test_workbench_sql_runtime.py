@@ -1,117 +1,82 @@
-from sqlalchemy import create_engine, text
+import sys
+import types
 
-from app.schemas.workbench_schema import OutlierRuleInput
-from app.schemas.workbench_schema import WorkbenchRunRequest
-from app.services.workbench.constants import TEMP_ROW_ID_COLUMN
-from app.services.workbench.sql_runtime import _build_sql_outlier_predicate, _read_temp_scoring_frame
+redis_stub = types.ModuleType("redis")
+redis_stub.Redis = object
+redis_exceptions_stub = types.ModuleType("redis.exceptions")
+redis_exceptions_stub.RedisError = Exception
+sys.modules.setdefault("redis", redis_stub)
+sys.modules.setdefault("redis.exceptions", redis_exceptions_stub)
 
-
-def test_read_temp_scoring_frame_keeps_full_joined_columns() -> None:
-    engine = create_engine("sqlite:///:memory:", future=True)
-    payload = WorkbenchRunRequest(selected_tables=["dak", "bill"])
-
-    with engine.begin() as conn:
-        conn.execute(
-            text(
-                """
-                CREATE TABLE temp_scoring (
-                    "__ml_row_number" INTEGER,
-                    "dak.amount" REAL,
-                    "bill.fk_ao" INTEGER,
-                    "bill.approved" BOOLEAN,
-                    "bill.passed" BOOLEAN,
-                    "sql_rule_flag" BOOLEAN,
-                    "invoice_date_to_bill_date" REAL
-                )
-                """
-            )
-        )
-        conn.execute(
-            text(
-                """
-                INSERT INTO temp_scoring (
-                    "__ml_row_number",
-                    "dak.amount",
-                    "bill.fk_ao",
-                    "bill.approved",
-                    "bill.passed",
-                    "sql_rule_flag",
-                    "invoice_date_to_bill_date"
-                ) VALUES
-                    (1, 125.5, 10, 1, 1, 0, 2.0),
-                    (2, 225.0, 20, 0, NULL, 1, 5.0)
-                """
-            )
-        )
-
-        frame = _read_temp_scoring_frame(conn, "temp_scoring", payload)
-
-    assert frame.index.tolist() == [1, 2]
-    assert TEMP_ROW_ID_COLUMN not in frame.columns
-    assert "dak.amount" in frame.columns
-    assert "bill.fk_ao" in frame.columns
-    assert "bill.approved" in frame.columns
-    assert "bill.passed" in frame.columns
-    assert "sql_rule_flag" in frame.columns
-    assert "invoice_date_to_bill_date" in frame.columns
-    assert frame.loc[1, "dak.amount"] == 125.5
-    assert frame.loc[2, "bill.fk_ao"] == 20
+from app.services.workbench.sql_runtime import (
+    _build_date_sequence_anomaly_conditions,
+    _build_dynamic_date_gap_rules,
+    _qualified_builtin_scoring_columns,
+)
 
 
-def test_build_sql_outlier_predicate_compares_datetime_columns_as_timestamps() -> None:
-    params = {}
+def test_build_dynamic_date_gap_rules_keeps_prefixed_dates_in_same_family() -> None:
+    available = {
+        "dak.dak_list_date": "date",
+        "dak.dak_auditor_date": "date",
+        "dak.dak_aao_date": "date",
+        "bill.bill_list_date": "date",
+        "bill.bill_auditor_date": "date",
+        "bill.bill_aao_date": "date",
+    }
+
+    rules = _build_dynamic_date_gap_rules(available)
+    column_pairs = {(rule["first_column"], rule["second_column"]) for rule in rules}
+
+    assert ("dak.dak_auditor_date", "dak.dak_list_date") in column_pairs
+    assert ("dak.dak_aao_date", "dak.dak_auditor_date") in column_pairs
+    assert ("bill.bill_auditor_date", "bill.bill_list_date") in column_pairs
+    assert ("bill.bill_aao_date", "bill.bill_auditor_date") in column_pairs
+    assert ("bill.bill_auditor_date", "dak.dak_list_date") not in column_pairs
+    assert ("bill.bill_aao_date", "dak.dak_auditor_date") not in column_pairs
+
+
+def test_qualified_builtin_scoring_columns_includes_prefixed_stage_dates() -> None:
     source_columns = {
         "dak": [
-            {"column_name": "created_at", "data_type": "timestamp without time zone"},
+            {"column_name": "dak_list_date"},
+            {"column_name": "dak_auditor_date"},
         ],
         "bill": [
-            {"column_name": "created_at", "data_type": "timestamp without time zone"},
+            {"column_name": "bill_auditor_date"},
+            {"column_name": "bill_aao_date"},
         ],
     }
-    rule = OutlierRuleInput(
-        name="dak after bill",
-        first_column="dak.created_at",
-        second_column="bill.created_at",
-        operator=">",
-    )
 
-    predicate = _build_sql_outlier_predicate(
-        ["dak", "bill"],
-        source_columns,
-        rule,
-        params,
-        alias="src",
-    )
+    required = _qualified_builtin_scoring_columns(["dak", "bill"], source_columns)
 
-    assert "::double precision" not in predicate
-    assert "CAST" not in predicate or "CAST(" in predicate
-    assert "REPLACE" in predicate
-    assert "::timestamp" in predicate
-    assert ">" in predicate
-    assert params == {}
+    assert "dak.dak_list_date" in required
+    assert "dak.dak_auditor_date" in required
+    assert "bill.bill_auditor_date" in required
+    assert "bill.bill_aao_date" in required
 
 
-def test_build_sql_outlier_predicate_compares_datetime_literal_as_timestamp() -> None:
-    params = {}
+def test_build_date_sequence_anomaly_conditions_avoids_cross_family_comparisons() -> None:
     source_columns = {
         "dak": [
-            {"column_name": "created_at", "data_type": "timestamp without time zone"},
+            {"column_name": "dak_list_date"},
+            {"column_name": "dak_auditor_date"},
+            {"column_name": "dak_aao_date"},
+        ],
+        "bill": [
+            {"column_name": "bill_list_date"},
+            {"column_name": "bill_auditor_date"},
+            {"column_name": "bill_aao_date"},
         ],
     }
-    rule = OutlierRuleInput(
-        name="dak after cutoff",
-        first_column="dak.created_at",
-        operator=">=",
-        value="2025-01-01 10:30:00",
-    )
 
-    predicate = _build_sql_outlier_predicate(
-        ["dak"],
-        source_columns,
-        rule,
-        params,
-        alias="src",
-    )
+    comparisons = _build_date_sequence_anomaly_conditions(["dak", "bill"], source_columns)
+    combined_sql = "\n".join(condition for condition, _message in comparisons)
 
-    assert "CAST(:rule_ts_1 AS timestamp)" in predicate
-    assert params["rule_ts_1"] == "2025-01-01 10:30:00"
+    assert 'base."dak.dak_list_date"' in combined_sql
+    assert 'base."dak.dak_auditor_date"' in combined_sql
+    assert 'base."bill.bill_list_date"' in combined_sql
+    assert 'base."bill.bill_auditor_date"' in combined_sql
+    assert 'base."dak.dak_list_date") > (CAST(base."bill.bill_auditor_date"' not in combined_sql
+    assert 'base."bill.bill_list_date") > (CAST(base."dak.dak_auditor_date"' not in combined_sql
+

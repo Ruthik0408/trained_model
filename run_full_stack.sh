@@ -1,28 +1,63 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+BACKEND_DIR="$ROOT_DIR/backend"
+FRONTEND_DIR="$ROOT_DIR/frontend"
+PYTHON_BIN="$ROOT_DIR/venv/bin/python"
 
-BACKEND_PORT="${BACKEND_PORT:-8000}"
-FRONTEND_PORT="${FRONTEND_PORT:-5173}"
+if [[ ! -x "$PYTHON_BIN" ]]; then
+  echo "Backend venv not found at $PYTHON_BIN"
+  echo "Create it first, then install: ./venv/bin/pip install -r backend/requirements.txt"
+  exit 1
+fi
+
+if [[ ! -d "$FRONTEND_DIR/node_modules" ]]; then
+  echo "Frontend dependencies missing. Run: cd frontend && npm install"
+  exit 1
+fi
+
+port_is_busy() {
+  local port="$1"
+  (echo >"/dev/tcp/127.0.0.1/$port") >/dev/null 2>&1
+}
+
+if port_is_busy 8000; then
+  echo "Port 8000 is already in use. Stop the existing backend or change the backend port."
+  exit 1
+fi
+
+if port_is_busy 5173; then
+  echo "Port 5173 is already in use. Stop the existing frontend or change the frontend port."
+  exit 1
+fi
 
 cleanup() {
-  kill "$BACKEND_PID" "$FRONTEND_PID" 2>/dev/null || true
+  echo
+  echo "Stopping backend and frontend..."
+  if [[ -n "${BACKEND_PID:-}" ]]; then
+    kill "$BACKEND_PID" 2>/dev/null || true
+  fi
+  if [[ -n "${FRONTEND_PID:-}" ]]; then
+    kill "$FRONTEND_PID" 2>/dev/null || true
+  fi
+  wait 2>/dev/null || true
 }
 
 trap cleanup EXIT INT TERM
 
-cd "$ROOT_DIR/backend"
-../venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port "$BACKEND_PORT" --reload &
+echo "Starting backend: http://127.0.0.1:8000"
+(
+  cd "$BACKEND_DIR"
+  "$PYTHON_BIN" -m uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+) &
 BACKEND_PID=$!
 
-cd "$ROOT_DIR/frontend"
-VITE_API_BASE_URL="http://127.0.0.1:$BACKEND_PORT" \
-npm exec vite -- --host 127.0.0.1 --port "$FRONTEND_PORT" --strictPort &
+echo "Starting frontend: http://127.0.0.1:5173"
+(
+  cd "$FRONTEND_DIR"
+  npm run dev
+) &
 FRONTEND_PID=$!
 
-echo "Backend:  http://127.0.0.1:$BACKEND_PORT"
-echo "Frontend: http://127.0.0.1:$FRONTEND_PORT"
-echo "Press Ctrl+C to stop."
-
-wait
+wait -n "$BACKEND_PID" "$FRONTEND_PID"
