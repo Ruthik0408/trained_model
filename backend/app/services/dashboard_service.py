@@ -258,6 +258,7 @@ def review_rows_data(
 
 def anomaly_list_data(
     *,
+    dataset_table: str = ML_FEATURES_TABLE,
     table_filter: str | None = None,
     anomaly_type: str = "all",
     review_status: str = "all",
@@ -274,23 +275,30 @@ def anomaly_list_data(
         clean_review_status = "all"
 
     cache_key = (
-        f"anomaly_list:{table_filter or 'all'}:{clean_anomaly_type}:"
+        f"anomaly_list:{dataset_table or ML_FEATURES_TABLE}:"
+        f"{table_filter or 'all'}:{clean_anomaly_type}:"
         f"{clean_review_status}:{page_limit}:{page_offset}"
     )
     cached = QUERY_RESULT_CACHE.get(cache_key)
     if cached is not None:
         return cached
 
-    if not _result_table_exists(ML_FEATURES_TABLE):
+    selected_dataset_table = dataset_table or ML_FEATURES_TABLE
+    if not _result_table_exists(selected_dataset_table):
         return {
             "rows": [],
-            "summary": {"total_rows": 0, "reviewed_rows": 0, "not_reviewed_rows": 0},
+            "dataset_table": selected_dataset_table,
+            "summary": {
+                "total_rows": 0,
+                "reviewed_rows": 0,
+                "not_reviewed_rows": 0,
+            },
             "table_options": [],
             "pagination": {"limit": page_limit, "offset": page_offset, "page_count": 0},
         }
 
-    available_columns = _result_table_columns(ML_FEATURES_TABLE)
-    required_columns = {
+    available_columns = _result_table_columns(selected_dataset_table)
+    required_columns = (
         SERIAL_COLUMN,
         SELECTED_TABLES_COLUMN,
         USER_RULE_NAME_COLUMN,
@@ -300,7 +308,23 @@ def anomaly_list_data(
         RUN_ID_COLUMN,
         FK_DAK_COLUMN,
         FEATURE_VALUES_COLUMN,
-    }
+    )
+    missing_required_columns = [
+        column_name
+        for column_name in (
+            SERIAL_COLUMN,
+            SELECTED_TABLES_COLUMN,
+            USER_RULE_COLUMN,
+            ISOLATION_RULE_COLUMN,
+            FEEDBACK_SCORE_COLUMN,
+        )
+        if column_name not in available_columns
+    ]
+    if missing_required_columns:
+        raise ValueError(
+            f"Dataset table {selected_dataset_table} is missing anomaly-list columns: "
+            f"{missing_required_columns}"
+        )
     selected_columns = ", ".join(
         _quote(column_name)
         for column_name in required_columns
@@ -308,6 +332,25 @@ def anomaly_list_data(
     )
     if not selected_columns:
         selected_columns = "*"
+    table_ref = _result_table_ref(selected_dataset_table)
+    table_options_sql = text(
+        f"""
+        SELECT {_quote(SELECTED_TABLES_COLUMN)} AS table_key, COUNT(*) AS row_count
+        FROM {table_ref}
+        GROUP BY {_quote(SELECTED_TABLES_COLUMN)}
+        ORDER BY {_quote(SELECTED_TABLES_COLUMN)} ASC
+        """
+    )
+    with _source_connect() as conn:
+        table_option_rows = conn.execute(table_options_sql).mappings().all()
+
+    valid_table_filters = {
+        str(row.get("table_key") or "")
+        for row in table_option_rows
+        if row.get("table_key") not in (None, "")
+    }
+    if table_filter and table_filter not in valid_table_filters:
+        raise ValueError(f"Unknown table filter: {table_filter}")
 
     where_parts = []
     params: dict[str, Any] = {}
@@ -328,7 +371,6 @@ def anomaly_list_data(
         where_parts.append(f"{_quote(FEEDBACK_SCORE_COLUMN)} IS NULL")
 
     where_clause = f"WHERE {' AND '.join(where_parts)}" if where_parts else ""
-    table_ref = _result_table_ref(ML_FEATURES_TABLE)
     page_sql = text(
         f"""
         SELECT {selected_columns}
@@ -348,25 +390,17 @@ def anomaly_list_data(
         {where_clause}
         """
     )
-    table_options_sql = text(
-        f"""
-        SELECT {_quote(SELECTED_TABLES_COLUMN)} AS table_key, COUNT(*) AS row_count
-        FROM {table_ref}
-        GROUP BY {_quote(SELECTED_TABLES_COLUMN)}
-        ORDER BY {_quote(SELECTED_TABLES_COLUMN)} ASC
-        """
-    )
 
     with _source_connect() as conn:
         total_rows = int(conn.execute(count_sql, params).scalar() or 0)
         feedback_counts = conn.execute(feedback_sql, params).mappings().first() or {}
         page_params = {**params, "limit": page_limit, "offset": page_offset}
         raw_rows = conn.execute(page_sql, page_params).mappings().all()
-        table_option_rows = conn.execute(table_options_sql).mappings().all()
 
     rows = [_anomaly_list_row(dict(row)) for row in raw_rows]
     result = {
         "rows": rows,
+        "dataset_table": selected_dataset_table,
         "summary": {
             "total_rows": total_rows,
             "reviewed_rows": int(feedback_counts.get("reviewed_rows") or 0),

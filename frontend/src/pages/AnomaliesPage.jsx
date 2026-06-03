@@ -29,6 +29,7 @@ export default function AnomaliesPage() {
       try {
         const response = await getWorkbenchAnomalies(
           {
+            datasetTable: "ML_Features",
             tableFilter: tableFilter || undefined,
             anomalyType,
             reviewStatus,
@@ -211,6 +212,7 @@ const header = {
   justifyContent: "space-between",
   gap: 18,
   alignItems: "end",
+  flexWrap: "wrap",
 };
 
 const eyebrow = {
@@ -229,8 +231,10 @@ const title = {
 
 const summaryGrid = {
   display: "grid",
-  gridTemplateColumns: "repeat(3, minmax(110px, 1fr))",
+  gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))",
   gap: 10,
+  minWidth: 330,
+  flex: "1 1 330px",
 };
 
 const metric = {

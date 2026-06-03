@@ -9,6 +9,7 @@ from sqlalchemy.exc import OperationalError
 from app.core.database import check_app_db_connection, get_db
 from app.core.errors import WorkbenchValidationError
 from app.schemas.workbench_schema import (
+    AnomalyListResponse,
     BuiltinRuleRequest,
     DatasetFeedbackRequest,
     ReportResponse,
@@ -283,9 +284,14 @@ def review_rows_route(
             detail="Failed to retrieve review rows. Check the request ID in server logs.",
         )
 
-@router.get("/anomalies", summary="List anomalies from ML_Features")
+@router.get(
+    "/anomalies",
+    response_model=AnomalyListResponse,
+    summary="List anomalies from ML_Features",
+)
 def anomaly_list_route(
     request: Request,
+    dataset_table: Annotated[str, Query(pattern=SAFE_IDENTIFIER_PATTERN)] = "ML_Features",
     table_filter: str | None = None,
     anomaly_type: str = "all",
     review_status: str = "all",
@@ -295,6 +301,7 @@ def anomaly_list_route(
     """Return a paginated anomaly list from ML_Features with table/type/review filters."""
     try:
         result = anomaly_list_data(
+            dataset_table=dataset_table,
             table_filter=table_filter,
             anomaly_type=anomaly_type,
             review_status=review_status,
@@ -303,6 +310,9 @@ def anomaly_list_route(
         )
         _log_request(request, f"Retrieved anomaly list: {len(result.get('rows', []))} rows")
         return result
+    except ValueError as exc:
+        logger.warning("Anomaly list validation error: %s", exc)
+        raise HTTPException(status_code=400, detail=str(exc))
     except Exception:
         logger.exception("Error fetching anomaly list")
         raise HTTPException(

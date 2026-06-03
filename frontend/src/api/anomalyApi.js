@@ -85,6 +85,7 @@ export const getWorkbenchReviewRows = (params, signal) => {
 };
 export const getWorkbenchAnomalies = (params, signal) => {
     const queryParams = {
+        dataset_table: params?.datasetTable,
         table_filter: params?.tableFilter,
         anomaly_type: params?.anomalyType,
         review_status: params?.reviewStatus,

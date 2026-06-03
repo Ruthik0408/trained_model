@@ -1,9 +1,7 @@
 
-  VITE v6.4.2  ready in 123 ms
+  VITE v6.4.2  ready in 126 ms
 
   ➜  Local:   http://localhost:5173/
   ➜  Network: http://192.168.0.109:5173/
-12:36:34 PM [vite] (client) hmr update /src/components/PredictionRow.jsx
-12:42:24 PM [vite] (client) hmr update /src/App.jsx, /src/pages/WorkbenchPage.jsx, /src/pages/ReviewPage.jsx, /src/pages/ReportsPage.jsx
-12:42:33 PM [vite] (client) hmr update /src/pages/WorkbenchPage.jsx, /src/pages/ReviewPage.jsx, /src/pages/ReportsPage.jsx
-12:44:00 PM [vite] (client) hmr update /src/App.jsx
+2:15:35 PM [vite] (client) hmr update /src/pages/WorkbenchPage.jsx, /src/pages/ReviewPage.jsx, /src/pages/ReportsPage.jsx, /src/pages/AnomaliesPage.jsx
+2:15:46 PM [vite] (client) hmr update /src/pages/AnomaliesPage.jsx

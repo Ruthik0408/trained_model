@@ -330,6 +330,34 @@ class ReviewTableResponse(BaseModel):
     total_rows: int
     dataset_table: str | None = None
     run_id: int | None = None
+class AnomalyListRow(BaseModel):
+    id: int | str | None = None
+    fk_dak: int | str | None = None
+    table_key: str | None = None
+    table_label: str
+    anomaly_type: str
+    anomaly_description: str
+    user_feedback: str
+    reviewed: bool
+    run_id: int | str | None = None
+class AnomalyListSummary(BaseModel):
+    total_rows: int = 0
+    reviewed_rows: int = 0
+    not_reviewed_rows: int = 0
+class AnomalyTableOption(BaseModel):
+    value: str
+    label: str
+    row_count: int = 0
+class AnomalyListPagination(BaseModel):
+    limit: int
+    offset: int
+    page_count: int
+class AnomalyListResponse(BaseModel):
+    rows: list[AnomalyListRow]
+    dataset_table: str
+    summary: AnomalyListSummary
+    table_options: list[AnomalyTableOption]
+    pagination: AnomalyListPagination
 class LatestRunReport(BaseModel):
     run_id: int | None = None
     run_name: str | None = None
