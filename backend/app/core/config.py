@@ -86,6 +86,11 @@ def _trained_model_dir() -> str:
     return str(candidates[0])
 
 
+def _csv_env(name: str, default: str = "") -> list[str]:
+    raw_value = os.getenv(name, default)
+    return [item.strip() for item in raw_value.split(",") if item.strip()]
+
+
 class Settings(BaseModel):
     app_name: str = "Tulip 2.0 Anomaly System"
     db_url: str = _build_app_db_url()
@@ -106,6 +111,12 @@ class Settings(BaseModel):
     app_db_max_overflow: int = int(str(os.getenv("TULIP_APP_DB_MAX_OVERFLOW", "10")))
     app_db_pool_timeout_seconds: int = int(str(os.getenv("TULIP_APP_DB_POOL_TIMEOUT_SECONDS", "30")))
     app_db_pool_recycle_seconds: int = int(str(os.getenv("TULIP_APP_DB_POOL_RECYCLE_SECONDS", "3600")))
+    auto_init_app_db_schema: bool = str(os.getenv("TULIP_AUTO_INIT_APP_DB_SCHEMA", "true")).lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
     source_db_pool_size: int = int(str(os.getenv("TULIP_SOURCE_DB_POOL_SIZE", "10")))
     source_db_max_overflow: int = int(str(os.getenv("TULIP_SOURCE_DB_MAX_OVERFLOW", "20")))
     source_db_pool_timeout_seconds: int = int(str(os.getenv("TULIP_SOURCE_DB_POOL_TIMEOUT_SECONDS", "30")))
@@ -135,6 +146,12 @@ class Settings(BaseModel):
     rate_limit_enabled: bool = str(os.getenv("TULIP_RATE_LIMIT_ENABLED", "true")) in {"1", "true", "yes", "on"}
     rate_limit_requests: int = int(str(os.getenv("TULIP_RATE_LIMIT_REQUESTS", "120")))
     rate_limit_window_seconds: int = int(str(os.getenv("TULIP_RATE_LIMIT_WINDOW_SECONDS", "60")))
+    cors_allowed_origins: list[str] = _csv_env(
+        "TULIP_CORS_ALLOWED_ORIGINS",
+        "http://localhost:5173,http://127.0.0.1:5173",
+    )
+    trusted_proxy_ips: list[str] = _csv_env("TULIP_TRUSTED_PROXY_IPS")
+    valkey_url: str | None = str(os.getenv("TULIP_VALKEY_URL", "")).strip() or None
     valkey_host: str = str(os.getenv("VALKEY_HOST", "localhost"))
     valkey_port: int = int(str(os.getenv("VALKEY_PORT", "6379")))
     valkey_db: int = int(str(os.getenv("VALKEY_DB", "0")))

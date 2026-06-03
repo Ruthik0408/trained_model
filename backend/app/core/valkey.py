@@ -31,15 +31,23 @@ def get_valkey_client() -> Redis | None:
         logger.warning("redis package is not installed; using local memory cache fallback.")
         return None
 
-    client = Redis(
-        host=settings.valkey_host,
-        port=settings.valkey_port,
-        db=settings.valkey_db,
-        password=settings.valkey_password or None,
-        decode_responses=True,
-        socket_connect_timeout=settings.valkey_socket_timeout_seconds,
-        socket_timeout=settings.valkey_socket_timeout_seconds,
-    )
+    if settings.valkey_url:
+        client = Redis.from_url(
+            settings.valkey_url,
+            decode_responses=True,
+            socket_connect_timeout=settings.valkey_socket_timeout_seconds,
+            socket_timeout=settings.valkey_socket_timeout_seconds,
+        )
+    else:
+        client = Redis(
+            host=settings.valkey_host,
+            port=settings.valkey_port,
+            db=settings.valkey_db,
+            password=settings.valkey_password or None,
+            decode_responses=True,
+            socket_connect_timeout=settings.valkey_socket_timeout_seconds,
+            socket_timeout=settings.valkey_socket_timeout_seconds,
+        )
     try:
         client.ping()
         logger.info(

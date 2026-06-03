@@ -256,6 +256,194 @@ def review_rows_data(
     QUERY_RESULT_CACHE.set(cache_key, result)
     return result
 
+def anomaly_list_data(
+    *,
+    table_filter: str | None = None,
+    anomaly_type: str = "all",
+    review_status: str = "all",
+    limit: int | None = None,
+    offset: int = 0,
+) -> dict[str, Any]:
+    page_limit = min(max(1, int(limit or DEFAULT_REVIEW_PAGE_SIZE)), 500)
+    page_offset = max(0, int(offset or 0))
+    clean_anomaly_type = str(anomaly_type or "all").strip().lower()
+    clean_review_status = str(review_status or "all").strip().lower()
+    if clean_anomaly_type not in {"all", "rule", "ml", "rule_and_ml"}:
+        clean_anomaly_type = "all"
+    if clean_review_status not in {"all", "reviewed", "not_reviewed"}:
+        clean_review_status = "all"
+
+    cache_key = (
+        f"anomaly_list:{table_filter or 'all'}:{clean_anomaly_type}:"
+        f"{clean_review_status}:{page_limit}:{page_offset}"
+    )
+    cached = QUERY_RESULT_CACHE.get(cache_key)
+    if cached is not None:
+        return cached
+
+    if not _result_table_exists(ML_FEATURES_TABLE):
+        return {
+            "rows": [],
+            "summary": {"total_rows": 0, "reviewed_rows": 0, "not_reviewed_rows": 0},
+            "table_options": [],
+            "pagination": {"limit": page_limit, "offset": page_offset, "page_count": 0},
+        }
+
+    available_columns = _result_table_columns(ML_FEATURES_TABLE)
+    required_columns = {
+        SERIAL_COLUMN,
+        SELECTED_TABLES_COLUMN,
+        USER_RULE_NAME_COLUMN,
+        USER_RULE_COLUMN,
+        ISOLATION_RULE_COLUMN,
+        FEEDBACK_SCORE_COLUMN,
+        RUN_ID_COLUMN,
+        FK_DAK_COLUMN,
+        FEATURE_VALUES_COLUMN,
+    }
+    selected_columns = ", ".join(
+        _quote(column_name)
+        for column_name in required_columns
+        if column_name in available_columns
+    )
+    if not selected_columns:
+        selected_columns = "*"
+
+    where_parts = []
+    params: dict[str, Any] = {}
+    if table_filter:
+        where_parts.append(f"{_quote(SELECTED_TABLES_COLUMN)} = :table_filter")
+        params["table_filter"] = table_filter
+    if clean_anomaly_type == "rule":
+        where_parts.append(_sql_truthy(USER_RULE_COLUMN))
+    elif clean_anomaly_type == "ml":
+        where_parts.append(_sql_truthy(ISOLATION_RULE_COLUMN))
+    elif clean_anomaly_type == "rule_and_ml":
+        where_parts.append(f"({_sql_truthy(USER_RULE_COLUMN)} AND {_sql_truthy(ISOLATION_RULE_COLUMN)})")
+    else:
+        where_parts.append(f"({_sql_truthy(USER_RULE_COLUMN)} OR {_sql_truthy(ISOLATION_RULE_COLUMN)})")
+    if clean_review_status == "reviewed":
+        where_parts.append(f"{_quote(FEEDBACK_SCORE_COLUMN)} IS NOT NULL")
+    elif clean_review_status == "not_reviewed":
+        where_parts.append(f"{_quote(FEEDBACK_SCORE_COLUMN)} IS NULL")
+
+    where_clause = f"WHERE {' AND '.join(where_parts)}" if where_parts else ""
+    table_ref = _result_table_ref(ML_FEATURES_TABLE)
+    page_sql = text(
+        f"""
+        SELECT {selected_columns}
+        FROM {table_ref}
+        {where_clause}
+        ORDER BY {_quote(SERIAL_COLUMN)} DESC
+        LIMIT :limit OFFSET :offset
+        """
+    )
+    count_sql = text(f"SELECT COUNT(*) FROM {table_ref} {where_clause}")
+    feedback_sql = text(
+        f"""
+        SELECT
+            COALESCE(SUM(CASE WHEN {_quote(FEEDBACK_SCORE_COLUMN)} IS NOT NULL THEN 1 ELSE 0 END), 0) AS reviewed_rows,
+            COALESCE(SUM(CASE WHEN {_quote(FEEDBACK_SCORE_COLUMN)} IS NULL THEN 1 ELSE 0 END), 0) AS not_reviewed_rows
+        FROM {table_ref}
+        {where_clause}
+        """
+    )
+    table_options_sql = text(
+        f"""
+        SELECT {_quote(SELECTED_TABLES_COLUMN)} AS table_key, COUNT(*) AS row_count
+        FROM {table_ref}
+        GROUP BY {_quote(SELECTED_TABLES_COLUMN)}
+        ORDER BY {_quote(SELECTED_TABLES_COLUMN)} ASC
+        """
+    )
+
+    with _source_connect() as conn:
+        total_rows = int(conn.execute(count_sql, params).scalar() or 0)
+        feedback_counts = conn.execute(feedback_sql, params).mappings().first() or {}
+        page_params = {**params, "limit": page_limit, "offset": page_offset}
+        raw_rows = conn.execute(page_sql, page_params).mappings().all()
+        table_option_rows = conn.execute(table_options_sql).mappings().all()
+
+    rows = [_anomaly_list_row(dict(row)) for row in raw_rows]
+    result = {
+        "rows": rows,
+        "summary": {
+            "total_rows": total_rows,
+            "reviewed_rows": int(feedback_counts.get("reviewed_rows") or 0),
+            "not_reviewed_rows": int(feedback_counts.get("not_reviewed_rows") or 0),
+        },
+        "table_options": [
+            {
+                "value": str(row.get("table_key") or ""),
+                "label": _format_selected_tables_label(row.get("table_key")),
+                "row_count": int(row.get("row_count") or 0),
+            }
+            for row in table_option_rows
+        ],
+        "pagination": {
+            "limit": page_limit,
+            "offset": page_offset,
+            "page_count": len(rows),
+        },
+    }
+    QUERY_RESULT_CACHE.set(cache_key, result)
+    return result
+
+def _anomaly_list_row(row: dict[str, Any]) -> dict[str, Any]:
+    rule_flag = _safe_bool(row.get(USER_RULE_COLUMN))
+    ml_flag = _safe_bool(row.get(ISOLATION_RULE_COLUMN))
+    feedback = _score_to_feedback(row.get(FEEDBACK_SCORE_COLUMN))
+    description = _anomaly_description(row, rule_flag, ml_flag)
+    return {
+        "id": _safe_json(row.get(SERIAL_COLUMN)),
+        "fk_dak": _safe_json(row.get(FK_DAK_COLUMN)),
+        "table_key": _safe_json(row.get(SELECTED_TABLES_COLUMN)),
+        "table_label": _format_selected_tables_label(row.get(SELECTED_TABLES_COLUMN)),
+        "anomaly_type": _anomaly_type_label(rule_flag, ml_flag),
+        "anomaly_description": description,
+        "user_feedback": feedback or "Not reviewed",
+        "reviewed": bool(feedback),
+        "run_id": _safe_json(row.get(RUN_ID_COLUMN)),
+    }
+
+def _anomaly_description(row: dict[str, Any], rule_flag: bool, ml_flag: bool) -> str:
+    rule_reason = str(row.get(USER_RULE_NAME_COLUMN) or "").strip()
+    if rule_flag and rule_reason:
+        return rule_reason
+    feature_payload = _parse_json_text(row.get(FEATURE_VALUES_COLUMN), {})
+    signals = []
+    if isinstance(feature_payload, dict):
+        raw_signals = feature_payload.get("__ml_explanation_signals")
+        if isinstance(raw_signals, list):
+            signals = [item for item in raw_signals if isinstance(item, dict)]
+    if ml_flag and signals:
+        return build_deterministic_isolation_reason(signals, {}) or "ML anomaly detected"
+    if rule_flag and ml_flag:
+        return "Rule and ML anomaly detected"
+    if rule_flag:
+        return "Rule anomaly detected"
+    if ml_flag:
+        return "ML anomaly detected"
+    return "Anomaly detected"
+
+def _anomaly_type_label(rule_flag: bool, ml_flag: bool) -> str:
+    if rule_flag and ml_flag:
+        return "Rule + ML"
+    if rule_flag:
+        return "Rule"
+    if ml_flag:
+        return "ML"
+    return "Anomaly"
+
+def _format_selected_tables_label(value: Any) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return "Unknown"
+    tables = [part for part in raw.split(".") if part and part.lower() != "null"]
+    if not tables:
+        tables = [raw]
+    return " + ".join(table.replace("_", " ") for table in tables)
+
 def report_data(
     db: Session,
     dataset_table: str | None = None,

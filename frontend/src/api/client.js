@@ -1,4 +1,6 @@
 import axios from "axios";
+const shouldLogApiDebug = import.meta.env.DEV || import.meta.env.VITE_API_DEBUG === "true";
+
 // API client with enhanced error handling and interceptors
 export const api = axios.create({
     baseURL: import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000",
@@ -11,13 +13,15 @@ api.interceptors.request.use((config) => {
     config.metadata = { requestId, startTime: Date.now() };
     return config;
 }, (error) => {
-    console.error("Request configuration error:", error);
+    if (shouldLogApiDebug) {
+        console.error("Request configuration error:", error);
+    }
     return Promise.reject(error);
 });
 // Response interceptor - log timing and errors
 api.interceptors.response.use((response) => {
     const metadata = response.config.metadata;
-    if (metadata) {
+    if (shouldLogApiDebug && metadata) {
         const duration = Date.now() - metadata.startTime;
         console.debug(`[${metadata.requestId}] ${response.config.method?.toUpperCase()} ${response.config.url} - ${response.status} - ${duration}ms`);
     }
@@ -29,11 +33,14 @@ api.interceptors.response.use((response) => {
     const isTimeout = error.code === "ECONNABORTED" || error.message.toLowerCase().includes("timeout");
     const message = error.response?.data?.detail ||
         (isTimeout ? "The request took too long to complete." : error.message);
-    if (metadata) {
+    if (shouldLogApiDebug && metadata) {
         const duration = Date.now() - metadata.startTime;
         console.error(`[${metadata.requestId}] ${config?.method?.toUpperCase()} ${config?.url} - ${status} - ${duration}ms - ${message}`);
     }
     // Handle specific error cases
+    if (!shouldLogApiDebug) {
+        return Promise.reject(error);
+    }
     if (error.response?.status === 503) {
         console.error("Service unavailable - backend connection failed");
     }

@@ -11,11 +11,10 @@ const DEFAULT_USER_RULE = (index) => ({
     value: "",
     second_value: "",
 });
-export default function WorkbenchPage({ onRunComplete }) {
+export default function WorkbenchPage({ onRunComplete, includeRuleAnomalyStep = true }) {
     const [tables, setTables] = useState([]);
     const [tableLoadError, setTableLoadError] = useState("");
     const [selectedTables, setSelectedTables] = useState([]);
-    const [joins, setJoins] = useState([]);
     const [userRules, setUserRules] = useState([]);
     const [featureRules, setFeatureRules] = useState([]);
     const [amountField, setAmountField] = useState("");
@@ -82,7 +81,7 @@ export default function WorkbenchPage({ onRunComplete }) {
         setRunWarning("");
         setPreviewResult(null);
         setResult(null);
-    }, [selectedTables, joins, fromDate, toDate]);
+    }, [selectedTables, fromDate, toDate]);
     const filteredTables = useMemo(() => {
         const query = tableSearch.trim().toLowerCase();
         if (!query)
@@ -98,67 +97,28 @@ export default function WorkbenchPage({ onRunComplete }) {
             return tables.slice(0, 200);
         return [];
     }, [filteredTables, showAllTables, tableSearch, tables]);
-    const requiresJoins = selectedTables.length > 1;
-    const hasIncompleteJoin = joins.some((join) => !join.left_table ||
-        !join.left_column ||
-        !join.right_table ||
-        !join.right_column ||
-        !join.join_type);
-    const isJoinStepComplete = selectedTables.length > 0 &&
-        (!requiresJoins || (joins.length > 0 && !hasIncompleteJoin));
     const hasExplicitDateRange = Boolean(fromDate && toDate);
     const isDateStepComplete = hasExplicitDateRange && isDateSelectionValid(fromDate, toDate);
-    const canEditRules = isJoinStepComplete && isDateStepComplete;
+    const canEditRules = selectedTables.length > 0 && isDateStepComplete;
     const canRun = canEditRules && !previewing && !running && !autoFeatureLoading;
-    useEffect(() => {
-        if (!requiresJoins && activeStep === 3) {
-            setActiveStep(4);
-        }
-    }, [activeStep, requiresJoins]);
-    useEffect(() => {
-        setJoins((current) => {
-            if (selectedTables.length < 2) {
-                return [];
-            }
-            const nextJoins = [];
-            for (let index = 0; index < selectedTables.length - 1; index += 1) {
-                const leftTable = selectedTables[index];
-                const rightTable = selectedTables[index + 1];
-                const existingJoin = current.find((join) => join.left_table === leftTable && join.right_table === rightTable);
-                nextJoins.push({
-                    left_table: leftTable,
-                    left_column: existingJoin?.left_column || "",
-                    right_table: rightTable,
-                    right_column: existingJoin?.right_column || "",
-                    join_type: existingJoin?.join_type === "outer" ? "full" : (existingJoin?.join_type || "inner"),
-                });
-            }
-            const isSame = nextJoins.length === current.length &&
-                nextJoins.every((join, index) => {
-                    const currentJoin = current[index];
-                    return currentJoin &&
-                        currentJoin.left_table === join.left_table &&
-                        currentJoin.left_column === join.left_column &&
-                        currentJoin.right_table === join.right_table &&
-                        currentJoin.right_column === join.right_column &&
-                        currentJoin.join_type === join.join_type;
-                });
-            return isSame ? current : nextJoins;
-        });
-    }, [selectedTables]);
     const dateValidationError = getDateValidationError(fromDate, toDate);
     useEffect(() => {
         setFeatureRules([]);
         setAutoFeatureError("");
         setAutoFeatureLoading(false);
-    }, [selectedTables, joins, fromDate, toDate]);
-    const steps = useMemo(() => [
-        { id: 1, label: "Select Tables", complete: selectedTables.length > 0, disabled: false },
-        { id: 2, label: "Date Range", complete: isDateStepComplete, disabled: selectedTables.length === 0 },
-        { id: 3, label: "Join Builder", complete: isJoinStepComplete, disabled: !requiresJoins || selectedTables.length === 0 || !isDateStepComplete },
-        { id: 4, label: "Rule Anomalies", complete: true, disabled: !canEditRules },
-        { id: 5, label: "Preview And Run", complete: Boolean(result), disabled: !canEditRules },
-    ], [canEditRules, isDateStepComplete, isJoinStepComplete, requiresJoins, result, selectedTables.length]);
+    }, [selectedTables, fromDate, toDate]);
+    const finalStepId = includeRuleAnomalyStep ? 4 : 3;
+    const steps = useMemo(() => {
+        const baseSteps = [
+            { id: 1, label: "Select Tables", complete: selectedTables.length > 0, disabled: false },
+            { id: 2, label: "Date Range", complete: isDateStepComplete, disabled: selectedTables.length === 0 },
+        ];
+        if (includeRuleAnomalyStep) {
+            baseSteps.push({ id: 3, label: "Rule Anomalies", complete: true, disabled: !canEditRules });
+        }
+        baseSteps.push({ id: finalStepId, label: "Preview And Run", complete: Boolean(result), disabled: !canEditRules });
+        return baseSteps;
+    }, [canEditRules, finalStepId, includeRuleAnomalyStep, isDateStepComplete, result, selectedTables.length]);
     useEffect(() => {
         const activeConfig = steps.find((step) => step.id === activeStep);
         if (activeConfig && !activeConfig.disabled) {
@@ -222,22 +182,14 @@ export default function WorkbenchPage({ onRunComplete }) {
         if (!hasExplicitDateRange) {
             throw new Error("Please select both From date and To date before running the workbench.");
         }
-        const incompleteJoin = joins.find((join) => !join.left_table ||
-            !join.left_column ||
-            !join.right_table ||
-            !join.right_column ||
-            !join.join_type);
-        if (incompleteJoin) {
-            throw new Error("Please complete every join row before running the workbench.");
-        }
-        const activeUserRules = userRules
+        const activeUserRules = includeRuleAnomalyStep ? userRules
             .filter((rule) => rule.first_column && availableColumns.has(rule.first_column))
             .map((rule) => ({
             ...rule,
             second_column: rule.second_column || null,
             value: rule.second_column ? null : rule.value || null,
             second_value: rule.operator === "between" ? rule.second_value || null : null,
-        }));
+        })) : [];
         const activeFeatureRules = featureRules
             .filter((rule) => rule.first_column && availableColumns.has(rule.first_column))
             .map((rule) => ({
@@ -252,7 +204,7 @@ export default function WorkbenchPage({ onRunComplete }) {
         return {
             run_name: "Tulip anomaly workbench",
             selected_tables: selectedTables,
-            joins,
+            joins: [],
             amount_field: amountField || null,
             user_rules: activeUserRules,
             feature_rules: activeFeatureRules,
@@ -322,7 +274,6 @@ export default function WorkbenchPage({ onRunComplete }) {
       <div style={stepper}>
         {steps.map((step) => {
             const isActive = step.id === activeStep;
-            const isSkipped = step.id === 3 && !requiresJoins;
             return (<button key={step.id} type="button" onClick={() => goToStep(step.id)} disabled={step.disabled} style={{
                     ...stepButton,
                     ...(isActive ? activeStepButton : {}),
@@ -330,7 +281,7 @@ export default function WorkbenchPage({ onRunComplete }) {
                     ...(step.disabled ? disabledStepButton : {}),
                 }}>
               <span style={stepCircle}>{step.id}</span>
-              <span style={stepLabel}>{isSkipped ? `${step.label} (Skipped)` : step.label}</span>
+              <span style={stepLabel}>{step.label}</span>
             </button>);
         })}
       </div>
@@ -346,7 +297,7 @@ export default function WorkbenchPage({ onRunComplete }) {
             <button type="button" onClick={() => {
             setShowAllTables((current) => !current);
             setShowSuggestions(true);
-        }} style={browseButton} title="Show tables">
+        }} style={browseButton} title="Show trained tables">
               ▼
             </button>
           </div>
@@ -365,7 +316,7 @@ export default function WorkbenchPage({ onRunComplete }) {
                     {table.table_name}
                   </button>);
             })}
-              {!visibleTables.length ? <div style={hint}>No matching tables found.</div> : null}
+              {!visibleTables.length ? <div style={hint}>No matching trained tables found.</div> : null}
             </div>) : null}
 
           {selectedTables.length > 0 ? (<div style={chipRow}>
@@ -405,31 +356,8 @@ export default function WorkbenchPage({ onRunComplete }) {
         </Card>
       </div>) : null}
 
-      {activeStep === 3 && requiresJoins ? (<div style={wizardPanel}>
-      <Card title="3. Join Builder">
-        <div style={stack}>
-          {joins.map((join, index) => (<div key={`${index}-${join.left_table}-${join.right_table}`} style={row}>
-              <div style={joinTableField}>{join.left_table}</div>
-
-              <SearchableOptionSelect value={join.left_column} onChange={(value) => updateList(setJoins, index, { left_column: value })} options={columnOptions.filter((item) => item.value.startsWith(`${join.left_table}.`))} placeholder="Left key" compact disabled={!selectedTables.length}/>
-
-              <select value={join.join_type} disabled={!selectedTables.length} onChange={(event) => updateList(setJoins, index, { join_type: event.target.value })} style={joinTypeInput}>
-                <option value="inner">INNER JOIN</option>
-                <option value="left">LEFT JOIN</option>
-                <option value="right">RIGHT JOIN</option>
-                <option value="full">FULL OUTER JOIN</option>
-              </select>
-
-              <div style={joinTableField}>{join.right_table}</div>
-
-              <SearchableOptionSelect value={join.right_column} onChange={(value) => updateList(setJoins, index, { right_column: value })} options={columnOptions.filter((item) => item.value.startsWith(`${join.right_table}.`))} placeholder="Right key" compact disabled={!selectedTables.length}/>
-            </div>))}
-        </div>
-      </Card>
-      </div>) : null}
-
-      {activeStep === 4 ? (<div style={wizardPanel}>
-        <Card title="4. Rule Anomaly">
+      {includeRuleAnomalyStep && activeStep === 3 ? (<div style={wizardPanel}>
+        <Card title="3. Rule Anomaly">
           {autoFeatureError ? <div style={errorBox}>{autoFeatureError}</div> : null}
           <div style={actionBar}>
             <button type="button" onClick={addUserRule} disabled={!canEditRules} style={secondaryButton}>Add User Rule</button>
@@ -462,21 +390,21 @@ export default function WorkbenchPage({ onRunComplete }) {
         </Card>
       </div>) : null}
 
-      {activeStep === 5 ? (<div style={wizardPanel}>
-        <Card title="5. Preview And Run">
+      {activeStep === finalStepId ? (<div style={wizardPanel}>
+        <Card title={`${finalStepId}. Preview And Run`}>
           {runWarning ? <div style={warningBox}>{runWarning}</div> : null}
           {runError ? <div style={errorBox}>{runError}</div> : null}
           {autoFeatureError ? <div style={errorBox}>{autoFeatureError}</div> : null}
 
           <div style={finalActionBox}>
             <div style={finalActionTitle}>Finish Setup</div>
-            <div style={finalActionText}>Preview the join setup first, then score the selected Postgres rows with the saved trained model.</div>
+            <div style={finalActionText}>Preview the trained model setup first, then score the selected Postgres rows with the saved trained model.</div>
             <div style={statusRow}>
               <div style={statusChip}>Saved model inference: ready</div>
             </div>
             <div style={actionBar}>
               <button type="button" onClick={executePreview} disabled={!canRun} style={previewResult && !previewing ? successButton : primaryButton}>
-                {previewing ? "Previewing..." : "Preview Join Setup"}
+                {previewing ? "Previewing..." : "Preview Model Setup"}
               </button>
               <button type="button" onClick={executeRun} disabled={!canRun} style={result && !running ? successButton : secondaryButton}>
                 {running ? "Running..." : result ? "Run Completed" : "Find Anomalies With Saved Model"}
@@ -490,7 +418,7 @@ export default function WorkbenchPage({ onRunComplete }) {
         {activeStep !== 1 ? (<button type="button" onClick={goPreviousStep} disabled={!steps.some((step) => step.id < activeStep && !step.disabled)} style={secondaryButton}>
             Previous
           </button>) : <div />}
-        {activeStep !== 5 ? (<button type="button" onClick={goNextStep} disabled={!steps.some((step) => step.id > activeStep && !step.disabled)} style={primaryButton}>
+        {activeStep !== finalStepId ? (<button type="button" onClick={goNextStep} disabled={!steps.some((step) => step.id > activeStep && !step.disabled)} style={primaryButton}>
             Next
           </button>) : <div />}
       </div>
@@ -749,10 +677,8 @@ const label = { color: "#334155", fontSize: 14, fontWeight: 700 };
 const searchWrap = { display: "grid", gridTemplateColumns: "1fr auto", gap: 10, alignItems: "center" };
 const compactSearchWrap = { display: "grid", gridTemplateColumns: "minmax(0, 1fr) 34px", gap: 4, alignItems: "center" };
 const input = { width: "100%", boxSizing: "border-box", borderRadius: 14, border: "1px solid #cbd5e1", padding: "11px 12px", font: "inherit" };
-const smallInput = { ...input, padding: "10px 12px", minWidth: 0 };
 const compactInput = { ...input, borderRadius: 12, padding: "8px 9px", minWidth: 0, height: 38 };
 const disabledInput = { background: "#f8fafc", color: "#94a3b8", cursor: "not-allowed" };
-const joinTypeInput = { ...smallInput, minWidth: 140 };
 const compactOperatorInput = { ...compactInput, minWidth: 0 };
 const browseButton = { borderRadius: 14, border: "1px solid #cbd5e1", background: "#fff", color: "#334155", padding: "11px 14px", fontWeight: 800, cursor: "pointer", minWidth: 48 };
 const compactBrowseButton = { ...browseButton, borderRadius: 12, padding: 0, minWidth: 0, width: 34, height: 38 };
@@ -773,15 +699,6 @@ const primaryButton = { border: "none", borderRadius: 14, background: "#0f766e",
 const secondaryButton = { border: "1px solid #cbd5e1", borderRadius: 14, background: "#fff", color: "#0f172a", padding: "12px 16px", fontWeight: 800, cursor: "pointer" };
 const successButton = { ...primaryButton, background: "#16a34a" };
 const stack = { display: "grid", gap: 12, marginTop: 12 };
-const row = { display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1.15fr) minmax(140px, 0.9fr) minmax(0, 1fr) minmax(0, 1.15fr)", gap: 10, alignItems: "start" };
-const joinTableField = {
-    ...input,
-    padding: "10px 12px",
-    minWidth: 0,
-    background: "#f8fafc",
-    color: "#0f172a",
-    fontWeight: 700,
-};
 const ruleRow = {
     display: "grid",
     gridTemplateColumns: "minmax(112px, 1fr) 88px minmax(112px, 1fr) 38px",

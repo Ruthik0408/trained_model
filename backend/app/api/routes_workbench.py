@@ -17,11 +17,12 @@ from app.schemas.workbench_schema import (
     WorkbenchRunRequest,
     WorkbenchRunResponse,
 )
-from app.services.dashboard_service import report_data, review_rows_data, review_table_data
+from app.services.dashboard_service import anomaly_list_data, report_data, review_rows_data, review_table_data
 from app.services.workbench.default_rules import builtin_feature_rules
 from app.services.workbench.orchestrator import preview_workbench, run_workbench
 from app.services.workbench.result_store import list_saved_datasets, update_dataset_feedback
 from app.services.workbench.source_db import list_source_tables, source_connection_status
+from app.services.workbench.trained_datasets import apply_trained_dataset_defaults, trained_selectable_tables
 
 router = APIRouter(prefix="/api/workbench", tags=["workbench"])
 logger = logging.getLogger(__name__)
@@ -43,9 +44,14 @@ def _log_request(request: Request, message: str) -> None:
     },
 )
 def get_tables(request: Request):
-    """Return available source tables and columns for workbench configuration."""
+    """Return trained source tables and columns for workbench configuration."""
     try:
-        tables = list_source_tables()
+        trained_table_set = set(trained_selectable_tables())
+        tables = [
+            table
+            for table in list_source_tables()
+            if table.get("table_name") in trained_table_set
+        ]
         _log_request(request, f"Retrieved {len(tables)} tables")
         return tables
     except ConnectionError as exc:
@@ -59,7 +65,7 @@ def get_tables(request: Request):
         logger.exception("Error fetching tables: %s", exc)
         raise HTTPException(
             status_code=500,
-            detail=str(exc) or "Failed to retrieve tables",
+            detail="Failed to retrieve tables. Check the request ID in server logs.",
         )
 
 
@@ -98,12 +104,13 @@ def get_connection_status(request: Request):
 def get_default_feature_rules(payload: BuiltinRuleRequest, request: Request):
     """Suggest built-in feature rules inferred from the selected tables and join path."""
     try:
-        rules = builtin_feature_rules(payload)
+        effective_payload = apply_trained_dataset_defaults(payload)
+        rules = builtin_feature_rules(effective_payload)
         _log_request(request, f"Generated {len(rules)} feature rules")
         return rules
     except ConnectionError as exc:
         logger.warning("Source DB connection error in feature rules: %s", exc)
-        raise HTTPException(status_code=503, detail=str(exc))
+        raise HTTPException(status_code=503, detail="Cannot connect to source database")
     except ValueError as exc:
         logger.warning("Validation error in feature rules: %s", exc)
         raise HTTPException(status_code=400, detail=str(exc))
@@ -123,12 +130,13 @@ def get_default_feature_rules(payload: BuiltinRuleRequest, request: Request):
 def preview_workbench_route(payload: WorkbenchRunRequest, request: Request):
     """Preview the joined dataset without training a model or writing result rows."""
     try:
-        result = preview_workbench(payload)
+        effective_payload = apply_trained_dataset_defaults(payload)
+        result = preview_workbench(effective_payload)
         _log_request(request, "Preview completed successfully")
         return result
     except ConnectionError as exc:
         logger.warning("Workbench preview connection error: %s", exc)
-        raise HTTPException(status_code=503, detail=str(exc))
+        raise HTTPException(status_code=503, detail="Cannot connect to source database")
     except WorkbenchValidationError as exc:
         logger.warning("Workbench preview structured validation error: %s", exc.message)
         raise HTTPException(status_code=400, detail=exc.to_http_detail())
@@ -161,12 +169,13 @@ def run_workbench_route(
 ):
     """Execute the full workbench pipeline and persist anomaly results."""
     try:
-        result = run_workbench(db, payload)
+        effective_payload = apply_trained_dataset_defaults(payload)
+        result = run_workbench(db, effective_payload)
         _log_request(request, f"Workbench run completed — Run ID: {result.get('run_id')}")
         return result
     except ConnectionError as exc:
         logger.warning("Workbench source DB connection error: %s", exc)
-        raise HTTPException(status_code=503, detail=str(exc))
+        raise HTTPException(status_code=503, detail="Cannot connect to source database")
     except WorkbenchValidationError as exc:
         logger.warning("Workbench structured validation error: %s", exc.message)
         raise HTTPException(status_code=400, detail=exc.to_http_detail())
@@ -175,11 +184,11 @@ def run_workbench_route(
         raise HTTPException(status_code=400, detail=f"Validation error: {str(exc)}")
     except HTTPException:
         raise
-    except Exception as exc:
+    except Exception:
         logger.exception("Workbench execution failed")
         raise HTTPException(
             status_code=500,
-            detail=str(exc) or "Workbench execution failed",
+            detail="Workbench execution failed. Check the request ID in server logs.",
         )
 
 
@@ -267,11 +276,38 @@ def review_rows_route(
             f"Retrieved {len(result) if isinstance(result, list) else 'rows'} from review",
         )
         return result
-    except Exception as exc:
+    except Exception:
         logger.exception("Error fetching review rows")
         raise HTTPException(
             status_code=500,
-            detail=str(exc) or "Failed to retrieve review rows",
+            detail="Failed to retrieve review rows. Check the request ID in server logs.",
+        )
+
+@router.get("/anomalies", summary="List anomalies from ML_Features")
+def anomaly_list_route(
+    request: Request,
+    table_filter: str | None = None,
+    anomaly_type: str = "all",
+    review_status: str = "all",
+    limit: int | None = None,
+    offset: int = 0,
+):
+    """Return a paginated anomaly list from ML_Features with table/type/review filters."""
+    try:
+        result = anomaly_list_data(
+            table_filter=table_filter,
+            anomaly_type=anomaly_type,
+            review_status=review_status,
+            limit=limit,
+            offset=offset,
+        )
+        _log_request(request, f"Retrieved anomaly list: {len(result.get('rows', []))} rows")
+        return result
+    except Exception:
+        logger.exception("Error fetching anomaly list")
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to retrieve anomaly list. Check the request ID in server logs.",
         )
 
 

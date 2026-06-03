@@ -266,6 +266,7 @@ DATASET_TABLES: dict[str, list[str]] = {
     "dak": [],
     "dak.bill": ["bill"],
     "dak.gem_bill": ["gem_bill"],
+    "dak_info": [],
     "dak.civ_medical_bill": ["civ_medical_bill"],
     "dak.civ_paybill": ["civ_paybill"],
     "dak.civ_tada_ltc_bill": ["civ_tada_ltc_bill"],
@@ -273,6 +274,14 @@ DATASET_TABLES: dict[str, list[str]] = {
     "dak.cheque_slip.schedule3": ["cheque_slip", "schedule3"],
     "dak.cheque_slip.ecs": ["cheque_slip", "ecs"],
 }
+
+DATASET_BASE_TABLES: dict[str, str] = {
+    "dak_info": "dak_info",
+}
+
+
+def dataset_base_table(dataset_name: str) -> str:
+    return DATASET_BASE_TABLES.get(dataset_name, BASE_TABLE)
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -297,7 +306,7 @@ def parse_args() -> argparse.Namespace:
         nargs="*",
         default=list(DATASET_TABLES),
         help=(
-            "Datasets to train. Example: --datasets dak dak.bill dak.gem_bill "
+            "Datasets to train. Example: --datasets dak dak_info dak.bill dak.gem_bill "
             "dak.civ_medical_bill dak.civ_paybill dak.civ_tada_ltc_bill dak.echs_medical_bill "
             "dak.cheque_slip.schedule3 dak.cheque_slip.ecs"
         ),
@@ -371,6 +380,18 @@ def raw_joined_columns_for_tables(
     ]
 
 
+def list_date_where_clause(
+    base_table: str,
+    schema_map: dict[str, pd.DataFrame],
+    *,
+    list_date_cutoff: str,
+) -> str:
+    base_columns = set(schema_map[base_table]["column_name"].tolist())
+    if "list_date" not in base_columns:
+        return ""
+    return f"WHERE {base_table}.list_date < '{list_date_cutoff}'"
+
+
 def build_select_sql(
     base_table: str,
     join_tables: list[str],
@@ -398,19 +419,25 @@ def build_select_sql(
         )
 
     join_sql = "\n".join(join_clauses)
+    where_sql = list_date_where_clause(
+        base_table,
+        schema_map,
+        list_date_cutoff=list_date_cutoff,
+    )
 
     return f"""
         SELECT
             {", ".join(select_clauses)}
         FROM {base_table}
         {join_sql}
-        WHERE {base_table}.list_date < '{list_date_cutoff}'
+        {where_sql}
     """
 
 
 def build_count_sql(
     base_table: str,
     join_tables: list[str],
+    schema_map: dict[str, pd.DataFrame],
     *,
     list_date_cutoff: str,
 ) -> str:
@@ -426,12 +453,17 @@ def build_count_sql(
         )
 
     join_sql = "\n".join(join_clauses)
+    where_sql = list_date_where_clause(
+        base_table,
+        schema_map,
+        list_date_cutoff=list_date_cutoff,
+    )
 
     return f"""
         SELECT COUNT(*) AS row_count
         FROM {base_table}
         {join_sql}
-        WHERE {base_table}.list_date < '{list_date_cutoff}'
+        {where_sql}
     """
 
 
@@ -982,24 +1014,26 @@ def save_json(path: Path, payload: dict) -> None:
 
 def train_dataset(
     dataset_name: str,
+    base_table: str,
     join_tables: list[str],
     schema_map: dict[str, pd.DataFrame],
     args: argparse.Namespace,
     models_dir: Path,
     reports_dir: Path,
 ) -> dict:
-    tables_in_dataset = [BASE_TABLE, *join_tables]
-    schema_df = merged_schema_for_tables(BASE_TABLE, join_tables, schema_map)
+    tables_in_dataset = [base_table, *join_tables]
+    schema_df = merged_schema_for_tables(base_table, join_tables, schema_map)
     raw_joined_columns = raw_joined_columns_for_tables(tables_in_dataset, schema_map)
     count_sql = build_count_sql(
-        BASE_TABLE,
+        base_table,
         join_tables,
+        schema_map,
         list_date_cutoff=args.list_date_cutoff,
     )
     source_row_count = int(query_postgres(count_sql).iloc[0]["row_count"])
 
     sql = build_select_sql(
-        BASE_TABLE,
+        base_table,
         join_tables,
         schema_map,
         list_date_cutoff=args.list_date_cutoff,
@@ -1078,6 +1112,7 @@ def train_dataset(
     joblib.dump(
         {
             "dataset_name": dataset_name,
+            "base_table": base_table,
             "join_tables": join_tables,
             "list_date_cutoff": args.list_date_cutoff,
             "sql": sql,
@@ -1109,7 +1144,7 @@ def train_dataset(
 
     report = {
         "dataset_name": dataset_name,
-        "base_table": BASE_TABLE,
+        "base_table": base_table,
         "join_tables": join_tables,
         "list_date_cutoff": args.list_date_cutoff,
         "join_sql": sql.strip(),
@@ -1166,7 +1201,7 @@ def main() -> None:
 
     tables_needed = sorted(
         {
-            BASE_TABLE,
+            *(dataset_base_table(dataset_name) for dataset_name in args.datasets),
             *(table_name for dataset_name in args.datasets for table_name in DATASET_TABLES[dataset_name]),
         }
     )
@@ -1174,10 +1209,12 @@ def main() -> None:
 
     manifest: dict[str, list[dict]] = {"trained_datasets": []}
     for dataset_name in args.datasets:
+        base_table = dataset_base_table(dataset_name)
         join_tables = DATASET_TABLES[dataset_name]
         print(f"Training {dataset_name} ...", flush=True)
         report = train_dataset(
             dataset_name,
+            base_table,
             join_tables,
             schema_map,
             args,

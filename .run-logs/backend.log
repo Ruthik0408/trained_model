@@ -1,0 +1,255 @@
+INFO:     Will watch for changes in these directories: ['/home/ruthikreddy/Desktop/may_29/backend']
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [68185] using WatchFiles
+INFO:     Started server process [68200]
+INFO:     Waiting for application startup.
+{"timestamp": "2026-06-03T07:03:02.178691+00:00", "level": "WARNING", "logger": "app.core.valkey", "message": "Valkey unavailable, falling back to local memory cache: Error 111 connecting to localhost:6379. Connection refused."}
+{"timestamp": "2026-06-03T07:03:02.178761+00:00", "level": "INFO", "logger": "app.main", "message": "Starting Tulip 2.0 Anomaly System \u2014 app DB: localhost:5432/tulip_anomaly \u2014 valkey=local-fallback"}
+{"timestamp": "2026-06-03T07:03:02.262302+00:00", "level": "INFO", "logger": "app.main", "message": "App DB tables verified / created successfully."}
+INFO:     Application startup complete.
+INFO:     192.168.0.109:38566 - "GET /api/workbench/datasets HTTP/1.1" 200 OK
+INFO:     192.168.0.109:38544 - "GET /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:38566 - "GET /api/workbench/datasets HTTP/1.1" 200 OK
+INFO:     192.168.0.109:38572 - "GET /api/workbench/report HTTP/1.1" 200 OK
+INFO:     192.168.0.109:38598 - "GET /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:38572 - "GET /api/workbench/report HTTP/1.1" 200 OK
+INFO:     192.168.0.109:38566 - "GET /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:38572 - "GET /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:38598 - "GET /api/workbench/datasets HTTP/1.1" 200 OK
+INFO:     192.168.0.109:38598 - "GET /api/workbench/datasets HTTP/1.1" 200 OK
+INFO:     192.168.0.109:38572 - "GET /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:38544 - "GET /api/workbench/report HTTP/1.1" 200 OK
+INFO:     192.168.0.109:38598 - "GET /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:38544 - "GET /api/workbench/report HTTP/1.1" 200 OK
+INFO:     192.168.0.109:38572 - "GET /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:38544 - "GET /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:38598 - "GET /api/workbench/datasets HTTP/1.1" 200 OK
+INFO:     192.168.0.109:38572 - "GET /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:38598 - "GET /api/workbench/datasets HTTP/1.1" 200 OK
+INFO:     192.168.0.109:38572 - "GET /api/workbench/tables HTTP/1.1" 200 OK
+{"timestamp": "2026-06-03T07:03:09.970751+00:00", "level": "INFO", "logger": "app.services.dashboard_service", "message": "Loaded review rows page for ML_Features: offset=0 limit=50 page_count=50 total_rows=944"}
+INFO:     192.168.0.109:38598 - "GET /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:38622 - "GET /api/workbench/report HTTP/1.1" 200 OK
+{"timestamp": "2026-06-03T07:03:10.179831+00:00", "level": "INFO", "logger": "app.services.dashboard_service", "message": "Loaded review rows page for ML_Features: offset=0 limit=50 page_count=50 total_rows=944"}
+INFO:     192.168.0.109:38598 - "GET /api/workbench/report HTTP/1.1" 200 OK
+INFO:     192.168.0.109:38572 - "GET /api/workbench/tables HTTP/1.1" 200 OK
+{"timestamp": "2026-06-03T07:03:17.133374+00:00", "level": "INFO", "logger": "app.services.dashboard_service", "message": "Loaded review rows page for ML_Features: offset=0 limit=50 page_count=50 total_rows=944"}
+{"timestamp": "2026-06-03T07:03:17.298362+00:00", "level": "INFO", "logger": "app.services.dashboard_service", "message": "Loaded review rows page for ML_Features: offset=0 limit=50 page_count=50 total_rows=944"}
+{"timestamp": "2026-06-03T07:03:17.991548+00:00", "level": "INFO", "logger": "app.services.dashboard_service", "message": "Loaded review rows page for ML_Features: offset=0 limit=50 page_count=50 total_rows=944"}
+{"timestamp": "2026-06-03T07:03:18.205587+00:00", "level": "INFO", "logger": "app.services.dashboard_service", "message": "Loaded review rows page for ML_Features: offset=0 limit=50 page_count=50 total_rows=944"}
+{"timestamp": "2026-06-03T07:03:18.214112+00:00", "level": "INFO", "logger": "app.services.dashboard_service", "message": "Loaded review rows page for ML_Features: offset=0 limit=50 page_count=50 total_rows=944"}
+{"timestamp": "2026-06-03T07:03:18.240350+00:00", "level": "INFO", "logger": "app.services.dashboard_service", "message": "Loaded review rows page for ML_Features: offset=0 limit=50 page_count=50 total_rows=944"}
+INFO:     192.168.0.109:38640 - "GET /api/workbench/review-rows?anomaly_filter=all&limit=50&offset=0 HTTP/1.1" 200 OK
+INFO:     192.168.0.109:38650 - "GET /api/workbench/review-rows?anomaly_filter=all&limit=50&offset=0 HTTP/1.1" 200 OK
+INFO:     192.168.0.109:38628 - "GET /api/workbench/review-rows?anomaly_filter=all HTTP/1.1" 200 OK
+INFO:     192.168.0.109:38650 - "GET /api/workbench/report?dataset_table=ML_Features HTTP/1.1" 200 OK
+{"timestamp": "2026-06-03T07:03:22.873210+00:00", "level": "INFO", "logger": "app.services.dashboard_service", "message": "Loaded review rows page for ML_Features: offset=0 limit=50 page_count=50 total_rows=944"}
+INFO:     192.168.0.109:54466 - "GET /api/workbench/review-rows?anomaly_filter=all HTTP/1.1" 200 OK
+{"timestamp": "2026-06-03T07:03:23.406063+00:00", "level": "INFO", "logger": "app.services.dashboard_service", "message": "Loaded review rows page for ML_Features: offset=0 limit=50 page_count=50 total_rows=944"}
+{"timestamp": "2026-06-03T07:03:23.409459+00:00", "level": "INFO", "logger": "app.services.dashboard_service", "message": "Loaded review rows page for ML_Features: offset=0 limit=50 page_count=50 total_rows=944"}
+INFO:     192.168.0.109:38628 - "GET /api/workbench/review-rows?dataset_table=ML_Features&anomaly_filter=all&limit=50&offset=0 HTTP/1.1" 200 OK
+INFO:     192.168.0.109:38640 - "GET /api/workbench/review-rows?dataset_table=ML_Features&anomaly_filter=all HTTP/1.1" 200 OK
+{"timestamp": "2026-06-03T07:03:46.928479+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Preview cache MISS: executing fresh SQL join for tables=['dak_info']"}
+{"timestamp": "2026-06-03T07:03:46.978352+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Workbench SQL join query built in projection_mode=full with projected_source_columns=ALL"}
+{"timestamp": "2026-06-03T07:03:47.005336+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Preview completed for tables=['dak_info'] in 0.08s with 50 preview rows"}
+INFO:     192.168.0.109:33584 - "POST /api/workbench/preview HTTP/1.1" 200 OK
+{"timestamp": "2026-06-03T07:03:48.536179+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Starting workbench run for tables: ['dak_info'], feature_rules: 0, user_rules: 1"}
+{"timestamp": "2026-06-03T07:03:48.536348+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Run cache MISS: executing fresh SQL workbench pipeline for tables=['dak_info']"}
+{"timestamp": "2026-06-03T07:03:48.584282+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Workbench SQL join query built in projection_mode=scoring with projected_source_columns=76"}
+{"timestamp": "2026-06-03T07:03:48.590049+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Workbench query plan collected in 0.00s using EXPLAIN (FORMAT TEXT):\nSubquery Scan on src  (cost=1165.59..25046.14 rows=9817 width=912)\n  ->  Gather  (cost=1165.59..23279.08 rows=9817 width=879)\n        Workers Planned: 2\n        ->  Parallel Bitmap Heap Scan on dak_info  (cost=165.59..21297.38 rows=4090 width=879)\n              Recheck Cond: ((list_date IS NOT NULL) AND (list_date >= '2026-03-02'::date) AND (list_date < '2026-03-11 00:00:00'::timestamp without time zone))\n              ->  Bitmap Index Scan on idx_public_dak_info_list_date_join  (cost=0.00..163.14 rows=9817 width=0)\n                    Index Cond: ((list_date IS NOT NULL) AND (list_date >= '2026-03-02'::date) AND (list_date < '2026-03-11 00:00:00'::timestamp without time zone))"}
+{"timestamp": "2026-06-03T07:03:48.590324+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Materializing workbench join into PostgreSQL temp table tmp_ml_join_100ff44a77c1"}
+{"timestamp": "2026-06-03T07:03:48.910533+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Materialized 10483 rows into PostgreSQL temp table tmp_ml_join_100ff44a77c1 in 0.32s"}
+{"timestamp": "2026-06-03T07:03:48.919842+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Skipped 35 sparse scoring columns from temp table tmp_ml_join_100ff44a77c1 with present ratio below 0.50: [{'column': 'dak_info.bill_type', 'present_ratio': 0.237}, {'column': 'dak_info.bill_nature', 'present_ratio': 0.035}, {'column': 'dak_info.recoveries', 'present_ratio': 0.058}, {'column': 'dak_info.disallowances', 'present_ratio': 0.063}, {'column': 'dak_info.cmp_amount', 'present_ratio': 0.068}, {'column': 'dak_info.dp_sheet_usr', 'present_ratio': 0.288}, {'column': 'dak_info.cmp_batch_usr', 'present_ratio': 0.311}, {'column': 'dak_info.beneficiary_name', 'present_ratio': 0.055}, {'column': 'dak_info.bid', 'present_ratio': 0.053}, {'column': 'dak_info.payment_status', 'present_ratio': 0.428}, {'column': 'dak_info.cda13_no', 'present_ratio': 0.0}, {'column': 'dak_info.cda13_date', 'present_ratio': 0.0}, {'column': 'dak_info.approval_level', 'present_ratio': 0.198}, {'column': 'dak_info.allotted_date', 'present_ratio': 0.154}, {'column': 'dak_info.ao', 'present_ratio': 0.298}, {'column': 'dak_info.ao_name', 'present_ratio': 0.298}, {'column': 'dak_info.ao_date', 'present_ratio': 0.298}, {'column': 'dak_info.go', 'present_ratio': 0.011}, {'column': 'dak_info.go_name', 'present_ratio': 0.011}, {'column': 'dak_info.go_date', 'present_ratio': 0.011}]"}
+{"timestamp": "2026-06-03T07:03:49.046933+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Loaded 46 scoring columns from temp table tmp_ml_join_100ff44a77c1"}
+{"timestamp": "2026-06-03T07:03:49.047095+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "SQL workbench execution completed in 0.51s; joined 10483 rows from 1 tables; applied_feature_rules=0 applied_user_rules=1 staging_table=tmp_ml_join_100ff44a77c1"}
+{"timestamp": "2026-06-03T07:03:49.059711+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Saved Isolation Forest inference START for tables=['dak_info']"}
+{"timestamp": "2026-06-03T07:03:49.515980+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Saved model feature preparation completed for dataset=dak_info: 16 selected columns; sample=['dak_info_dak_amount', 'dak_info_claimed_amount', 'dak_info_passed_amount', 'dak_info_aud', 'dak_info_aao', 'dak_info_ao', 'dak_info_record_status', 'dak_info_dak_year', 'dak_info_voucher_class', 'dak_info_direct_dispose', 'dak_info_approved', 'gap_days_dak_info_reference_date_to_dak_info_aud_date', 'gap_days_dak_info_aud_date_to_dak_info_aao_date', 'gap_days_dak_info_aao_date_to_dak_info_ao_date', 'gap_days_dak_info_dp_sheet_date_to_dak_info_cmp_batch_date', 'gap_days_dak_info_cmp_batch_date_to_dak_info_disposal_date']"}
+{"timestamp": "2026-06-03T07:03:49.576227+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Saved Isolation Forest scoring completed: rows=10355 columns=16 ml_anomalies=763"}
+{"timestamp": "2026-06-03T07:03:57.221175+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Saved model inference skipped retraining and scored 763 ML anomaly rows with 763 explanation signal sets"}
+{"timestamp": "2026-06-03T07:03:57.487431+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Loaded 1461 anomaly payload rows from source tables via locators from temp table tmp_ml_join_100ff44a77c1 in 0.27s"}
+{"timestamp": "2026-06-03T07:03:57.489056+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Saved Isolation Forest inference FINISHED in 8.43s; total_final_anomalies=1461 payload_rows=1461 threshold=0.5281"}
+{"timestamp": "2026-06-03T07:03:58.046543+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Fresh SQL workbench pipeline completed in 9.51s for tables=['dak_info']"}
+{"timestamp": "2026-06-03T07:03:58.047191+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Amount total calculation completed in 0.00s for tables=['dak_info']"}
+{"timestamp": "2026-06-03T07:03:58.052184+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "WorkbenchRun record persisted in 0.00s with run_id=23"}
+{"timestamp": "2026-06-03T07:03:58.054679+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Joined has 10483 rows; saving 1461 anomaly rows to public.ML_Features"}
+{"timestamp": "2026-06-03T07:03:58.177321+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Final ML_Features dataset has 9 columns"}
+{"timestamp": "2026-06-03T07:03:58.178415+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "ML_Features dataset frame built in 0.13s with 1461 rows and 9 columns"}
+{"timestamp": "2026-06-03T07:03:58.178648+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Writing 1461 rows to public.ML_Features"}
+{"timestamp": "2026-06-03T07:03:58.376893+00:00", "level": "INFO", "logger": "app.core.cache", "message": "Valkey cache cleared (all entries) for namespace=table_metadata"}
+{"timestamp": "2026-06-03T07:03:58.377021+00:00", "level": "INFO", "logger": "app.core.cache", "message": "Valkey cache cleared (all entries) for namespace=query_result"}
+{"timestamp": "2026-06-03T07:03:58.377084+00:00", "level": "INFO", "logger": "app.core.cache", "message": "Valkey cache cleared (all entries) for namespace=dataset_summary"}
+{"timestamp": "2026-06-03T07:03:58.377128+00:00", "level": "INFO", "logger": "app.core.cache", "message": "All caches invalidated"}
+{"timestamp": "2026-06-03T07:03:58.377186+00:00", "level": "INFO", "logger": "app.core.cache", "message": "Valkey cache cleared (all entries) for namespace=query_result"}
+{"timestamp": "2026-06-03T07:03:58.377231+00:00", "level": "INFO", "logger": "app.core.cache", "message": "Valkey cache cleared (all entries) for namespace=dataset_summary"}
+{"timestamp": "2026-06-03T07:03:58.377278+00:00", "level": "INFO", "logger": "app.core.cache", "message": "Valkey cache cleared (all entries) for namespace=latest_dataset"}
+{"timestamp": "2026-06-03T07:03:58.512243+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Successfully wrote to public.ML_Features"}
+{"timestamp": "2026-06-03T07:03:58.513377+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "ML_Features write completed in 0.33s with 1461 inserted ids"}
+{"timestamp": "2026-06-03T07:03:58.514583+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Built builtin reason lookup in 0.00s with 0 mapped rows"}
+{"timestamp": "2026-06-03T07:03:58.514624+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Appended rows into dataset table ML_Features; total rows now 83079"}
+{"timestamp": "2026-06-03T07:03:58.594665+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Stored review payload artifact in Valkey in 0.08s for run_id=23"}
+{"timestamp": "2026-06-03T07:03:58.594848+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Metrics payload prepared in 0.00s for run_id=23"}
+{"timestamp": "2026-06-03T07:03:58.600753+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Run commit/refresh completed in 0.01s for run_id=23"}
+{"timestamp": "2026-06-03T07:03:58.600929+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Workbench run FINISHED in 10.06s for run_id=23 tables=['dak_info'] final_anomalies=1461"}
+INFO:     192.168.0.109:33584 - "POST /api/workbench/run HTTP/1.1" 200 OK
+INFO:     192.168.0.109:33584 - "OPTIONS /api/workbench/review-rows?dataset_table=ML_Features&anomaly_filter=all&limit=50&offset=0&run_id=23 HTTP/1.1" 200 OK
+INFO:     192.168.0.109:42612 - "OPTIONS /api/workbench/report?dataset_table=ML_Features&run_id=23 HTTP/1.1" 200 OK
+INFO:     192.168.0.109:42614 - "OPTIONS /api/workbench/review-rows?dataset_table=ML_Features&anomaly_filter=all&run_id=23 HTTP/1.1" 200 OK
+INFO:     192.168.0.109:42596 - "GET /api/workbench/datasets HTTP/1.1" 200 OK
+INFO:     192.168.0.109:33584 - "GET /api/workbench/report?dataset_table=ML_Features&run_id=23 HTTP/1.1" 200 OK
+{"timestamp": "2026-06-03T07:03:58.746101+00:00", "level": "INFO", "logger": "app.services.dashboard_service", "message": "Loaded review rows page for ML_Features: offset=0 limit=50 page_count=50 total_rows=1461"}
+INFO:     192.168.0.109:42616 - "GET /api/workbench/review-rows?dataset_table=ML_Features&anomaly_filter=all&limit=50&offset=0&run_id=23 HTTP/1.1" 200 OK
+{"timestamp": "2026-06-03T07:03:58.764680+00:00", "level": "INFO", "logger": "app.services.dashboard_service", "message": "Loaded review rows page for ML_Features: offset=0 limit=50 page_count=50 total_rows=1461"}
+INFO:     192.168.0.109:42612 - "GET /api/workbench/review-rows?dataset_table=ML_Features&anomaly_filter=all&run_id=23 HTTP/1.1" 200 OK
+INFO:     192.168.0.109:46428 - "OPTIONS /api/workbench/review-rows?dataset_table=ML_Features&anomaly_filter=rule&limit=50&offset=0&run_id=23 HTTP/1.1" 200 OK
+{"timestamp": "2026-06-03T07:04:10.237681+00:00", "level": "INFO", "logger": "app.services.dashboard_service", "message": "Loaded review rows page for ML_Features: offset=0 limit=50 page_count=50 total_rows=710"}
+INFO:     192.168.0.109:46444 - "GET /api/workbench/review-rows?dataset_table=ML_Features&anomaly_filter=rule&limit=50&offset=0&run_id=23 HTTP/1.1" 200 OK
+INFO:     192.168.0.109:38920 - "OPTIONS /api/workbench/review-rows?dataset_table=ML_Features&anomaly_filter=ml&limit=50&offset=0&run_id=23 HTTP/1.1" 200 OK
+{"timestamp": "2026-06-03T07:04:23.222666+00:00", "level": "INFO", "logger": "app.services.dashboard_service", "message": "Loaded review rows page for ML_Features: offset=0 limit=50 page_count=50 total_rows=763"}
+INFO:     192.168.0.109:38930 - "GET /api/workbench/review-rows?dataset_table=ML_Features&anomaly_filter=ml&limit=50&offset=0&run_id=23 HTTP/1.1" 200 OK
+{"timestamp": "2026-06-03T07:06:51.236210+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Preview cache MISS: executing fresh SQL join for tables=['dak', 'civ_medical_bill']"}
+{"timestamp": "2026-06-03T07:06:51.285157+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Workbench SQL join query built in projection_mode=full with projected_source_columns=ALL"}
+{"timestamp": "2026-06-03T07:06:51.337055+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Preview completed for tables=['dak', 'civ_medical_bill'] in 0.10s with 50 preview rows"}
+INFO:     192.168.0.109:36916 - "POST /api/workbench/preview HTTP/1.1" 200 OK
+{"timestamp": "2026-06-03T07:06:52.264585+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Starting workbench run for tables: ['dak', 'civ_medical_bill'], feature_rules: 0, user_rules: 0"}
+{"timestamp": "2026-06-03T07:06:52.264742+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Run cache MISS: executing fresh SQL workbench pipeline for tables=['dak', 'civ_medical_bill']"}
+{"timestamp": "2026-06-03T07:06:52.318938+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Workbench SQL join query built in projection_mode=scoring with projected_source_columns=205"}
+{"timestamp": "2026-06-03T07:06:52.327556+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Workbench query plan collected in 0.01s using EXPLAIN (FORMAT TEXT):\nSubquery Scan on src  (cost=1046.38..16556.60 rows=229 width=2531)\n  ->  Gather  (cost=1046.38..16554.31 rows=229 width=2498)\n        Workers Planned: 1\n        ->  Nested Loop  (cost=46.38..15531.41 rows=135 width=2498)\n              ->  Parallel Bitmap Heap Scan on dak  (cost=45.96..8606.07 rows=1547 width=781)\n                    Recheck Cond: ((list_date IS NOT NULL) AND (list_date >= '2026-02-27'::date) AND (list_date < '2026-03-02 00:00:00'::timestamp without time zone))\n                    ->  Bitmap Index Scan on idx_public_dak_list_date_join  (cost=0.00..45.30 rows=2630 width=0)\n                          Index Cond: ((list_date IS NOT NULL) AND (list_date >= '2026-02-27'::date) AND (list_date < '2026-03-02 00:00:00'::timestamp without time zone))\n              ->  Index Scan using idx_civ_medical_bill_fk_dak on civ_medical_bill  (cost=0.42..4.31 rows=1 width=1632)\n                    Index Cond: (fk_dak = dak.id)"}
+{"timestamp": "2026-06-03T07:06:52.327685+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Materializing workbench join into PostgreSQL temp table tmp_ml_join_9a4b2be3f423"}
+{"timestamp": "2026-06-03T07:06:52.369524+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Materialized 132 rows into PostgreSQL temp table tmp_ml_join_9a4b2be3f423 in 0.04s"}
+{"timestamp": "2026-06-03T07:06:52.376437+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Skipped 111 sparse scoring columns from temp table tmp_ml_join_9a4b2be3f423 with present ratio below 0.50: [{'column': 'dak.fk_bill_type', 'present_ratio': 0.0}, {'column': 'dak.fk_unit', 'present_ratio': 0.0}, {'column': 'dak.fk_imprest', 'present_ratio': 0.0}, {'column': 'dak.fk_dad_employee', 'present_ratio': 0.0}, {'column': 'dak.fk_civ_employee', 'present_ratio': 0.0}, {'column': 'dak.emp_no', 'present_ratio': 0.0}, {'column': 'dak.dad_account_no', 'present_ratio': 0.0}, {'column': 'dak.fk_outward_dak', 'present_ratio': 0.0}, {'column': 'dak.reason', 'present_ratio': 0.303}, {'column': 'dak.remarks', 'present_ratio': 0.015}, {'column': 'dak.fk_usr', 'present_ratio': 0.0}, {'column': 'dak.task_no', 'present_ratio': 0.0}, {'column': 'dak.fk_old_dak', 'present_ratio': 0.0}, {'column': 'dak.temp_dak_id', 'present_ratio': 0.0}, {'column': 'dak.fk_dad_office', 'present_ratio': 0.0}, {'column': 'dak.priority', 'present_ratio': 0.0}, {'column': 'dak.fk_vendor', 'present_ratio': 0.0}, {'column': 'dak.sender_name', 'present_ratio': 0.0}, {'column': 'dak.sender_city', 'present_ratio': 0.0}, {'column': 'dak.regn_no', 'present_ratio': 0.0}]"}
+{"timestamp": "2026-06-03T07:06:52.384496+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Loaded 100 scoring columns from temp table tmp_ml_join_9a4b2be3f423"}
+{"timestamp": "2026-06-03T07:06:52.384647+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "SQL workbench execution completed in 0.12s; joined 132 rows from 2 tables; applied_feature_rules=0 applied_user_rules=0 staging_table=tmp_ml_join_9a4b2be3f423"}
+{"timestamp": "2026-06-03T07:06:52.391107+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Saved Isolation Forest inference START for tables=['dak', 'civ_medical_bill']"}
+{"timestamp": "2026-06-03T07:06:52.453872+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Saved model feature preparation completed for dataset=dak.civ_medical_bill: 43 selected columns; sample=['dak_amount', 'dak_record_status', 'dak_rescheduled', 'dak_multiple_entry', 'dak_dak_year', 'dak_gem_bill', 'dak_pfms_bill', 'dak_kpi_bill_type', 'civ_medical_bill_inpatient_outpatient', 'civ_medical_bill_claim_type', 'civ_medical_bill_amount_claimed', 'civ_medical_bill_amount_passed', 'civ_medical_bill_penal_interest', 'civ_medical_bill_amount_disallowed', 'civ_medical_bill_adjustment_amount', 'civ_medical_bill_record_status', 'civ_medical_bill_approved', 'civ_medical_bill_posted_in_demand_register', 'civ_medical_bill_passed', 'civ_medical_bill_manual_rejection']"}
+{"timestamp": "2026-06-03T07:06:52.468502+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Saved Isolation Forest scoring completed: rows=132 columns=43 ml_anomalies=44"}
+{"timestamp": "2026-06-03T07:06:52.600305+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Saved model inference skipped retraining and scored 44 ML anomaly rows with 44 explanation signal sets"}
+{"timestamp": "2026-06-03T07:06:53.642652+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Loaded 44 anomaly payload rows from source tables via locators from temp table tmp_ml_join_9a4b2be3f423 in 1.04s"}
+{"timestamp": "2026-06-03T07:06:53.642958+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Saved Isolation Forest inference FINISHED in 1.25s; total_final_anomalies=44 payload_rows=44 threshold=0.5159"}
+{"timestamp": "2026-06-03T07:06:53.810819+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Fresh SQL workbench pipeline completed in 1.55s for tables=['dak', 'civ_medical_bill']"}
+{"timestamp": "2026-06-03T07:06:53.811129+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Amount total calculation completed in 0.00s for tables=['dak', 'civ_medical_bill']"}
+{"timestamp": "2026-06-03T07:06:53.813843+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "WorkbenchRun record persisted in 0.00s with run_id=24"}
+{"timestamp": "2026-06-03T07:06:53.815083+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Joined has 132 rows; saving 44 anomaly rows to public.ML_Features"}
+{"timestamp": "2026-06-03T07:06:53.820470+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Final ML_Features dataset has 9 columns"}
+{"timestamp": "2026-06-03T07:06:53.821045+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "ML_Features dataset frame built in 0.01s with 44 rows and 9 columns"}
+{"timestamp": "2026-06-03T07:06:53.821129+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Writing 44 rows to public.ML_Features"}
+{"timestamp": "2026-06-03T07:06:53.843288+00:00", "level": "INFO", "logger": "app.core.cache", "message": "Valkey cache cleared (all entries) for namespace=table_metadata"}
+{"timestamp": "2026-06-03T07:06:53.843408+00:00", "level": "INFO", "logger": "app.core.cache", "message": "Valkey cache cleared (all entries) for namespace=query_result"}
+{"timestamp": "2026-06-03T07:06:53.843466+00:00", "level": "INFO", "logger": "app.core.cache", "message": "Valkey cache cleared (all entries) for namespace=dataset_summary"}
+{"timestamp": "2026-06-03T07:06:53.843511+00:00", "level": "INFO", "logger": "app.core.cache", "message": "All caches invalidated"}
+{"timestamp": "2026-06-03T07:06:53.843562+00:00", "level": "INFO", "logger": "app.core.cache", "message": "Valkey cache cleared (all entries) for namespace=query_result"}
+{"timestamp": "2026-06-03T07:06:53.843605+00:00", "level": "INFO", "logger": "app.core.cache", "message": "Valkey cache cleared (all entries) for namespace=dataset_summary"}
+{"timestamp": "2026-06-03T07:06:53.843646+00:00", "level": "INFO", "logger": "app.core.cache", "message": "Valkey cache cleared (all entries) for namespace=latest_dataset"}
+{"timestamp": "2026-06-03T07:06:53.859013+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Successfully wrote to public.ML_Features"}
+{"timestamp": "2026-06-03T07:06:53.859202+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "ML_Features write completed in 0.04s with 44 inserted ids"}
+{"timestamp": "2026-06-03T07:06:53.859805+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Built builtin reason lookup in 0.00s with 0 mapped rows"}
+{"timestamp": "2026-06-03T07:06:53.859887+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Appended rows into dataset table ML_Features; total rows now 83123"}
+{"timestamp": "2026-06-03T07:06:53.864932+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Stored review payload artifact in Valkey in 0.00s for run_id=24"}
+{"timestamp": "2026-06-03T07:06:53.865057+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Metrics payload prepared in 0.00s for run_id=24"}
+{"timestamp": "2026-06-03T07:06:53.870107+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Run commit/refresh completed in 0.00s for run_id=24"}
+{"timestamp": "2026-06-03T07:06:53.870256+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Workbench run FINISHED in 1.61s for run_id=24 tables=['dak', 'civ_medical_bill'] final_anomalies=44"}
+INFO:     192.168.0.109:36916 - "POST /api/workbench/run HTTP/1.1" 200 OK
+INFO:     192.168.0.109:36916 - "OPTIONS /api/workbench/review-rows?dataset_table=ML_Features&anomaly_filter=ml&limit=50&offset=0&run_id=24 HTTP/1.1" 200 OK
+INFO:     192.168.0.109:58190 - "OPTIONS /api/workbench/report?dataset_table=ML_Features&run_id=24 HTTP/1.1" 200 OK
+INFO:     192.168.0.109:58200 - "OPTIONS /api/workbench/review-rows?dataset_table=ML_Features&anomaly_filter=all&run_id=24 HTTP/1.1" 200 OK
+INFO:     192.168.0.109:58178 - "GET /api/workbench/datasets HTTP/1.1" 200 OK
+INFO:     192.168.0.109:36916 - "GET /api/workbench/report?dataset_table=ML_Features&run_id=24 HTTP/1.1" 200 OK
+{"timestamp": "2026-06-03T07:06:57.417237+00:00", "level": "INFO", "logger": "app.services.dashboard_service", "message": "Loaded review rows page for ML_Features: offset=0 limit=50 page_count=44 total_rows=44"}
+{"timestamp": "2026-06-03T07:06:57.420420+00:00", "level": "INFO", "logger": "app.services.dashboard_service", "message": "Loaded review rows page for ML_Features: offset=0 limit=50 page_count=44 total_rows=44"}
+INFO:     192.168.0.109:58204 - "GET /api/workbench/review-rows?dataset_table=ML_Features&anomaly_filter=ml&limit=50&offset=0&run_id=24 HTTP/1.1" 200 OK
+INFO:     192.168.0.109:58190 - "GET /api/workbench/review-rows?dataset_table=ML_Features&anomaly_filter=all&run_id=24 HTTP/1.1" 200 OK
+INFO:     192.168.0.109:57772 - "OPTIONS /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:57788 - "OPTIONS /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:57804 - "OPTIONS /api/workbench/review-rows?anomaly_filter=all&limit=50&offset=0 HTTP/1.1" 200 OK
+INFO:     192.168.0.109:57806 - "OPTIONS /api/workbench/datasets HTTP/1.1" 200 OK
+INFO:     192.168.0.109:57818 - "OPTIONS /api/workbench/report?dataset_table=ML_Features HTTP/1.1" 200 OK
+INFO:     192.168.0.109:57828 - "OPTIONS /api/workbench/review-rows?anomaly_filter=all HTTP/1.1" 200 OK
+INFO:     192.168.0.109:57772 - "OPTIONS /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:57788 - "OPTIONS /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:57804 - "OPTIONS /api/workbench/review-rows?anomaly_filter=all&limit=50&offset=0 HTTP/1.1" 200 OK
+INFO:     192.168.0.109:57806 - "OPTIONS /api/workbench/datasets HTTP/1.1" 200 OK
+INFO:     192.168.0.109:57818 - "OPTIONS /api/workbench/report?dataset_table=ML_Features HTTP/1.1" 200 OK
+INFO:     192.168.0.109:57828 - "OPTIONS /api/workbench/review-rows?anomaly_filter=all HTTP/1.1" 200 OK
+INFO:     192.168.0.109:57772 - "OPTIONS /api/workbench/review-rows?dataset_table=ML_Features&anomaly_filter=all&limit=50&offset=0&run_id=24 HTTP/1.1" 200 OK
+INFO:     192.168.0.109:57818 - "OPTIONS /api/workbench/datasets HTTP/1.1" 200 OK
+INFO:     192.168.0.109:57772 - "GET /api/workbench/datasets HTTP/1.1" 200 OK
+INFO:     192.168.0.109:57806 - "GET /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:57788 - "GET /api/workbench/report?dataset_table=ML_Features&run_id=24 HTTP/1.1" 200 OK
+INFO:     192.168.0.109:57818 - "GET /api/workbench/report?dataset_table=ML_Features HTTP/1.1" 200 OK
+INFO:     192.168.0.109:57788 - "GET /api/workbench/datasets HTTP/1.1" 200 OK
+INFO:     192.168.0.109:57818 - "GET /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:57818 - "GET /api/workbench/datasets HTTP/1.1" 200 OK
+INFO:     192.168.0.109:57788 - "GET /api/workbench/report?dataset_table=ML_Features HTTP/1.1" 200 OK
+INFO:     192.168.0.109:57818 - "GET /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:57788 - "GET /api/workbench/tables HTTP/1.1" 200 OK
+{"timestamp": "2026-06-03T07:11:13.378754+00:00", "level": "INFO", "logger": "app.services.dashboard_service", "message": "Loaded review rows page for ML_Features: offset=0 limit=50 page_count=44 total_rows=44"}
+{"timestamp": "2026-06-03T07:11:13.387479+00:00", "level": "INFO", "logger": "app.services.dashboard_service", "message": "Loaded review rows page for ML_Features: offset=0 limit=50 page_count=44 total_rows=44"}
+INFO:     192.168.0.109:57804 - "GET /api/workbench/review-rows?anomaly_filter=all&limit=50&offset=0 HTTP/1.1" 200 OK
+INFO:     192.168.0.109:57828 - "GET /api/workbench/review-rows?dataset_table=ML_Features&anomaly_filter=all&run_id=24 HTTP/1.1" 200 OK
+{"timestamp": "2026-06-03T07:11:13.505801+00:00", "level": "INFO", "logger": "app.services.dashboard_service", "message": "Loaded review rows page for ML_Features: offset=0 limit=50 page_count=44 total_rows=44"}
+{"timestamp": "2026-06-03T07:11:13.531809+00:00", "level": "INFO", "logger": "app.services.dashboard_service", "message": "Loaded review rows page for ML_Features: offset=0 limit=50 page_count=44 total_rows=44"}
+INFO:     192.168.0.109:57806 - "GET /api/workbench/review-rows?dataset_table=ML_Features&anomaly_filter=all&limit=50&offset=0&run_id=24 HTTP/1.1" 200 OK
+INFO:     192.168.0.109:57772 - "GET /api/workbench/review-rows?anomaly_filter=all HTTP/1.1" 200 OK
+{"timestamp": "2026-06-03T07:11:16.889834+00:00", "level": "INFO", "logger": "app.services.dashboard_service", "message": "Loaded review rows page for ML_Features: offset=0 limit=50 page_count=44 total_rows=44"}
+{"timestamp": "2026-06-03T07:11:16.893553+00:00", "level": "INFO", "logger": "app.services.dashboard_service", "message": "Loaded review rows page for ML_Features: offset=0 limit=50 page_count=44 total_rows=44"}
+INFO:     192.168.0.109:57840 - "GET /api/workbench/review-rows?anomaly_filter=all&limit=50&offset=0 HTTP/1.1" 200 OK
+INFO:     192.168.0.109:57828 - "GET /api/workbench/review-rows?anomaly_filter=all HTTP/1.1" 200 OK
+WARNING:  WatchFiles detected changes in 'app/services/dashboard_service.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+{"timestamp": "2026-06-03T07:11:59.909688+00:00", "level": "INFO", "logger": "app.main", "message": "Shutting down Tulip 2.0 Anomaly System"}
+INFO:     Application shutdown complete.
+INFO:     Finished server process [68200]
+INFO:     Started server process [73177]
+INFO:     Waiting for application startup.
+{"timestamp": "2026-06-03T07:12:01.108441+00:00", "level": "WARNING", "logger": "app.core.valkey", "message": "Valkey unavailable, falling back to local memory cache: Error 111 connecting to localhost:6379. Connection refused."}
+{"timestamp": "2026-06-03T07:12:01.108505+00:00", "level": "INFO", "logger": "app.main", "message": "Starting Tulip 2.0 Anomaly System \u2014 app DB: localhost:5432/tulip_anomaly \u2014 valkey=local-fallback"}
+{"timestamp": "2026-06-03T07:12:01.198771+00:00", "level": "INFO", "logger": "app.main", "message": "App DB tables verified / created successfully."}
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'app/api/routes_workbench.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+{"timestamp": "2026-06-03T07:12:13.522749+00:00", "level": "INFO", "logger": "app.main", "message": "Shutting down Tulip 2.0 Anomaly System"}
+INFO:     Application shutdown complete.
+INFO:     Finished server process [73177]
+INFO:     Started server process [73341]
+INFO:     Waiting for application startup.
+{"timestamp": "2026-06-03T07:12:14.675211+00:00", "level": "WARNING", "logger": "app.core.valkey", "message": "Valkey unavailable, falling back to local memory cache: Error 111 connecting to localhost:6379. Connection refused."}
+{"timestamp": "2026-06-03T07:12:14.675287+00:00", "level": "INFO", "logger": "app.main", "message": "Starting Tulip 2.0 Anomaly System \u2014 app DB: localhost:5432/tulip_anomaly \u2014 valkey=local-fallback"}
+{"timestamp": "2026-06-03T07:12:14.763542+00:00", "level": "INFO", "logger": "app.main", "message": "App DB tables verified / created successfully."}
+INFO:     Application startup complete.
+INFO:     192.168.0.109:60020 - "GET /api/workbench/datasets HTTP/1.1" 200 OK
+INFO:     192.168.0.109:60024 - "GET /api/workbench/report?dataset_table=ML_Features&run_id=24 HTTP/1.1" 200 OK
+INFO:     192.168.0.109:60004 - "GET /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:60024 - "GET /api/workbench/tables HTTP/1.1" 200 OK
+{"timestamp": "2026-06-03T07:12:27.850103+00:00", "level": "INFO", "logger": "app.services.dashboard_service", "message": "Loaded review rows page for ML_Features: offset=0 limit=50 page_count=44 total_rows=44"}
+{"timestamp": "2026-06-03T07:12:27.866035+00:00", "level": "INFO", "logger": "app.services.dashboard_service", "message": "Loaded review rows page for ML_Features: offset=0 limit=50 page_count=44 total_rows=44"}
+INFO:     192.168.0.109:60030 - "GET /api/workbench/review-rows?dataset_table=ML_Features&anomaly_filter=all&run_id=24 HTTP/1.1" 200 OK
+INFO:     192.168.0.109:60006 - "GET /api/workbench/review-rows?dataset_table=ML_Features&anomaly_filter=all&limit=50&offset=0&run_id=24 HTTP/1.1" 200 OK
+INFO:     192.168.0.109:48146 - "GET /api/workbench/datasets HTTP/1.1" 200 OK
+INFO:     192.168.0.109:48136 - "GET /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:48156 - "GET /api/workbench/report?dataset_table=ML_Features&run_id=24 HTTP/1.1" 200 OK
+INFO:     192.168.0.109:48146 - "GET /api/workbench/tables HTTP/1.1" 200 OK
+{"timestamp": "2026-06-03T07:12:37.543011+00:00", "level": "INFO", "logger": "app.services.dashboard_service", "message": "Loaded review rows page for ML_Features: offset=0 limit=50 page_count=44 total_rows=44"}
+{"timestamp": "2026-06-03T07:12:37.546526+00:00", "level": "INFO", "logger": "app.services.dashboard_service", "message": "Loaded review rows page for ML_Features: offset=0 limit=50 page_count=44 total_rows=44"}
+INFO:     192.168.0.109:48138 - "GET /api/workbench/review-rows?dataset_table=ML_Features&anomaly_filter=all&limit=50&offset=0&run_id=24 HTTP/1.1" 200 OK
+INFO:     192.168.0.109:48158 - "GET /api/workbench/review-rows?dataset_table=ML_Features&anomaly_filter=all&run_id=24 HTTP/1.1" 200 OK
+INFO:     192.168.0.109:47960 - "OPTIONS /api/workbench/anomalies?anomaly_type=all&review_status=all&limit=50&offset=0 HTTP/1.1" 200 OK
+INFO:     192.168.0.109:47934 - "GET /api/workbench/datasets HTTP/1.1" 200 OK
+INFO:     192.168.0.109:47942 - "GET /api/workbench/report?dataset_table=ML_Features HTTP/1.1" 200 OK
+INFO:     192.168.0.109:47960 - "GET /api/workbench/report?dataset_table=ML_Features&run_id=24 HTTP/1.1" 200 OK
+INFO:     192.168.0.109:47960 - "GET /api/workbench/datasets HTTP/1.1" 200 OK
+INFO:     192.168.0.109:47960 - "GET /api/workbench/report?dataset_table=ML_Features HTTP/1.1" 200 OK
+INFO:     192.168.0.109:47960 - "GET /api/workbench/datasets HTTP/1.1" 200 OK
+INFO:     192.168.0.109:47942 - "GET /api/workbench/anomalies?anomaly_type=all&review_status=all&limit=50&offset=0 HTTP/1.1" 200 OK
+{"timestamp": "2026-06-03T07:14:05.989241+00:00", "level": "INFO", "logger": "app.services.dashboard_service", "message": "Loaded review rows page for ML_Features: offset=0 limit=50 page_count=44 total_rows=44"}
+{"timestamp": "2026-06-03T07:14:05.992812+00:00", "level": "INFO", "logger": "app.services.dashboard_service", "message": "Loaded review rows page for ML_Features: offset=0 limit=50 page_count=44 total_rows=44"}
+{"timestamp": "2026-06-03T07:14:06.024543+00:00", "level": "INFO", "logger": "app.services.dashboard_service", "message": "Loaded review rows page for ML_Features: offset=0 limit=50 page_count=44 total_rows=44"}
+{"timestamp": "2026-06-03T07:14:06.031024+00:00", "level": "INFO", "logger": "app.services.dashboard_service", "message": "Loaded review rows page for ML_Features: offset=0 limit=50 page_count=44 total_rows=44"}
+INFO:     192.168.0.109:47924 - "GET /api/workbench/review-rows?anomaly_filter=all&limit=50&offset=0 HTTP/1.1" 200 OK
+INFO:     192.168.0.109:47946 - "GET /api/workbench/review-rows?anomaly_filter=all HTTP/1.1" 200 OK
+INFO:     192.168.0.109:47934 - "GET /api/workbench/review-rows?dataset_table=ML_Features&anomaly_filter=all&run_id=24 HTTP/1.1" 200 OK
+INFO:     192.168.0.109:47968 - "GET /api/workbench/review-rows?dataset_table=ML_Features&anomaly_filter=all&limit=50&offset=0&run_id=24 HTTP/1.1" 200 OK
+{"timestamp": "2026-06-03T07:14:09.488229+00:00", "level": "INFO", "logger": "app.services.dashboard_service", "message": "Loaded review rows page for ML_Features: offset=0 limit=50 page_count=44 total_rows=44"}
+{"timestamp": "2026-06-03T07:14:09.491808+00:00", "level": "INFO", "logger": "app.services.dashboard_service", "message": "Loaded review rows page for ML_Features: offset=0 limit=50 page_count=44 total_rows=44"}
+INFO:     192.168.0.109:51868 - "GET /api/workbench/review-rows?anomaly_filter=all HTTP/1.1" 200 OK
+INFO:     192.168.0.109:51864 - "GET /api/workbench/review-rows?anomaly_filter=all&limit=50&offset=0 HTTP/1.1" 200 OK

@@ -44,6 +44,10 @@ def _initialize_app_tables() -> None:
 
     This is idempotent — safe to call on every startup.
     """
+    if not settings.auto_init_app_db_schema:
+        logger.info("App DB automatic schema initialization is disabled.")
+        return
+
     health = check_app_db_connection()
     if not health["connected"]:
         logger.warning(
@@ -87,13 +91,7 @@ app = FastAPI(
 # ---------------------------------------------------------------------------
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        # Add your production origin here, e.g. "https://tulip.example.com"
-    ],
+    allow_origins=settings.cors_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -127,8 +125,12 @@ async def rate_limit_requests(request: Request, call_next):
     if not settings.rate_limit_enabled or request.url.path in {"/health"}:
         return await call_next(request)
 
+    direct_client_host = request.client.host if request.client else "unknown"
     forwarded_for = request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
-    client_host = forwarded_for or (request.client.host if request.client else "unknown")
+    if direct_client_host in settings.trusted_proxy_ips and forwarded_for:
+        client_host = forwarded_for
+    else:
+        client_host = direct_client_host
     key = f"{client_host}:{request.url.path}"
     allowed, remaining, retry_after = rate_limiter.allow(key)
     if not allowed:

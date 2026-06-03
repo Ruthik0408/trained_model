@@ -6,14 +6,18 @@
 // Screen IDs and Navigation
 export const SCREENS = {
   WORKBENCH: "workbench",
+  USER_WORKBENCH: "user-workbench",
+  ANOMALIES: "anomalies",
   REVIEW: "review",
   REPORTS: "reports",
 };
 
 export const SCREEN_LABELS = {
-  [SCREENS.WORKBENCH]: "Screen 1: Workbench",
-  [SCREENS.REVIEW]: "Screen 2: Review",
-  [SCREENS.REPORTS]: "Screen 3: Reports",
+  [SCREENS.WORKBENCH]: "Screen 1: Admin Workbench",
+  [SCREENS.USER_WORKBENCH]: "Screen 2: User Workbench",
+  [SCREENS.ANOMALIES]: "Screen 3: Anomaly List",
+  [SCREENS.REVIEW]: "Screen 4: Review",
+  [SCREENS.REPORTS]: "Screen 5: Reports",
 };
 
 // LocalStorage / SessionStorage Keys
@@ -28,6 +32,7 @@ export const API_ENDPOINTS = {
   RUN: "/api/workbench/run",
   DATASETS: "/api/workbench/datasets",
   REVIEW_ROWS: "/api/workbench/review-rows",
+  ANOMALIES: "/api/workbench/anomalies",
 };
 
 // Cache Configuration

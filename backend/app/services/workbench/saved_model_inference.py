@@ -15,6 +15,7 @@ from app.schemas.workbench_schema import WorkbenchRunRequest
 from app.services.workbench.constants import TEMP_ROW_ID_COLUMN
 from app.services.workbench.sql_runtime import _temp_table_columns, _workbench_temp_table_ref
 from app.services.workbench.source_db import _quote
+from app.services.workbench.trained_datasets import resolve_dataset_name
 
 KNOWN_MODEL_TABLE_PREFIXES = (
     "civ_tada_ltc_bill",
@@ -22,6 +23,7 @@ KNOWN_MODEL_TABLE_PREFIXES = (
     "echs_medical_bill",
     "cheque_slip",
     "gem_bill",
+    "dak_info",
     "civ_paybill",
     "schedule3",
     "bill",
@@ -36,37 +38,6 @@ class FeatureSelectionResult:
     selected_columns: list[str]
     dropped_all_missing_columns: list[str]
     dropped_constant_columns: list[str]
-
-
-def resolve_dataset_name(selected_tables: list[str]) -> str:
-    normalized = {str(table).strip().lower() for table in selected_tables}
-    if normalized == {"dak"}:
-        return "dak"
-    if "cheque_slip" in normalized and "schedule3" in normalized:
-        return "dak.cheque_slip.schedule3"
-    if "cheque_slip" in normalized and "ecs" in normalized:
-        return "dak.cheque_slip.ecs"
-    if "gem_bill" in normalized:
-        return "dak.gem_bill"
-    if "bill" in normalized:
-        return "dak.bill"
-    if "civ_medical_bill" in normalized:
-        return "dak.civ_medical_bill"
-    if "civ_paybill" in normalized:
-        return "dak.civ_paybill"
-    if "civ_tada_ltc_bill" in normalized:
-        return "dak.civ_tada_ltc_bill"
-    if "echs_medical_bill" in normalized:
-        return "dak.echs_medical_bill"
-    raise WorkbenchValidationError(
-        "No saved trained model is available for the selected tables.",
-        suggestion=(
-            "Select dak, dak + bill, dak + gem_bill, dak + civ_medical_bill, "
-            "dak + civ_paybill, dak + civ_tada_ltc_bill, or dak + echs_medical_bill "
-            "to use the trained anomaly pipeline."
-        ),
-        details={"selected_tables": sorted(normalized)},
-    )
 
 
 def load_saved_model_artifact(payload: WorkbenchRunRequest) -> dict[str, Any]:
@@ -107,7 +78,7 @@ def build_saved_model_feature_frame(
     if feature_df.empty:
         raise WorkbenchValidationError(
             "No rows remain after applying the saved model preprocessing steps.",
-            suggestion="Use a date range and joins that produce rows compatible with the trained pipeline.",
+            suggestion="Use a date range and selected tables that match a trained pipeline.",
             details={"dataset_name": artifact.get("dataset_name")},
         )
 

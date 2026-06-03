@@ -95,7 +95,7 @@ export default function PredictionRow({ item, onAction, selectedTables = [], }) 
           <div>
             <div style={eyebrow}>Review Key</div>
             <div style={title}>
-              {resolvePayloadValue(payload, "review_key") ||
+              {getReviewTitle(item, payload) ||
             `Prediction #${item.prediction_id}`}
             </div>
           </div>
@@ -738,7 +738,8 @@ function getBusinessSections(payload, selectedTables = []) {
     const sections = [];
     for (const tableName of tables) {
         const tableEntries = Object.entries(payload)
-            .filter(([key]) => belongsToTable(key, tableName))
+            .filter(([key]) => belongsToTable(key, tableName) ||
+            (tables.length === 1 && isSingleTablePayloadKey(key)))
             .filter(([key]) => !isIgnoredBusinessKey(key))
             .sort((left, right) => compareBusinessColumns(left[0], right[0], left[1], right[1]));
         const nonEmpty = tableEntries.filter(([, value]) => value !== null && value !== undefined && value !== "");
@@ -765,6 +766,23 @@ function getBusinessSections(payload, selectedTables = []) {
         },
     ];
 }
+function getReviewTitle(item, payload) {
+    const reviewKey = resolvePayloadValue(payload, "review_key");
+    if (reviewKey && !isPlaceholderReviewKey(reviewKey)) {
+        return reviewKey;
+    }
+    const rowIdentifier = resolvePayloadValue(payload, "dakid_no") ||
+        resolvePayloadValue(payload, "id") ||
+        resolvePayloadValue(payload, "fk_dak");
+    if (rowIdentifier) {
+        return `Row ${rowIdentifier}`;
+    }
+    return item?.prediction_id ? `Prediction #${item.prediction_id}` : "";
+}
+function isPlaceholderReviewKey(value) {
+    const normalized = String(value || "").trim().toLowerCase();
+    return normalized.endsWith(".null.null") || normalized === "null.null.null";
+}
 function inferTablesFromPayload(payload) {
     const names = new Set();
     for (const key of Object.keys(payload)) {
@@ -780,6 +798,12 @@ function inferTablesFromPayload(payload) {
 }
 function belongsToTable(key, tableName) {
     return (key.startsWith(`${tableName}.`) || key.startsWith(`${tableName}__`));
+}
+function isSingleTablePayloadKey(key) {
+    return !key.includes(".") &&
+        !key.includes("__") &&
+        !key.startsWith("feature_") &&
+        !key.startsWith("iqr_flag::");
 }
 function isVisiblePayloadKey(key, selectedTables) {
     if (selectedTables.length === 0) {

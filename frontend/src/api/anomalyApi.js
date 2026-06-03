@@ -1,5 +1,6 @@
 import { api } from "./client";
 import { API_ENDPOINTS, CACHE_CONFIG } from "../constants";
+const shouldLogApiDebug = import.meta.env.DEV || import.meta.env.VITE_API_DEBUG === "true";
 
 /**
  * API Query Cache - Simple in-memory cache for GET requests
@@ -14,7 +15,9 @@ function getCacheKey(url, params) {
 function getCachedData(key, ttl) {
     const cached = apiCache.get(key);
     if (cached && Date.now() - cached.timestamp < ttl) {
-        console.debug(`Cache hit: ${key}`);
+        if (shouldLogApiDebug) {
+            console.debug(`Cache hit: ${key}`);
+        }
         return cached.data;
     }
     if (cached) {
@@ -29,7 +32,9 @@ function setCacheData(key, data) {
 
 export function clearApiCache() {
     apiCache.clear();
-    console.debug("API cache cleared");
+    if (shouldLogApiDebug) {
+        console.debug("API cache cleared");
+    }
 }
 
 /**
@@ -71,6 +76,26 @@ export const getWorkbenchReviewRows = (params, signal) => {
     if (cached)
         return Promise.resolve({ data: cached });
     return api.get(API_ENDPOINTS.REVIEW_ROWS, {
+        params: queryParams,
+        ...getConfigWithSignal(signal),
+    }).then((response) => {
+        setCacheData(cacheKey, response.data);
+        return response;
+    });
+};
+export const getWorkbenchAnomalies = (params, signal) => {
+    const queryParams = {
+        table_filter: params?.tableFilter,
+        anomaly_type: params?.anomalyType,
+        review_status: params?.reviewStatus,
+        limit: params?.limit,
+        offset: params?.offset,
+    };
+    const cacheKey = getCacheKey(API_ENDPOINTS.ANOMALIES, queryParams);
+    const cached = getCachedData(cacheKey, CACHE_CONFIG.DATA_TTL_MS);
+    if (cached)
+        return Promise.resolve({ data: cached });
+    return api.get(API_ENDPOINTS.ANOMALIES, {
         params: queryParams,
         ...getConfigWithSignal(signal),
     }).then((response) => {

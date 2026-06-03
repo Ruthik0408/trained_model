@@ -2,11 +2,14 @@ import React, { useState } from "react";
 import WorkbenchPage from "./pages/WorkbenchPage";
 import ReviewPage from "./pages/ReviewPage";
 import ReportsPage from "./pages/ReportsPage";
+import AnomaliesPage from "./pages/AnomaliesPage";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { SCREENS, SCREEN_LABELS, STORAGE_KEYS } from "./constants";
 
 const screens = [
   { id: SCREENS.WORKBENCH, label: SCREEN_LABELS[SCREENS.WORKBENCH] },
+  { id: SCREENS.USER_WORKBENCH, label: SCREEN_LABELS[SCREENS.USER_WORKBENCH] },
+  { id: SCREENS.ANOMALIES, label: SCREEN_LABELS[SCREENS.ANOMALIES] },
   { id: SCREENS.REVIEW, label: SCREEN_LABELS[SCREENS.REVIEW] },
   { id: SCREENS.REPORTS, label: SCREEN_LABELS[SCREENS.REPORTS] },
 ];
@@ -30,6 +33,8 @@ export default function App() {
     const [activeTab, setActiveTab] = useState("workbench");
     const [latestWorkbenchRun, setLatestWorkbenchRun] = useState(() => loadLatestWorkbenchRun());
     const activeIndex = screens.findIndex((screen) => screen.id === activeTab);
+    const activeScreen = screens[activeIndex];
+    const isWorkbenchScreen = activeTab === SCREENS.WORKBENCH || activeTab === SCREENS.USER_WORKBENCH;
     const handleRunComplete = (run) => {
         setLatestWorkbenchRun(run);
         if (typeof window !== "undefined") {
@@ -52,11 +57,12 @@ export default function App() {
     <ErrorBoundary>
       <div style={page}>
         <div style={shell}>
-          {activeTab === SCREENS.WORKBENCH ? (
+          {isWorkbenchScreen ? (
             <div style={nav}>
               <div>
                 <div style={kicker}>Tulip 2.0</div>
                 <h1 style={title}>ANOMALY DETECTION</h1>
+                <div style={screenRole}>{activeScreen?.label}</div>
               </div>
             </div>
           ) : null}
@@ -83,7 +89,13 @@ export default function App() {
           ) : null}
 
           <div style={activeTab === SCREENS.WORKBENCH ? visibleScreen : hiddenScreen}>
-            <WorkbenchPage onRunComplete={handleRunComplete} />
+            <WorkbenchPage onRunComplete={handleRunComplete} includeRuleAnomalyStep />
+          </div>
+          <div style={activeTab === SCREENS.USER_WORKBENCH ? visibleScreen : hiddenScreen}>
+            <WorkbenchPage onRunComplete={handleRunComplete} includeRuleAnomalyStep={false} />
+          </div>
+          <div style={activeTab === SCREENS.ANOMALIES ? visibleScreen : hiddenScreen}>
+            <AnomaliesPage />
           </div>
           <div style={activeTab === SCREENS.REVIEW ? visibleScreen : hiddenScreen}>
             <ReviewPage latestWorkbenchRun={latestWorkbenchRun} />
@@ -126,6 +138,12 @@ const title = {
     margin: "8px 0 0",
     fontSize: 34,
     color: "#0f172a",
+};
+const screenRole = {
+    marginTop: 10,
+    color: "#475569",
+    fontSize: 14,
+    fontWeight: 800,
 };
 const navArrow = {
     position: "fixed",

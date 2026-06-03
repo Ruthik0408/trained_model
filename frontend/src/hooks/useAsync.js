@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
+const shouldLogDebug = import.meta.env.DEV || import.meta.env.VITE_API_DEBUG === "true";
 /**
  * useAsync Hook - Manage async operations with loading, data, and error states
  * 
@@ -46,7 +47,9 @@ export function useAsync(asyncFunction, immediate = true, deps = []) {
         } catch (err) {
             // Ignore abort errors - this is expected when component unmounts
             if (err?.name === "AbortError") {
-                console.debug("Request cancelled");
+                if (shouldLogDebug) {
+                    console.debug("Request cancelled");
+                }
                 return;
             }
 
@@ -113,7 +116,9 @@ export function useLocalStorage(key, initialValue) {
             return item ? JSON.parse(item) : initialValue;
         }
         catch (error) {
-            console.error(`Error reading localStorage key "${key}":`, error);
+            if (shouldLogDebug) {
+                console.error(`Error reading localStorage key "${key}":`, error);
+            }
             return initialValue;
         }
     });
@@ -125,7 +130,9 @@ export function useLocalStorage(key, initialValue) {
             }
         }
         catch (error) {
-            console.error(`Error setting localStorage key "${key}":`, error);
+            if (shouldLogDebug) {
+                console.error(`Error setting localStorage key "${key}":`, error);
+            }
         }
     };
     return [storedValue, setValue];
@@ -155,7 +162,9 @@ export function useSessionStorage(key, initialValue) {
             return item ? JSON.parse(item) : initialValue;
         }
         catch (error) {
-            console.error(`Error reading sessionStorage key "${key}":`, error);
+            if (shouldLogDebug) {
+                console.error(`Error reading sessionStorage key "${key}":`, error);
+            }
             return initialValue;
         }
     });
@@ -167,7 +176,9 @@ export function useSessionStorage(key, initialValue) {
             }
         }
         catch (error) {
-            console.error(`Error setting sessionStorage key "${key}":`, error);
+            if (shouldLogDebug) {
+                console.error(`Error setting sessionStorage key "${key}":`, error);
+            }
         }
     };
     return [storedValue, setValue];

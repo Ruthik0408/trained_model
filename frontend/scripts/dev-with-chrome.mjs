@@ -1,18 +1,35 @@
 import { execFile, spawn } from "node:child_process";
 
-const DEV_URL = "http://127.0.0.1:5173";
+const devHost = process.env.VITE_DEV_HOST || "127.0.0.1";
+const devPort = process.env.VITE_DEV_PORT || "5173";
+const DEV_URL = `http://${devHost}:${devPort}`;
 const chromeCandidates = ["google-chrome", "google-chrome-stable", "chromium-browser", "chromium"];
 
-const vite = spawn("npx", ["vite", "--host", "127.0.0.1", "--port", "5173"], {
-  stdio: "inherit",
+const vite = spawn("npx", ["vite", "--host", devHost, "--port", devPort], {
+  stdio: ["ignore", "pipe", "pipe"],
   shell: false,
 });
+
+let viteOutput = "";
+
+const rememberViteOutput = (chunk) => {
+  viteOutput = `${viteOutput}${chunk.toString()}`.split("\n").slice(-20).join("\n");
+};
+
+vite.stdout.on("data", rememberViteOutput);
+vite.stderr.on("data", rememberViteOutput);
 
 vite.on("exit", (code, signal) => {
   if (signal) {
     process.kill(process.pid, signal);
     return;
   }
+
+  if (code && viteOutput.trim()) {
+    console.error("Vite stopped with an error. Last important lines:");
+    console.error(viteOutput.trim());
+  }
+
   process.exit(code ?? 0);
 });
 
@@ -45,6 +62,7 @@ const tryOpenChrome = async () => {
 
   if (await isDevUrlAlreadyOpen()) {
     opened = true;
+    console.log(`Frontend is running: ${DEV_URL}`);
     return;
   }
 
@@ -65,6 +83,7 @@ const tryOpenChrome = async () => {
 
     if (launched) {
       opened = true;
+      console.log(`Frontend is running: ${DEV_URL}`);
       return;
     }
   }
