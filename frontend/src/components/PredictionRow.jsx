@@ -31,7 +31,8 @@ export default function PredictionRow({ item, onAction, selectedTables = [], }) 
     const metrics = useMemo(() => getReviewMetrics(item, payload, reasons), [item, payload, reasons]);
     const baseReasonList = useMemo(() => getBaseReasonList(item, reasons), [item, reasons]);
     const mlSignalItems = useMemo(() => getMlSignalItems(reasons, payload, baseReasonList), [reasons, payload, baseReasonList]);
-    const displayReasonItems = useMemo(() => getDisplayReasonItems(baseReasonList, mlSignalItems), [baseReasonList, mlSignalItems]);
+    const ruleEvidenceItems = useMemo(() => getRuleEvidenceItems(reasons), [reasons]);
+    const displayReasonItems = useMemo(() => getDisplayReasonItems(baseReasonList, mlSignalItems, ruleEvidenceItems), [baseReasonList, mlSignalItems, ruleEvidenceItems]);
     const [saving, setSaving] = useState(null);
     const [showAllColumns, setShowAllColumns] = useState(false);
     const [columnSearch, setColumnSearch] = useState("");
@@ -269,27 +270,77 @@ function getMlSignalItems(reasons, payload, baseReasonList) {
         .filter((item) => item.text)
         .slice(0, 3);
 }
-function getDisplayReasonItems(baseReasonList, mlSignalItems) {
+function getDisplayReasonItems(baseReasonList, mlSignalItems, ruleEvidenceItems = []) {
     const signalByText = new Map((mlSignalItems || []).map((item) => [normalizeReasonText(item.text), item]));
     const items = [];
     for (const reason of baseReasonList || []) {
         const text = formatReason(reason);
         const normalized = normalizeReasonText(text);
         const signalMatch = signalByText.get(normalized);
+        const evidenceDetails = detailsForRuleReason(text, ruleEvidenceItems);
         if (!signalMatch && isCoveredByMlSignal(text, mlSignalItems)) {
             continue;
         }
         items.push({
             key: signalMatch?.key || normalized || text,
             text,
-            details: Array.isArray(signalMatch?.details) ? signalMatch.details : [],
+            details: [
+                ...(Array.isArray(signalMatch?.details) ? signalMatch.details : []),
+                ...evidenceDetails,
+            ],
         });
         signalByText.delete(normalized);
     }
     for (const signalItem of signalByText.values()) {
         items.push(signalItem);
     }
+    for (const evidenceItem of ruleEvidenceItems) {
+        if (items.some((item) => item.details?.some((detail) => evidenceItem.details.includes(detail)))) {
+            continue;
+        }
+        items.push(evidenceItem);
+    }
     return items;
+}
+
+function getRuleEvidenceItems(reasons) {
+    const evidence = Array.isArray(reasons?.rule_evidence) ? reasons.rule_evidence : [];
+    return evidence
+        .map((item, index) => {
+        if (!item || item.kind !== "duplicate_invoice_fk_daks") {
+            return null;
+        }
+        const fkDaks = Array.isArray(item.similar_fk_daks)
+            ? item.similar_fk_daks.filter(Boolean)
+            : [];
+        const details = [];
+        if (fkDaks.length > 0) {
+            details.push(`Similar fk_dak: ${fkDaks.join(", ")}`);
+        }
+        if (item.duplicate_count) {
+            details.push(`Duplicate record count: ${item.duplicate_count}`);
+        }
+        if (item.invoice_number || item.invoice_date) {
+            details.push(`Matched invoice: ${[item.invoice_number, item.invoice_date].filter(Boolean).join(" / ")}`);
+        }
+        return {
+            key: `rule-evidence-${index}-${item.table || ""}-${item.invoice_number || ""}-${item.invoice_date || ""}`,
+            text: `${formatTableLabel(item.table || "record")} has duplicate ${item.invoice_column || "invoice"} and invoice_date with record_status V`,
+            details,
+            evidenceKind: item.kind,
+        };
+    })
+        .filter((item) => item && item.details.length > 0);
+}
+
+function detailsForRuleReason(reasonText, ruleEvidenceItems) {
+    const normalizedReason = normalizeReasonText(reasonText);
+    return (ruleEvidenceItems || [])
+        .filter((item) => item.evidenceKind === "duplicate_invoice_fk_daks" &&
+        normalizedReason.includes("duplicate") &&
+        normalizedReason.includes("invoice") &&
+        normalizedReason.includes("record status v"))
+        .flatMap((item) => item.details || []);
 }
 
 function isCoveredByMlSignal(reasonText, mlSignalItems) {

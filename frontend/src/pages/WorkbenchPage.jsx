@@ -17,7 +17,6 @@ export default function WorkbenchPage({ onRunComplete, includeRuleAnomalyStep = 
     const [selectedTables, setSelectedTables] = useState([]);
     const [userRules, setUserRules] = useState([]);
     const [featureRules, setFeatureRules] = useState([]);
-    const [amountField, setAmountField] = useState("");
     const [fromDate, setFromDate] = useState("");
     const [toDate, setToDate] = useState("");
     const [loading, setLoading] = useState(true);
@@ -42,7 +41,7 @@ export default function WorkbenchPage({ onRunComplete, includeRuleAnomalyStep = 
         }
         catch (error) {
             if (attempt < INITIAL_TABLE_LOAD_RETRIES) {
-                window.setTimeout(() => {
+                setTimeout(() => {
                     loadTables(attempt + 1);
                 }, INITIAL_TABLE_LOAD_DELAY_MS);
                 return;
@@ -74,7 +73,6 @@ export default function WorkbenchPage({ onRunComplete, includeRuleAnomalyStep = 
         setFeatureRules((current) => current.filter((rule) => !!rule.first_column &&
             availableColumns.has(rule.first_column) &&
             (!rule.second_column || availableColumns.has(rule.second_column))));
-        setAmountField((current) => (current && availableColumns.has(current) ? current : ""));
     }, [availableColumns]);
     useEffect(() => {
         setRunError("");
@@ -205,7 +203,6 @@ export default function WorkbenchPage({ onRunComplete, includeRuleAnomalyStep = 
             run_name: "Tulip anomaly workbench",
             selected_tables: selectedTables,
             joins: [],
-            amount_field: amountField || null,
             user_rules: activeUserRules,
             feature_rules: activeFeatureRules,
             from_date: normalizedFromDate,
@@ -350,9 +347,6 @@ export default function WorkbenchPage({ onRunComplete, includeRuleAnomalyStep = 
         }}/>
             </div>
           </div>
-
-          <SearchableOptionSelect value={amountField} onChange={setAmountField} options={columnOptions} placeholder="Select amount field" disabled={!selectedTables.length}/>
-
         </Card>
       </div>) : null}
 

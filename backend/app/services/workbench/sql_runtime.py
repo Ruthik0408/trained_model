@@ -9,12 +9,13 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.cache import TTLCache
 from app.core.config import settings
-from app.schemas.workbench_schema import BuiltinRuleRequest, FeatureRuleInput, UserRuleInput, WorkbenchRunRequest
+from app.schemas.workbench_schema import FeatureRuleInput, UserRuleInput, WorkbenchRunRequest
 from app.services.workbench.constants import (
     DATE_FILTER_COLUMN_PRIORITY,
     ENABLE_EXPENSIVE_JOIN_DEBUG,
     PREVIEW_ROW_LIMIT,
     RESULT_TABLE,
+    SQL_RULE_EVIDENCE_COLUMN,
     SQL_RULE_FLAG_COLUMN,
     SQL_RULE_REASONS_COLUMN,
     TEMP_ROW_ID_COLUMN,
@@ -61,9 +62,6 @@ SAME_TABLE_DATE_SEQUENCE_STAGES = {
     "go_date",
     "disposal_date",
 }
-MIN_FEATURE_COLUMN_PRESENT_RATIO = 0.70
-
-
 _JOIN_SQL_CACHE_TTL_SECONDS = 60.0
 _join_sql_cache = TTLCache(ttl_seconds=_JOIN_SQL_CACHE_TTL_SECONDS, namespace="join_sql")
 
@@ -73,7 +71,7 @@ def _dataset_table_name(_selected_tables: list[str]) -> str:
 
 
 def _join_sql_cache_key(
-    payload: BuiltinRuleRequest | WorkbenchRunRequest,
+    payload: WorkbenchRunRequest,
     *,
     row_limit: int | None,
     projection_mode: str,
@@ -98,11 +96,11 @@ def _join_sql_cache_key(
 
 
 def _get_cached_join_sql(
-    payload: BuiltinRuleRequest | WorkbenchRunRequest,
+    payload: WorkbenchRunRequest,
     *,
     row_limit: int | None,
     projection_mode: str,
-) -> tuple[str, list[dict[str, Any]], list[str]] | None:
+) -> tuple[str, list[dict[str, Any]], list[str], dict[str, Any]] | None:
     cache_key = _join_sql_cache_key(
         payload,
         row_limit=row_limit,
@@ -115,22 +113,24 @@ def _get_cached_join_sql(
     sql = str(cached.get("sql") or "")
     join_debug = [dict(item) for item in cached.get("join_debug") or []]
     warnings = list(cached.get("warnings") or [])
+    params = dict(cached.get("params") or {})
     logger.info(
         "Reusing cached workbench join SQL for tables=%s row_limit=%s",
         payload.selected_tables,
         row_limit,
     )
-    return sql, join_debug, warnings
+    return sql, join_debug, warnings, params
 
 
 def _store_cached_join_sql(
-    payload: BuiltinRuleRequest | WorkbenchRunRequest,
+    payload: WorkbenchRunRequest,
     *,
     row_limit: int | None,
     projection_mode: str,
     sql: str,
     join_debug: list[dict[str, Any]],
     warnings: list[str],
+    params: dict[str, Any],
 ) -> None:
     cache_key = _join_sql_cache_key(
         payload,
@@ -143,89 +143,9 @@ def _store_cached_join_sql(
             "sql": sql,
             "join_debug": [dict(item) for item in join_debug],
             "warnings": list(warnings),
+            "params": dict(params),
         },
     )
-
-def _feature_column_presence_ratios(
-    table_frames: dict[str, list[dict]],
-) -> dict[str, float]:
-    ratios: dict[str, float] = {}
-    with _source_connect() as conn:
-        for table_name, columns in table_frames.items():
-            date_columns = [
-                str(column["column_name"])
-                for column in columns
-                if _is_date_like_column_name(str(column["column_name"]), column.get("data_type"))
-            ]
-            if not date_columns:
-                continue
-            select_parts = ["COUNT(*) AS total_rows"]
-            alias_by_column: dict[str, str] = {}
-            for index, column_name in enumerate(date_columns):
-                alias = f"present_{index}"
-                alias_by_column[column_name] = alias
-                select_parts.append(
-                    f"COUNT({_quote(column_name)}) AS {_quote(alias)}"
-                )
-            sql = text(f"SELECT {', '.join(select_parts)} FROM {_source_table_ref(table_name)}")
-            row = conn.execute(sql).mappings().first()
-            total_rows = int((row or {}).get("total_rows") or 0)
-            for column_name in date_columns:
-                qualified_name = f"{table_name}.{column_name}"
-                if total_rows == 0:
-                    ratios[qualified_name] = 0.0
-                    continue
-                present_count = int((row or {}).get(alias_by_column[column_name]) or 0)
-                ratios[qualified_name] = present_count / total_rows
-    return ratios
-
-def _joined_feature_column_presence_ratios(
-    payload: BuiltinRuleRequest | WorkbenchRunRequest,
-    table_frames: dict[str, list[dict]],
-) -> dict[str, float]:
-    sql, _join_debug, _warnings = _get_or_build_join_sql(
-        payload,
-        table_frames,
-        row_limit=None,
-        projection_mode="full",
-    )
-    date_columns = [
-        f"{table_name}.{column['column_name']}"
-        for table_name, columns in table_frames.items()
-        for column in columns
-        if _is_date_like_column_name(str(column["column_name"]), column.get("data_type"))
-    ]
-    if not date_columns:
-        return {}
-
-    select_parts = ["COUNT(*) AS total_rows"]
-    alias_by_column: dict[str, str] = {}
-    for index, column_name in enumerate(date_columns):
-        alias = f"present_{index}"
-        alias_by_column[column_name] = alias
-        select_parts.append(f"COUNT(joined_source.{_quote(column_name)}) AS {_quote(alias)}")
-
-    query = text(
-        f"""
-        SELECT {', '.join(select_parts)}
-        FROM ({sql}) AS joined_source
-        """
-    )
-
-    ratios: dict[str, float] = {}
-    with _source_connect() as conn:
-        row = conn.execute(query).mappings().first()
-        total_rows = int((row or {}).get("total_rows") or 0)
-        for column_name in date_columns:
-            if total_rows == 0:
-                ratios[column_name] = 0.0
-                continue
-            present_count = int((row or {}).get(alias_by_column[column_name]) or 0)
-            ratios[column_name] = present_count / total_rows
-    return ratios
-
-def _has_enough_values_for_builtin_features(present_ratio: float) -> bool:
-    return present_ratio >= MIN_FEATURE_COLUMN_PRESENT_RATIO
 
 def _builtin_stage_column_matches(available: dict[str, str]) -> dict[str, list[str]]:
     matches_by_alias: dict[str, list[str]] = {}
@@ -280,43 +200,6 @@ def _same_date_sequence_scope(
         return bool(left_scope) and left_scope == right_scope
 
     return left_table == right_table
-
-def _build_dynamic_date_gap_rules(available: dict[str, str]) -> list[dict]:
-    matches_by_alias = _builtin_stage_column_matches(available)
-    stage_columns: list[tuple[str, list[str]]] = []
-    for stage_name, aliases in DATE_SEQUENCE_STAGE_ALIASES:
-        matched_columns: list[str] = []
-        for alias in aliases:
-            matched_columns.extend(matches_by_alias.get(alias, []))
-        if matched_columns:
-            stage_columns.append((stage_name, matched_columns))
-
-    rules: list[dict] = []
-    seen_pairs: set[tuple[str, str]] = set()
-    for index in range(len(stage_columns) - 1):
-        left_stage_name, left_columns = stage_columns[index]
-        right_stage_name, right_columns = stage_columns[index + 1]
-        left_aliases = next(aliases for stage_name, aliases in DATE_SEQUENCE_STAGE_ALIASES if stage_name == left_stage_name)
-        right_aliases = next(aliases for stage_name, aliases in DATE_SEQUENCE_STAGE_ALIASES if stage_name == right_stage_name)
-        for left_column in left_columns:
-            for right_column in right_columns:
-                if left_column == right_column:
-                    continue
-                if not _same_date_sequence_scope(left_column, left_aliases, right_column, right_aliases):
-                    continue
-                pair_key = (right_column, left_column)
-                if pair_key in seen_pairs:
-                    continue
-                seen_pairs.add(pair_key)
-                rules.append(
-                    {
-                        "name": f"{left_stage_name}_to_{right_stage_name}",
-                        "feature_type": "daysbetween",
-                        "first_column": right_column,
-                        "second_column": left_column,
-                    }
-                )
-    return rules
 
 def _type_family(data_type: str | None) -> str:
     value = str(data_type or "").strip().lower()
@@ -966,18 +849,28 @@ def _date_range_filter_sql(
     if _type_family(column.get("data_type")) == "datetime":
         parts = [f"{raw_expr} IS NOT NULL"]
         if from_date:
-            parts.append(f"{raw_expr} >= DATE '{from_date}'")
+            parts.append(f"{raw_expr} >= CAST(:date_filter_from AS date)")
         if to_date:
-            parts.append(f"{raw_expr} < (DATE '{to_date}' + INTERVAL '1 day')")
+            parts.append(f"{raw_expr} < (CAST(:date_filter_to AS date) + INTERVAL '1 day')")
     else:
         safe_date = _safe_sql_date_expr(raw_expr)
         parts = [f"{safe_date} IS NOT NULL"]
         if from_date:
-            parts.append(f"{safe_date} >= DATE '{from_date}'")
+            parts.append(f"{safe_date} >= CAST(:date_filter_from AS date)")
         if to_date:
-            parts.append(f"{safe_date} <= DATE '{to_date}'")
+            parts.append(f"{safe_date} <= CAST(:date_filter_to AS date)")
 
     return "(" + " AND ".join(parts) + ")"
+
+def _join_sql_params(payload: WorkbenchRunRequest) -> dict[str, Any]:
+    params: dict[str, Any] = {}
+    from_date = _safe_date_literal(getattr(payload, "from_date", None))
+    to_date = _safe_date_literal(getattr(payload, "to_date", None))
+    if from_date:
+        params["date_filter_from"] = from_date
+    if to_date:
+        params["date_filter_to"] = to_date
+    return params
 
 def _preferred_date_filter_target(
     payload: WorkbenchRunRequest,
@@ -1203,10 +1096,11 @@ def _build_date_sequence_anomaly_conditions(
 def _build_sql_anomaly_expressions(
     joined_tables: list[str],
     source_columns: dict[str, list[dict]],
-) -> tuple[list[tuple[str, str]], list[str], list[str]]:
+) -> tuple[list[tuple[str, str]], list[str], list[str], list[str]]:
     conditions: list[tuple[str, str]] = []
     ctes: list[str] = []
     outer_joins: list[str] = []
+    evidence_expressions: list[str] = []
 
     joined_set = set(joined_tables)
 
@@ -1264,7 +1158,7 @@ def _build_sql_anomaly_expressions(
                 SELECT
                     fk_dak,
                     COUNT(*) AS schedule3_total_count,
-                    COUNT(*) FILTER (WHERE record_status IN ('P', 'V')) AS schedule3_pv_count
+                    COUNT(*) FILTER (WHERE UPPER(BTRIM(CAST(record_status AS text))) IN ('P', 'V')) AS schedule3_pv_count
                 FROM {_source_table_only_ref("schedule3")}
                 WHERE fk_dak IS NOT NULL
                 GROUP BY fk_dak
@@ -1276,7 +1170,10 @@ def _build_sql_anomaly_expressions(
             cheque_slip_approved_by_dak AS (
                 SELECT
                     fk_dak,
-                    COUNT(*) FILTER (WHERE record_status = 'V' AND approved = true) AS cheque_slip_v_approved_count
+                    COUNT(*) FILTER (
+                        WHERE UPPER(BTRIM(CAST(record_status AS text))) = 'V'
+                          AND approved = true
+                    ) AS cheque_slip_v_approved_count
                 FROM {_source_table_only_ref("cheque_slip")}
                 WHERE fk_dak IS NOT NULL
                 GROUP BY fk_dak
@@ -1298,9 +1195,9 @@ def _build_sql_anomaly_expressions(
 
         # cheque_slip V + approved false should not have schedule3 for same fk_dak
         conditions.append((
-            f"""
+            """
             (
-                base."cheque_slip.record_status" = 'V'
+                UPPER(BTRIM(CAST(base."cheque_slip.record_status" AS text))) = 'V'
                 AND base."cheque_slip.approved" = false
                 AND base."cheque_slip.fk_dak" IS NOT NULL
                 AND COALESCE(schedule3_by_dak.schedule3_total_count, 0) > 0
@@ -1311,9 +1208,9 @@ def _build_sql_anomaly_expressions(
 
         # approved V cheque_slip count should match schedule3 P/V count for same fk_dak
         conditions.append((
-            f"""
+            """
             (
-                base."cheque_slip.record_status" = 'V'
+                UPPER(BTRIM(CAST(base."cheque_slip.record_status" AS text))) = 'V'
                 AND base."cheque_slip.approved" = true
                 AND base."cheque_slip.fk_dak" IS NOT NULL
                 AND COALESCE(cheque_slip_approved_by_dak.cheque_slip_v_approved_count, 0)
@@ -1359,32 +1256,78 @@ def _build_sql_anomaly_expressions(
             continue
 
         base_invoice_expr = f'base."{table_name}.{invoice_column}"'
-        base_invoice_key = text_key(base_invoice_expr)
+        base_invoice_key = base_invoice_expr
         base_invoice_date_expr = _safe_sql_date_expr(f'base."{table_name}.invoice_date"')
         base_status_expr = f'base."{table_name}.record_status"'
-        dup_invoice_expr = f"dup.{_quote(invoice_column)}"
-        dup_invoice_key = text_key(dup_invoice_expr)
-        dup_invoice_date_expr = _safe_sql_date_expr(f"dup.{_quote('invoice_date')}")
-
-        conditions.append((
+        duplicate_cte_name = f"duplicate_invoice_keys_{_safe_rule_name(table_name, table_name)}"
+        cte_invoice_expr = _quote(invoice_column)
+        cte_invoice_key = cte_invoice_expr
+        cte_invoice_date_expr = _safe_sql_date_expr(_quote("invoice_date"))
+        cte_status_expr = _quote("record_status")
+        cte_fk_dak_expr = _quote("fk_dak") if "fk_dak" in column_names else None
+        cte_similar_fk_dak_select = (
+            f"string_agg(DISTINCT CAST({cte_fk_dak_expr} AS text), ', ' ORDER BY CAST({cte_fk_dak_expr} AS text))"
+            if cte_fk_dak_expr
+            else "NULL::text"
+        )
+        ctes.append(
             f"""
+            {duplicate_cte_name} AS (
+                SELECT
+                    {cte_invoice_key} AS invoice_key,
+                    {cte_invoice_date_expr} AS invoice_date_key,
+                    COUNT(*) AS duplicate_count,
+                    {cte_similar_fk_dak_select} AS similar_fk_daks
+                FROM {_source_table_only_ref(table_name)}
+                WHERE {cte_invoice_key} IS NOT NULL
+                  AND {cte_invoice_date_expr} IS NOT NULL
+                  AND UPPER(BTRIM(CAST({cte_status_expr} AS text))) = 'V'
+                GROUP BY
+                    {cte_invoice_key},
+                    {cte_invoice_date_expr}
+                HAVING COUNT(*) >= 2
+            )
+            """
+        )
+        outer_joins.append(
+            f"""
+            LEFT JOIN {duplicate_cte_name}
+                ON {duplicate_cte_name}.invoice_key = {base_invoice_key}
+               AND {duplicate_cte_name}.invoice_date_key = {base_invoice_date_expr}
+            """
+        )
+
+        condition_sql = f"""
             (
                 {base_invoice_key} IS NOT NULL
                 AND {base_invoice_date_expr} IS NOT NULL
                 AND UPPER(BTRIM(CAST({base_status_expr} AS text))) = 'V'
-                AND (
-                    SELECT COUNT(*)
-                    FROM {_source_table_only_ref(table_name)} AS dup
-                    WHERE {dup_invoice_key} = {base_invoice_key}
-                      AND {dup_invoice_date_expr} = {base_invoice_date_expr}
-                ) >= 2
+                AND COALESCE({duplicate_cte_name}.duplicate_count, 0) >= 2
             )
-            """,
+            """
+        conditions.append((
+            condition_sql,
             (
                 f"{table_name} has duplicate {invoice_column} and invoice_date "
                 "with record_status V"
             ),
         ))
+        evidence_expressions.append(
+            f"""
+            CASE WHEN ({condition_sql}) THEN
+                jsonb_build_object(
+                    'kind', 'duplicate_invoice_fk_daks',
+                    'table', '{table_name}',
+                    'invoice_column', '{invoice_column}',
+                    'invoice_number', CAST({base_invoice_key} AS text),
+                    'invoice_date', CAST({base_invoice_date_expr} AS text),
+                    'record_status', 'V',
+                    'duplicate_count', {duplicate_cte_name}.duplicate_count,
+                    'similar_fk_daks', {duplicate_cte_name}.similar_fk_daks
+                )::text
+            ELSE NULL END
+            """
+        )
 
     # Date sequence rule
     date_sequence_conditions = _build_date_sequence_anomaly_conditions(
@@ -1394,7 +1337,7 @@ def _build_sql_anomaly_expressions(
 
     conditions.extend(date_sequence_conditions)
 
-    return conditions, ctes, outer_joins
+    return conditions, ctes, outer_joins, evidence_expressions
 
 def _build_join_sql(
     payload: WorkbenchRunRequest,
@@ -1402,10 +1345,11 @@ def _build_join_sql(
     *,
     row_limit: int | None,
     projection_mode: str,
-) -> tuple[str, list[dict[str, Any]], list[str]]:
+) -> tuple[str, list[dict[str, Any]], list[str], dict[str, Any]]:
     _validate_join_payload_tables(payload, source_columns)
 
     warnings: list[str] = []
+    params = _join_sql_params(payload)
     selected_tables = payload.selected_tables
     first_table = selected_tables[0]
     joined_aliases: set[str] = {first_table}
@@ -1511,19 +1455,29 @@ def _build_join_sql(
         "ALL" if projected_columns is None else len(projected_columns),
     )
 
-    anomaly_conditions, anomaly_ctes, anomaly_outer_joins = _build_sql_anomaly_expressions(list(used_tables), source_columns)
+    anomaly_conditions, anomaly_ctes, anomaly_outer_joins, anomaly_evidence_expressions = (
+        _build_sql_anomaly_expressions(list(used_tables), source_columns)
+    )
     if anomaly_conditions:
         anomaly_sql = " OR ".join([f"({condition})" for condition, _reason in anomaly_conditions])
         anomaly_reason_parts: list[str] = []
-        for condition, reason in anomaly_conditions:
-            escaped_reason = str(reason).replace("'", "''")
+        for index, (condition, reason) in enumerate(anomaly_conditions, start=1):
+            reason_param = f"sql_rule_reason_{index}"
+            params[reason_param] = str(reason)
             anomaly_reason_parts.append(
-                f"CASE WHEN ({condition}) THEN '{escaped_reason}' ELSE NULL END"
+                f"CASE WHEN ({condition}) THEN :{reason_param} ELSE NULL END"
             )
         anomaly_reason_sql = (
             "array_to_string(array_remove(ARRAY["
             + ", ".join(anomaly_reason_parts)
             + "]::text[], NULL), ', ')"
+        )
+        anomaly_evidence_sql = (
+            "array_to_string(array_remove(ARRAY["
+            + ", ".join(anomaly_evidence_expressions)
+            + "]::text[], NULL), E'\\n')"
+            if anomaly_evidence_expressions
+            else "NULL::text"
         )
         cte_sql = [f"joined_base AS (\n{sql}\n)"]
         cte_sql.extend(anomaly_ctes)
@@ -1532,7 +1486,8 @@ def _build_join_sql(
         sql = f"""WITH {cte_sql_text}
 SELECT base.*,
        CASE WHEN {anomaly_sql} THEN TRUE ELSE FALSE END AS sql_rule_flag,
-       {anomaly_reason_sql} AS sql_rule_reasons
+       {anomaly_reason_sql} AS sql_rule_reasons,
+       {anomaly_evidence_sql} AS {SQL_RULE_EVIDENCE_COLUMN}
 FROM joined_base base"""
         if outer_join_sql:
             sql += "\n" + outer_join_sql
@@ -1540,16 +1495,16 @@ FROM joined_base base"""
     if safe_limit:
         sql += f"\nLIMIT {safe_limit}"
 
-    return sql, join_debug, warnings
+    return sql, join_debug, warnings, params
 
 
 def _get_or_build_join_sql(
-    payload: BuiltinRuleRequest | WorkbenchRunRequest,
+    payload: WorkbenchRunRequest,
     source_columns: dict[str, list[dict]],
     *,
     row_limit: int | None,
     projection_mode: str,
-) -> tuple[str, list[dict[str, Any]], list[str]]:
+) -> tuple[str, list[dict[str, Any]], list[str], dict[str, Any]]:
     cached = _get_cached_join_sql(
         payload,
         row_limit=row_limit,
@@ -1558,7 +1513,7 @@ def _get_or_build_join_sql(
     if cached is not None:
         return cached
 
-    sql, join_debug, warnings = _build_join_sql(
+    sql, join_debug, warnings, params = _build_join_sql(
         payload,
         source_columns,
         row_limit=row_limit,
@@ -1571,8 +1526,9 @@ def _get_or_build_join_sql(
         sql=sql,
         join_debug=join_debug,
         warnings=warnings,
+        params=params,
     )
-    return sql, join_debug, warnings
+    return sql, join_debug, warnings, params
 
 def _enrich_sql_join_debug(
     conn,
@@ -1638,7 +1594,7 @@ def _execute_sql_joined_frame(
 ) -> tuple[pd.DataFrame, dict[str, int], list[dict[str, Any]], list[str], str]:
     row_limit = PREVIEW_ROW_LIMIT if for_preview else None
     source_columns = _source_columns_map(payload.selected_tables)
-    sql, join_debug, warnings = _get_or_build_join_sql(
+    sql, join_debug, warnings, params = _get_or_build_join_sql(
         payload,
         source_columns,
         row_limit=row_limit,
@@ -1652,7 +1608,7 @@ def _execute_sql_joined_frame(
         for table_name in payload.selected_tables:
             source_row_counts[table_name] = _approx_table_row_count(conn, table_name)
 
-        joined = pd.read_sql_query(text(sql), conn)
+        joined = pd.read_sql_query(text(sql), conn, params=params)
         join_debug = _enrich_sql_join_debug(conn, join_debug, source_row_counts)
 
     if joined.empty:
@@ -1672,7 +1628,7 @@ def _execute_sql_workbench_frame(
     conn,
 ) -> tuple[pd.DataFrame, dict[str, int], list[dict[str, Any]], list[str], str, list[str], int, list[str], int, str]:
     source_columns = _source_columns_map(payload.selected_tables)
-    joined_sql, join_debug, warnings = _get_or_build_join_sql(
+    joined_sql, join_debug, warnings, joined_params = _get_or_build_join_sql(
         payload,
         source_columns,
         row_limit=None,
@@ -1689,6 +1645,7 @@ def _execute_sql_workbench_frame(
         user_rule_warnings,
         applied_user_rule_count,
     ) = _build_sql_workbench_query(payload, source_columns, joined_sql)
+    params = {**joined_params, **params}
 
     source_row_counts: dict[str, int] = {}
     staging_table: str | None = None
@@ -1780,6 +1737,7 @@ def _read_temp_scoring_frame(
         USER_RULE_REASONS_COLUMN,
         SQL_RULE_FLAG_COLUMN,
         SQL_RULE_REASONS_COLUMN,
+        SQL_RULE_EVIDENCE_COLUMN,
     ]
     candidate_columns = [
         column

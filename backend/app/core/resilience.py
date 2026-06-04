@@ -77,6 +77,7 @@ class CircuitBreaker:
                 self._last_failure_time = time.monotonic()
                 logger.warning(f"Circuit breaker OPENED: failure_count={self._failure_count}")
             elif self._failure_count > self.fail_threshold:
+                self._last_failure_time = time.monotonic()
                 logger.debug(f"Failure recorded: count={self._failure_count}")
 
     def get_state(self) -> CircuitBreakerState:

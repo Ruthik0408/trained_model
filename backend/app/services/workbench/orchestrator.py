@@ -12,7 +12,12 @@ from app.core.errors import WorkbenchValidationError
 from app.core.models import WorkbenchRun
 from app.schemas.workbench_schema import WorkbenchRunRequest
 from app.services.reason_service import build_feature_explanation_signals
-from app.services.workbench.constants import PREVIEW_ROW_LIMIT, RESULT_TABLE, logger
+from app.services.workbench.constants import (
+    PREVIEW_ROW_LIMIT,
+    RESULT_TABLE,
+    SQL_RULE_EVIDENCE_COLUMN,
+    logger,
+)
 from app.services.workbench.result_store import (
     DatasetBuildInputs,
     _build_dataset_frame,
@@ -79,6 +84,7 @@ class RuleFlagState:
     combined_rule_flag: pd.Series
     user_reason_series: pd.Series | None
     default_reason_series: pd.Series | None
+    default_evidence_series: pd.Series | None = None
 
 
 @dataclass(frozen=True)
@@ -222,14 +228,6 @@ def run_workbench(db: Session, payload: WorkbenchRunRequest) -> dict:
         payload.selected_tables,
     )
 
-    persist_run_started_at = time.monotonic()
-    run = _create_run_record(db, payload, execution, rule_flags, model_state)
-    logger.info(
-        "WorkbenchRun record persisted in %.2fs with run_id=%s",
-        time.monotonic() - persist_run_started_at,
-        run.run_id,
-    )
-
     dataset_build_started_at = time.monotonic()
     dataset_frame = _build_dataset_frame(
         DatasetBuildInputs(
@@ -242,6 +240,7 @@ def run_workbench(db: Session, payload: WorkbenchRunRequest) -> dict:
             user_reasons=execution.user_reasons,
             user_reason_series=rule_flags.user_reason_series,
             default_reason_series=rule_flags.default_reason_series,
+            default_evidence_series=rule_flags.default_evidence_series,
             isolation_scores=model_state.isolation_scores,
             ml_flag=model_state.ml_flag,
             ml_threshold=model_state.ml_threshold,
@@ -255,6 +254,14 @@ def run_workbench(db: Session, payload: WorkbenchRunRequest) -> dict:
         time.monotonic() - dataset_build_started_at,
         len(dataset_frame),
         len(dataset_frame.columns),
+    )
+
+    persist_run_started_at = time.monotonic()
+    run = _create_run_record(db, payload, execution, rule_flags, model_state)
+    logger.info(
+        "WorkbenchRun record persisted in %.2fs with run_id=%s",
+        time.monotonic() - persist_run_started_at,
+        run.run_id,
     )
 
     write_started_at = time.monotonic()
@@ -293,6 +300,7 @@ def run_workbench(db: Session, payload: WorkbenchRunRequest) -> dict:
                 model_state.filtered_joined,
                 feature_aliases,
                 dataset_storage.get("inserted_ids") or [],
+                payload.selected_tables,
             ),
         },
     )
@@ -462,6 +470,12 @@ def _extract_rule_flags(joined: pd.DataFrame) -> RuleFlagState:
         else None
     )
 
+    default_evidence_series = (
+        joined.pop(SQL_RULE_EVIDENCE_COLUMN)
+        if SQL_RULE_EVIDENCE_COLUMN in joined.columns
+        else None
+    )
+
     if default_rule_flag.any() and default_reason_series is None:
         default_reason_series = default_rule_flag.map(
             lambda flag: "RULE::Default SQL rule" if bool(flag) else None
@@ -473,6 +487,7 @@ def _extract_rule_flags(joined: pd.DataFrame) -> RuleFlagState:
         combined_rule_flag=user_rule_flag | default_rule_flag,
         user_reason_series=user_reason_series,
         default_reason_series=default_reason_series,
+        default_evidence_series=default_evidence_series,
     )
 
 
@@ -508,8 +523,16 @@ def _run_isolation_forest(
 
     if not execution.staging_table:
         raise WorkbenchValidationError(
-            "Saved model inference requires a live staged Postgres result.",
-            suggestion="Run the workbench again so the selected Postgres rows can be scored.",
+            "Saved model inference cannot score rows without a live staged Postgres result.",
+            suggestion=(
+                "The workbench execution cache is missing the temporary scoring table context. "
+                "Clear the cached workbench artifacts or execute a fresh SQL workbench run."
+            ),
+            details={
+                "stage": "saved_model_inference",
+                "cache_state": "execution_without_live_staging_table",
+            },
+            error_code="WORKBENCH_STAGING_TABLE_UNAVAILABLE",
         )
 
     artifact = load_saved_model_artifact(payload)
@@ -770,11 +793,10 @@ def _build_builtin_reason_lookup(
 
     # Validate that lengths match to avoid silent data loss
     if len(inserted_ids) != len(filtered_builtin_reasons):
-        logger.warning(
-            "Mismatch: %d inserted IDs but %d reason entries. "
-            "Some anomaly reasons may not be mapped correctly.",
-            len(inserted_ids),
-            len(filtered_builtin_reasons),
+        raise ValueError(
+            f"Mismatch: {len(inserted_ids)} inserted IDs but "
+            f"{len(filtered_builtin_reasons)} reason entries. "
+            "Cannot map builtin anomaly reasons safely."
         )
 
     # Pair inserted_ids with reasons using their aligned indices

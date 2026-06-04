@@ -1,3 +1,4 @@
+import json
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -48,9 +49,7 @@ from app.services.workbench.utils import (
 
 
 def _feature_name_for_tables(selected_tables: list[str]) -> str:
-    parts = [str(table) for table in selected_tables[:3]]
-    parts.extend(["null"] * (3 - len(parts)))
-    return ".".join(parts)
+    return ".".join(str(table) for table in selected_tables if str(table).strip())
 
 
 def _presentable_reason_text(value: Any) -> str | None:
@@ -72,6 +71,7 @@ def _presentable_reason_text(value: Any) -> str | None:
 def _review_payload_for_row(
     row: pd.Series,
     feature_aliases: set[str],
+    selected_tables: list[str],
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {}
 
@@ -81,9 +81,18 @@ def _review_payload_for_row(
         if column_name in SYSTEM_COLUMNS or column_name in feature_aliases:
             continue
 
-        payload[column_name] = _safe_json(value)
+        payload[_canonical_payload_column_name(column_name, selected_tables)] = _safe_json(value)
 
     return payload
+
+def _canonical_payload_column_name(column_name: str, selected_tables: list[str]) -> str:
+    if "." in column_name:
+        return column_name
+    for table_name in sorted((str(table) for table in selected_tables), key=len, reverse=True):
+        prefix = f"{table_name}_"
+        if column_name.startswith(prefix) and len(column_name) > len(prefix):
+            return f"{table_name}.{column_name[len(prefix):]}"
+    return column_name
 
 
 def _result_fk_dak_for_row(
@@ -107,9 +116,10 @@ def _review_payload_cache_entries(
     rows: pd.DataFrame,
     feature_aliases: set[str],
     inserted_ids: list[int],
+    selected_tables: list[str],
 ) -> dict[str, dict[str, Any]]:
     payloads = [
-        _review_payload_for_row(row, feature_aliases)
+        _review_payload_for_row(row, feature_aliases, selected_tables)
         for _, row in rows.iterrows()
     ]
     return {
@@ -129,6 +139,7 @@ class DatasetBuildInputs:
     user_reasons: list[str]
     user_reason_series: pd.Series | None
     default_reason_series: pd.Series | None
+    default_evidence_series: pd.Series | None
     isolation_scores: np.ndarray
     ml_flag: pd.Series
     ml_threshold: float
@@ -197,8 +208,43 @@ def update_dataset_feedback(db: Session, payload) -> dict[str, Any]:
 
 def _feature_values_payload(
     signals: list[dict[str, Any]] | None = None,
+    rule_evidence: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    return {"__ml_explanation_signals": signals or []}
+    return {
+        "__ml_explanation_signals": signals or [],
+        "__rule_evidence": rule_evidence or [],
+    }
+
+
+def _rule_evidence_payload(value: Any) -> list[dict[str, Any]]:
+    if value is None:
+        return []
+    try:
+        if pd.isna(value):
+            return []
+    except (TypeError, ValueError):
+        pass
+
+    evidence_items: list[dict[str, Any]] = []
+    for line in str(value).splitlines():
+        text_value = line.strip()
+        if not text_value:
+            continue
+        try:
+            parsed = json.loads(text_value)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(parsed, dict):
+            continue
+        similar_fk_daks = parsed.get("similar_fk_daks")
+        if isinstance(similar_fk_daks, str):
+            parsed["similar_fk_daks"] = [
+                item.strip()
+                for item in similar_fk_daks.split(",")
+                if item.strip()
+            ]
+        evidence_items.append(parsed)
+    return evidence_items
 
 
 def _coerce_insert_value(value: Any) -> Any:
@@ -277,6 +323,12 @@ def _build_dataset_frame(inputs: DatasetBuildInputs) -> pd.DataFrame:
         None,
     ).loc[anomaly_index]
 
+    filtered_default_evidence = _aligned_series(
+        inputs.default_evidence_series,
+        base_index,
+        None,
+    ).loc[anomaly_index]
+
     if inputs.filtered_joined_override is not None:
         filtered_joined = inputs.filtered_joined_override.reindex(anomaly_index)
     else:
@@ -302,8 +354,14 @@ def _build_dataset_frame(inputs: DatasetBuildInputs) -> pd.DataFrame:
     )
 
     dataset[FEATURE_VALUES_COLUMN] = [
-        _feature_values_payload(explanation_signals.get(row_index))
-        for row_index in filtered_feature_frame.index
+        _feature_values_payload(
+            explanation_signals.get(row_index),
+            _rule_evidence_payload(evidence),
+        )
+        for row_index, evidence in zip(
+            filtered_feature_frame.index,
+            filtered_default_evidence,
+        )
     ]
 
     user_rule_names: list[str | None] = []
@@ -436,6 +494,7 @@ def _write_dataset_to_result(
     inserted_ids: list[int] = []
 
     with engine.begin() as conn:
+        _normalize_result_table_feature_names(conn, dataset_table)
         result = conn.execute(
             result_table.insert().returning(result_table.c[SERIAL_COLUMN]),
             records,
@@ -460,6 +519,32 @@ def _write_dataset_to_result(
         "column_count": int(len(df.columns)),
         "inserted_ids": inserted_ids,
     }
+
+def _normalize_result_table_feature_names(conn, dataset_table: str) -> None:
+    if SELECTED_TABLES_COLUMN not in _result_table_columns(dataset_table):
+        return
+    selected_column = _quote(SELECTED_TABLES_COLUMN)
+    conn.execute(
+        text(
+            f"""
+            UPDATE {_result_table_ref(dataset_table)}
+            SET {selected_column} = array_to_string(
+                ARRAY(
+                    SELECT part
+                    FROM unnest(string_to_array({selected_column}, '.')) AS part
+                    WHERE part <> '' AND lower(part) <> 'null'
+                ),
+                '.'
+            )
+            WHERE {selected_column} IS NOT NULL
+              AND (
+                  {selected_column} LIKE '%.null%'
+                  OR {selected_column} LIKE 'null.%'
+                  OR lower({selected_column}) = 'null'
+              )
+            """
+        )
+    )
 
 def _update_dataset_row(dataset_table: str, record_id: int, assignments: dict[str, Any]) -> None:
     if not _result_table_exists(dataset_table):

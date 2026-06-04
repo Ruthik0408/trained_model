@@ -4,6 +4,12 @@ import PredictionRow from "../components/PredictionRow";
 import { getWorkbenchDatasets, getWorkbenchReviewRows, submitWorkbenchFeedback, } from "../api/anomalyApi";
 export default function ReviewPage({ latestWorkbenchRun }) {
     const PAGE_SIZE = 50;
+    const latestDatasetTable = latestWorkbenchRun?.datasetTable || "";
+    const latestRunId = latestWorkbenchRun?.runId ?? null;
+    const latestSelectedTablesKey = (latestWorkbenchRun?.selectedTables || []).join("\u001f");
+    const latestRunName = latestWorkbenchRun?.runName || "Latest workbench run";
+    const latestTotalRows = latestWorkbenchRun?.totalRows || 0;
+    const latestFinalAnomalyCount = latestWorkbenchRun?.finalAnomalyCount || 0;
     const [datasets, setDatasets] = useState([]);
     const [datasetTable, setDatasetTable] = useState("");
     const [anomalyFilter, setAnomalyFilter] = useState("all");
@@ -17,25 +23,37 @@ export default function ReviewPage({ latestWorkbenchRun }) {
     const [activeSlideHeight, setActiveSlideHeight] = useState(null);
     const cardRefs = useRef({});
     const slideTrackRef = useRef(null);
+    const slideScrollFrameRef = useRef(null);
+    const activeSlideIndexRef = useRef(activeSlideIndex);
     const hydratedLatestDataset = useMemo(() => {
-        if (!latestWorkbenchRun?.datasetTable)
+        if (!latestDatasetTable)
             return null;
         return {
-            dataset_table: latestWorkbenchRun.datasetTable,
-            run_id: latestWorkbenchRun.runId,
-            selected_tables: latestWorkbenchRun.selectedTables || [],
-            run_name: latestWorkbenchRun.runName || "Latest workbench run",
-            total_rows: latestWorkbenchRun.totalRows || 0,
-            final_anomaly_count: latestWorkbenchRun.finalAnomalyCount || 0,
+            dataset_table: latestDatasetTable,
+            run_id: latestRunId,
+            selected_tables: latestSelectedTablesKey ? latestSelectedTablesKey.split("\u001f") : [],
+            run_name: latestRunName,
+            total_rows: latestTotalRows,
+            final_anomaly_count: latestFinalAnomalyCount,
         };
-    }, [latestWorkbenchRun]);
+    }, [latestDatasetTable, latestRunId, latestSelectedTablesKey, latestRunName, latestTotalRows, latestFinalAnomalyCount]);
     const hydratedRunIdKey = hydratedLatestDataset?.run_id != null ? String(hydratedLatestDataset.run_id) : null;
     useEffect(() => {
-        if (latestWorkbenchRun?.datasetTable) {
-            setDatasetTable(latestWorkbenchRun.datasetTable);
+        if (latestDatasetTable) {
+            setDatasetTable(latestDatasetTable);
             setPageOffset(0);
         }
-    }, [latestWorkbenchRun]);
+    }, [latestDatasetTable]);
+    useEffect(() => {
+        activeSlideIndexRef.current = activeSlideIndex;
+    }, [activeSlideIndex]);
+    useEffect(() => {
+        return () => {
+            if (slideScrollFrameRef.current != null) {
+                cancelFrame(slideScrollFrameRef.current);
+            }
+        };
+    }, []);
     useEffect(() => {
         setPageOffset(0);
     }, [datasetTable, anomalyFilter]);
@@ -208,13 +226,20 @@ export default function ReviewPage({ latestWorkbenchRun }) {
         }
     }
     function handleSlideTrackScroll(event) {
-        const viewportWidth = event.currentTarget.clientWidth;
-        if (viewportWidth <= 0)
+        const slideTrack = event.currentTarget;
+        if (slideScrollFrameRef.current != null)
             return;
-        const nextIndex = Math.round(event.currentTarget.scrollLeft / viewportWidth);
-        if (nextIndex !== activeSlideIndex) {
-            setActiveSlideIndex(nextIndex);
-        }
+        slideScrollFrameRef.current = scheduleFrame(() => {
+            slideScrollFrameRef.current = null;
+            const viewportWidth = slideTrack.clientWidth;
+            if (viewportWidth <= 0)
+                return;
+            const nextIndex = Math.round(slideTrack.scrollLeft / viewportWidth);
+            if (nextIndex !== activeSlideIndexRef.current) {
+                activeSlideIndexRef.current = nextIndex;
+                setActiveSlideIndex(nextIndex);
+            }
+        });
     }
     const slideTrackStyle = {
         ...slideTrack,
@@ -351,4 +376,19 @@ function resolveReviewAmount(payload) {
         }
     }
     return 0;
+}
+
+function scheduleFrame(callback) {
+    if (typeof requestAnimationFrame === "function") {
+        return requestAnimationFrame(callback);
+    }
+    return setTimeout(callback, 16);
+}
+
+function cancelFrame(frameId) {
+    if (typeof cancelAnimationFrame === "function") {
+        cancelAnimationFrame(frameId);
+        return;
+    }
+    clearTimeout(frameId);
 }

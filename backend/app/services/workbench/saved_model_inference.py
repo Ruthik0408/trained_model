@@ -7,6 +7,7 @@ from typing import Any
 import joblib
 import numpy as np
 import pandas as pd
+from scipy import sparse
 from sqlalchemy import text
 
 from app.core.config import settings
@@ -30,6 +31,8 @@ KNOWN_MODEL_TABLE_PREFIXES = (
     "dak",
     "ecs",
 )
+
+ML_SCORE_THRESHOLD_MARGIN = 0.05
 
 
 @dataclass(frozen=True)
@@ -102,9 +105,13 @@ def score_with_saved_model(
         model = pipeline.named_steps["model"]
         transformed = preprocessor.transform(feature_frame)
         isolation_scores = -model.score_samples(transformed)
-        predictions = model.predict(transformed)
-        ml_flag = pd.Series(predictions == -1, index=feature_frame.index, dtype=bool)
         ml_threshold = float(-getattr(model, "offset_", np.nan))
+        effective_threshold = ml_threshold + ML_SCORE_THRESHOLD_MARGIN
+        ml_flag = pd.Series(
+            isolation_scores >= effective_threshold,
+            index=feature_frame.index,
+            dtype=bool,
+        )
     except Exception as exc:
         raise WorkbenchValidationError(
             "Saved model scoring failed on the selected Postgres data.",
@@ -120,13 +127,24 @@ def score_with_saved_model(
             },
         ) from exc
 
-    return np.asarray(transformed), np.asarray(isolation_scores), ml_flag, ml_threshold
+    return _as_2d_numpy(transformed), np.asarray(isolation_scores), ml_flag, ml_threshold
+
+
+def _as_2d_numpy(values: Any) -> np.ndarray:
+    if sparse.issparse(values):
+        return values.toarray()
+    array = np.asarray(values)
+    if array.ndim == 0:
+        return array.reshape(1, 1)
+    if array.ndim == 1:
+        return array.reshape(-1, 1)
+    return array
 
 
 def _read_model_raw_frame(conn, temp_table: str, artifact: dict[str, Any]) -> pd.DataFrame:
     available_columns = set(_temp_table_columns(conn, temp_table))
-    raw_columns = [str(column) for column in artifact.get("raw_columns") or []]
-    raw_joined_columns = _raw_joined_columns_for_artifact(raw_columns, artifact)
+    model_raw_columns = _model_raw_columns_for_artifact(artifact)
+    raw_joined_columns = _raw_joined_columns_for_artifact(model_raw_columns, artifact)
     select_columns = [TEMP_ROW_ID_COLUMN]
     select_columns.extend(column for column in raw_joined_columns if column in available_columns)
 
@@ -135,7 +153,7 @@ def _read_model_raw_frame(conn, temp_table: str, artifact: dict[str, Any]) -> pd
             "The selected data does not contain any columns expected by the saved model.",
             details={
                 "dataset_name": artifact.get("dataset_name"),
-                "expected_sample": raw_columns[:20],
+                "expected_sample": raw_joined_columns[:20],
                 "available_sample": sorted(available_columns)[:20],
             },
         )
@@ -151,17 +169,24 @@ def _read_model_raw_frame(conn, temp_table: str, artifact: dict[str, Any]) -> pd
     df = df.rename(
         columns={
             joined_column: raw_column
-            for raw_column, joined_column in zip(raw_columns, raw_joined_columns)
+            for raw_column, joined_column in zip(model_raw_columns, raw_joined_columns)
         }
     )
     if TEMP_ROW_ID_COLUMN in df.columns:
         df = df.set_index(TEMP_ROW_ID_COLUMN, drop=True)
 
-    for column in raw_columns:
+    for column in model_raw_columns:
         if column not in df.columns:
             df[column] = np.nan
 
-    return df.reindex(columns=raw_columns)
+    return df.reindex(columns=model_raw_columns)
+
+
+def _model_raw_columns_for_artifact(artifact: dict[str, Any]) -> list[str]:
+    model_raw_columns = [str(column) for column in artifact.get("model_raw_columns") or []]
+    if model_raw_columns:
+        return model_raw_columns
+    return [str(column) for column in artifact.get("raw_columns") or []]
 
 
 def _raw_joined_columns_for_artifact(
@@ -181,8 +206,6 @@ def _apply_saved_training_cleaning(
     raw_df: pd.DataFrame,
     artifact: dict[str, Any],
 ) -> pd.DataFrame:
-    # Training removes duplicate voided invoices before fitting. During review/scoring we keep
-    # those rows so the workbench SQL rules can show them as anomalies.
     working = raw_df.copy()
     cleaned_columns = [str(column) for column in artifact.get("cleaned_columns") or []]
     if cleaned_columns:
@@ -193,9 +216,31 @@ def _apply_saved_training_cleaning(
         if column_name in working.columns and _looks_like_date_column(column_name):
             working[column_name] = pd.to_datetime(working[column_name], errors="coerce")
 
+    working = _drop_saved_void_invoice_rows(working, artifact)
     working = _drop_saved_invalid_date_sequence_rows(working, artifact)
     working = _add_saved_date_gap_features(working, artifact)
+    working = _normalize_saved_boolean_columns(working, artifact)
     working = working.where(pd.notna(working), np.nan)
+    return working
+
+
+def _normalize_saved_boolean_columns(
+    df: pd.DataFrame,
+    artifact: dict[str, Any],
+) -> pd.DataFrame:
+    boolean_columns = [str(column) for column in artifact.get("boolean_columns") or []]
+    if not boolean_columns:
+        return df
+
+    working = df.copy()
+    for column_name in boolean_columns:
+        if column_name not in working.columns:
+            continue
+        normalized = working[column_name].astype("string").str.strip().str.lower()
+        converted = pd.Series(pd.NA, index=working.index, dtype="Float64")
+        converted.loc[normalized.isin(["true", "t", "1", "yes", "y"])] = 1.0
+        converted.loc[normalized.isin(["false", "f", "0", "no", "n"])] = 0.0
+        working[column_name] = converted
     return working
 
 

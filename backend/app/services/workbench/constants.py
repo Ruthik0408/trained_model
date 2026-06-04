@@ -1,7 +1,4 @@
 import logging
-from typing import Any
-
-from app.core.cache import TTLCache
 
 logger = logging.getLogger(__name__)
 
@@ -19,11 +16,6 @@ RESULT_TABLE = "ML_Features"
 ML_FEATURES_TABLE = RESULT_TABLE
 SERIAL_COLUMN = "id"
 
-BUILTIN_FEATURE_RULES_CACHE_TTL = 60.0
-_builtin_feature_rules_cache = TTLCache(
-    ttl_seconds=BUILTIN_FEATURE_RULES_CACHE_TTL,
-    namespace="builtin_feature_rules",
-)
 SELECTED_TABLES_COLUMN = "selected_tables"
 FEATURE_NAME_COLUMN = "feature_name"
 USER_RULE_NAME_COLUMN = "user_rule_name"
@@ -38,6 +30,7 @@ FEEDBACK_SCORE_COLUMN = "feedback_score"
 RUN_ID_COLUMN = "ml_run_id"
 REVIEW_PAYLOAD_COLUMN = "review_payload_json"
 FEATURE_VALUES_COLUMN = "feature_values_json"
+SQL_RULE_EVIDENCE_COLUMN = "sql_rule_evidence"
 SYSTEM_COLUMNS = {
     SERIAL_COLUMN,
     SELECTED_TABLES_COLUMN,
@@ -54,6 +47,7 @@ SYSTEM_COLUMNS = {
     RUN_ID_COLUMN,
     REVIEW_PAYLOAD_COLUMN,
     FEATURE_VALUES_COLUMN,
+    SQL_RULE_EVIDENCE_COLUMN,
 }
 TEMP_ROW_ID_COLUMN = "__ml_row_number"
 SQL_RULE_FLAG_COLUMN = "sql_rule_flag"

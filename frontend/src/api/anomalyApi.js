@@ -7,6 +7,7 @@ const shouldLogApiDebug = import.meta.env.DEV || import.meta.env.VITE_API_DEBUG 
  * TTL: 1 minute for dynamic data
  */
 const apiCache = new Map();
+let apiCacheGeneration = 0;
 
 function getCacheKey(url, params) {
     return params ? `${url}?${new URLSearchParams(params).toString()}` : url;
@@ -30,7 +31,14 @@ function setCacheData(key, data) {
     apiCache.set(key, { data, timestamp: Date.now() });
 }
 
+function setCacheDataIfCurrent(key, data, generation) {
+    if (generation === apiCacheGeneration) {
+        setCacheData(key, data);
+    }
+}
+
 export function clearApiCache() {
+    apiCacheGeneration += 1;
     apiCache.clear();
     if (shouldLogApiDebug) {
         console.debug("API cache cleared");
@@ -57,8 +65,9 @@ export const getWorkbenchDatasets = (signal) => {
     const cached = getCachedData(cacheKey, CACHE_CONFIG.DATA_TTL_MS);
     if (cached)
         return Promise.resolve({ data: cached });
+    const cacheGeneration = apiCacheGeneration;
     return api.get(API_ENDPOINTS.DATASETS, getConfigWithSignal(signal)).then((response) => {
-        setCacheData(cacheKey, response.data);
+        setCacheDataIfCurrent(cacheKey, response.data, cacheGeneration);
         return response;
     });
 };
@@ -75,11 +84,12 @@ export const getWorkbenchReviewRows = (params, signal) => {
     const cached = getCachedData(cacheKey, CACHE_CONFIG.DATA_TTL_MS);
     if (cached)
         return Promise.resolve({ data: cached });
+    const cacheGeneration = apiCacheGeneration;
     return api.get(API_ENDPOINTS.REVIEW_ROWS, {
         params: queryParams,
         ...getConfigWithSignal(signal),
     }).then((response) => {
-        setCacheData(cacheKey, response.data);
+        setCacheDataIfCurrent(cacheKey, response.data, cacheGeneration);
         return response;
     });
 };
@@ -96,11 +106,12 @@ export const getWorkbenchAnomalies = (params, signal) => {
     const cached = getCachedData(cacheKey, CACHE_CONFIG.DATA_TTL_MS);
     if (cached)
         return Promise.resolve({ data: cached });
+    const cacheGeneration = apiCacheGeneration;
     return api.get(API_ENDPOINTS.ANOMALIES, {
         params: queryParams,
         ...getConfigWithSignal(signal),
     }).then((response) => {
-        setCacheData(cacheKey, response.data);
+        setCacheDataIfCurrent(cacheKey, response.data, cacheGeneration);
         return response;
     });
 };
@@ -120,11 +131,12 @@ export const getWorkbenchReport = (params, signal) => {
     const cached = getCachedData(cacheKey, CACHE_CONFIG.DATA_TTL_MS);
     if (cached)
         return Promise.resolve({ data: cached });
+    const cacheGeneration = apiCacheGeneration;
     return api.get("/api/workbench/report", {
         params: queryParams,
         ...getConfigWithSignal(signal),
     }).then((response) => {
-        setCacheData(cacheKey, response.data);
+        setCacheDataIfCurrent(cacheKey, response.data, cacheGeneration);
         return response;
     });
 };

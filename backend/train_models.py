@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 
 import joblib
@@ -15,7 +16,7 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 import os
 import subprocess
-from io import StringIO
+import tempfile
 from pathlib import Path
 
 import pandas as pd
@@ -70,13 +71,11 @@ if missing:
 def query_postgres(sql: str) -> pd.DataFrame:
     """Run a SQL query through psql and return the result as a dataframe."""
     cleaned_sql = sql.strip().rstrip(";")
-    psql_sql = (
-        f"SET search_path TO {DB_CONFIG['schema']}; "
-        f"COPY ({cleaned_sql}) TO STDOUT WITH CSV HEADER"
-    )
+    psql_sql = f"COPY ({cleaned_sql}) TO STDOUT WITH CSV HEADER"
 
     env = os.environ.copy()
     env["PGPASSWORD"] = DB_CONFIG["password"]
+    env["PGOPTIONS"] = f"{env.get('PGOPTIONS', '')} -c search_path={DB_CONFIG['schema']}".strip()
 
     command = [
         "psql",
@@ -94,25 +93,22 @@ def query_postgres(sql: str) -> pd.DataFrame:
         psql_sql,
     ]
 
-    try:
-        result = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            env=env,
-            check=True,
-        )
-    except subprocess.CalledProcessError as exc:
-        detail = (exc.stderr or exc.stdout or str(exc)).strip()
-        raise RuntimeError(f"psql query failed: {detail}") from exc
+    with tempfile.NamedTemporaryFile(mode="w+", encoding="utf-8", newline="", suffix=".csv") as csv_file:
+        try:
+            subprocess.run(
+                command,
+                stdout=csv_file,
+                stderr=subprocess.PIPE,
+                text=True,
+                env=env,
+                check=True,
+            )
+        except subprocess.CalledProcessError as exc:
+            detail = (exc.stderr or str(exc)).strip()
+            raise RuntimeError(f"psql query failed: {detail}") from exc
 
-    stdout = result.stdout
-    lines = stdout.splitlines()
-
-    while lines and (not lines[0].strip() or lines[0].strip() == "SET"):
-        lines = lines[1:]
-
-    df = pd.read_csv(StringIO("\n".join(lines)), low_memory=False)
+        csv_file.flush()
+        df = pd.read_csv(csv_file.name, low_memory=False)
     if "SET" in df.columns:
         df = df.drop(columns=["SET"])
 
@@ -134,6 +130,11 @@ def get_connection_check_df() -> pd.DataFrame:
 
 BASE_TABLE = "dak"
 DEFAULT_LIST_DATE_CUTOFF = "2026-01-01"
+DEFAULT_MAX_TRAINING_ROWS = 200_000
+DEFAULT_DATASET_LIST_DATE_FROM: dict[str, str] = {
+    "dak": "2024-01-01",
+    "dak.echs_medical_bill": "2025-01-01",
+}
 
 NUMERIC_DATA_TYPES = {
     "smallint",
@@ -253,6 +254,7 @@ JOIN_SPECS: dict[str, JoinSpec] = {
         left_table="cheque_slip",
         left_column="fk_dak",
         right_column="fk_dak",
+        join_type="LEFT JOIN",
     ),
     "ecs": JoinSpec(
         right_table="ecs",
@@ -283,6 +285,12 @@ DATASET_BASE_TABLES: dict[str, str] = {
 def dataset_base_table(dataset_name: str) -> str:
     return DATASET_BASE_TABLES.get(dataset_name, BASE_TABLE)
 
+
+def dataset_list_date_from(dataset_name: str, args: argparse.Namespace) -> str | None:
+    if args.list_date_from:
+        return args.list_date_from
+    return DEFAULT_DATASET_LIST_DATE_FROM.get(dataset_name)
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
@@ -292,9 +300,27 @@ def parse_args() -> argparse.Namespace:
         )
     )
     parser.add_argument(
+        "--list-date-from",
+        default=None,
+        help=(
+            "Optional global lower bound: only rows with list_date on or after this date are included. "
+            "Format: YYYY-MM-DD. If omitted, dak uses 2024-01-01, dak.echs_medical_bill uses "
+            "2025-01-01, and remaining datasets have no lower bound."
+        ),
+    )
+    parser.add_argument(
         "--list-date-cutoff",
         default=DEFAULT_LIST_DATE_CUTOFF,
-        help="Only rows with dak.list_date earlier than this date are included.",
+        help="Only rows with dak.list_date earlier than this date are included. Format: YYYY-MM-DD.",
+    )
+    parser.add_argument(
+        "--max-training-rows",
+        type=int,
+        default=DEFAULT_MAX_TRAINING_ROWS,
+        help=(
+            "Maximum joined rows to load into pandas for each dataset. "
+            "Use 0 to train on every matching row."
+        ),
     )
     parser.add_argument(
         "--output-dir",
@@ -341,7 +367,70 @@ def parse_args() -> argparse.Namespace:
         default=42,
         help="Random seed for model training.",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    validate_date_window(args.list_date_from, args.list_date_cutoff, parser)
+    validate_max_training_rows(args.max_training_rows, parser)
+    return args
+
+
+def parse_iso_date(value: str, field_name: str, parser: argparse.ArgumentParser) -> date:
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        parser.error(f"{field_name} must be in YYYY-MM-DD format.")
+
+
+def validate_date_window(
+    list_date_from: str | None,
+    list_date_cutoff: str,
+    parser: argparse.ArgumentParser,
+) -> None:
+    from_date = parse_iso_date(list_date_from, "--list-date-from", parser) if list_date_from else None
+    cutoff_date = parse_iso_date(list_date_cutoff, "--list-date-cutoff", parser)
+    if from_date and from_date >= cutoff_date:
+        parser.error("--list-date-from must be earlier than --list-date-cutoff.")
+
+
+def validate_max_training_rows(
+    max_training_rows: int,
+    parser: argparse.ArgumentParser,
+) -> None:
+    if max_training_rows < 0:
+        parser.error("--max-training-rows must be 0 or greater.")
+
+
+def limit_clause(max_training_rows: int) -> str:
+    if max_training_rows <= 0:
+        return ""
+    return f"LIMIT {max_training_rows}"
+
+
+def training_order_clause(base_table: str, schema_map: dict[str, pd.DataFrame]) -> str:
+    column_names = set(schema_map[base_table]["column_name"].tolist())
+    order_columns = []
+    for column_name in ("list_date", "id"):
+        if column_name in column_names:
+            order_columns.append(f'{base_table}."{column_name}"')
+    if not order_columns:
+        return ""
+    return "ORDER BY " + ", ".join(order_columns)
+
+
+def joined_base_order_clause(base_table: str, join_tables: list[str], schema_map: dict[str, pd.DataFrame]) -> str:
+    order_columns = []
+    for table_name, column_name in (
+        (base_table, "list_date"),
+        (base_table, "id"),
+        ("cheque_slip", "id"),
+        ("schedule3", "id"),
+    ):
+        if table_name != base_table and table_name not in join_tables:
+            continue
+        if column_name in set(schema_map[table_name]["column_name"].tolist()):
+            order_columns.append(f'"{table_name}_{column_name}"')
+    if not order_columns:
+        return ""
+    return "ORDER BY " + ", ".join(order_columns)
 
 
 def get_table_schema(table_name: str) -> pd.DataFrame:
@@ -384,12 +473,17 @@ def list_date_where_clause(
     base_table: str,
     schema_map: dict[str, pd.DataFrame],
     *,
+    list_date_from: str | None,
     list_date_cutoff: str,
 ) -> str:
     base_columns = set(schema_map[base_table]["column_name"].tolist())
     if "list_date" not in base_columns:
         return ""
-    return f"WHERE {base_table}.list_date < '{list_date_cutoff}'"
+    filters = []
+    if list_date_from:
+        filters.append(f"{base_table}.list_date >= '{list_date_from}'")
+    filters.append(f"{base_table}.list_date < '{list_date_cutoff}'")
+    return f"WHERE {' AND '.join(filters)}"
 
 
 def build_select_sql(
@@ -397,7 +491,10 @@ def build_select_sql(
     join_tables: list[str],
     schema_map: dict[str, pd.DataFrame],
     *,
+    dataset_name: str | None = None,
+    list_date_from: str | None,
     list_date_cutoff: str,
+    max_training_rows: int,
 ) -> str:
     select_clauses: list[str] = []
 
@@ -422,15 +519,76 @@ def build_select_sql(
     where_sql = list_date_where_clause(
         base_table,
         schema_map,
+        list_date_from=list_date_from,
         list_date_cutoff=list_date_cutoff,
     )
+    limit_sql = limit_clause(max_training_rows)
+    order_sql = training_order_clause(base_table, schema_map)
 
-    return f"""
+    base_sql = f"""
         SELECT
             {", ".join(select_clauses)}
         FROM {base_table}
         {join_sql}
         {where_sql}
+    """
+
+    if dataset_name == "dak.cheque_slip.schedule3":
+        filtered_order_sql = joined_base_order_clause(base_table, join_tables, schema_map)
+        return f"""
+            WITH joined_base AS (
+                {base_sql}
+            ),
+            schedule3_by_dak AS (
+                SELECT
+                    fk_dak,
+                    COUNT(*) AS schedule3_total_count,
+                    COUNT(*) FILTER (WHERE UPPER(BTRIM(CAST(record_status AS text))) IN ('P', 'V')) AS schedule3_pv_count
+                FROM schedule3
+                WHERE fk_dak IS NOT NULL
+                GROUP BY fk_dak
+            ),
+            cheque_slip_approved_by_dak AS (
+                SELECT
+                    fk_dak,
+                    COUNT(*) FILTER (
+                        WHERE UPPER(BTRIM(CAST(record_status AS text))) = 'V'
+                          AND approved = true
+                    ) AS cheque_slip_v_approved_count
+                FROM cheque_slip
+                WHERE fk_dak IS NOT NULL
+                GROUP BY fk_dak
+            )
+            SELECT base.*
+            FROM joined_base base
+            LEFT JOIN schedule3_by_dak
+                ON schedule3_by_dak.fk_dak = base."cheque_slip_fk_dak"
+            LEFT JOIN cheque_slip_approved_by_dak
+                ON cheque_slip_approved_by_dak.fk_dak = base."cheque_slip_fk_dak"
+            WHERE NOT (
+                (
+                    UPPER(BTRIM(CAST(base."cheque_slip_record_status" AS text))) = 'V'
+                    AND base."cheque_slip_approved" = false
+                    AND base."cheque_slip_fk_dak" IS NOT NULL
+                    AND COALESCE(schedule3_by_dak.schedule3_total_count, 0) > 0
+                )
+                OR
+                (
+                    UPPER(BTRIM(CAST(base."cheque_slip_record_status" AS text))) = 'V'
+                    AND base."cheque_slip_approved" = true
+                    AND base."cheque_slip_fk_dak" IS NOT NULL
+                    AND COALESCE(cheque_slip_approved_by_dak.cheque_slip_v_approved_count, 0)
+                        <> COALESCE(schedule3_by_dak.schedule3_pv_count, 0)
+                )
+            )
+            {filtered_order_sql}
+            {limit_sql}
+        """
+
+    return f"""
+        {base_sql}
+        {order_sql}
+        {limit_sql}
     """
 
 
@@ -439,6 +597,7 @@ def build_count_sql(
     join_tables: list[str],
     schema_map: dict[str, pd.DataFrame],
     *,
+    list_date_from: str | None,
     list_date_cutoff: str,
 ) -> str:
     join_clauses: list[str] = []
@@ -456,6 +615,7 @@ def build_count_sql(
     where_sql = list_date_where_clause(
         base_table,
         schema_map,
+        list_date_from=list_date_from,
         list_date_cutoff=list_date_cutoff,
     )
 
@@ -561,6 +721,124 @@ def drop_voided_invoice_rows(
         "dropped_row_count": len(dropped_row_indexes),
         "tables_applied": table_summaries,
     }
+
+
+def _normalized_bool(series: pd.Series) -> pd.Series:
+    normalized = series.astype("string").str.strip().str.lower()
+    result = pd.Series(pd.NA, index=series.index, dtype="boolean")
+    result.loc[normalized.isin(["true", "t", "1", "yes", "y"])] = True
+    result.loc[normalized.isin(["false", "f", "0", "no", "n"])] = False
+    return result
+
+
+def normalize_boolean_feature_columns(
+    df: pd.DataFrame,
+    boolean_columns: list[str],
+) -> pd.DataFrame:
+    if not boolean_columns:
+        return df
+    normalized_df = df.copy()
+    for column_name in boolean_columns:
+        if column_name not in normalized_df.columns:
+            continue
+        normalized_df[column_name] = _normalized_bool(normalized_df[column_name]).astype("Float64")
+    return normalized_df
+
+
+def _normalized_status(series: pd.Series) -> pd.Series:
+    return series.astype("string").str.strip().str.upper()
+
+
+def drop_cheque_slip_schedule3_rule_rows(
+    df: pd.DataFrame,
+    dataset_name: str,
+) -> tuple[pd.DataFrame, dict[str, object]]:
+    required_columns = {
+        "dak_id",
+        "cheque_slip_id",
+        "cheque_slip_fk_dak",
+        "cheque_slip_record_status",
+        "cheque_slip_approved",
+        "schedule3_id",
+        "schedule3_record_status",
+    }
+    summary: dict[str, object] = {
+        "dropped_row_count": 0,
+        "rules_applied": [],
+    }
+    if dataset_name != "dak.cheque_slip.schedule3":
+        return df, summary
+    if not required_columns.issubset(df.columns):
+        missing_columns = sorted(required_columns - set(df.columns))
+        raise ValueError(
+            "Cannot apply cheque_slip/schedule3 training rule filter because required columns are missing: "
+            + ", ".join(missing_columns)
+        )
+
+    working_df = df.copy()
+    fk_key = working_df["cheque_slip_fk_dak"]
+    cheque_status = _normalized_status(working_df["cheque_slip_record_status"])
+    cheque_approved = _normalized_bool(working_df["cheque_slip_approved"])
+    schedule_status = _normalized_status(working_df["schedule3_record_status"])
+    has_schedule = working_df["schedule3_id"].notna()
+
+    stats = pd.DataFrame(
+        {
+            "fk_dak": fk_key,
+            "cheque_slip_id": working_df["cheque_slip_id"],
+            "schedule3_id": working_df["schedule3_id"],
+            "approved_v_cheque_id": working_df["cheque_slip_id"].where(
+                cheque_status.eq("V") & cheque_approved.eq(True)
+            ),
+            "schedule3_pv_id": working_df["schedule3_id"].where(
+                has_schedule & schedule_status.isin(["P", "V"])
+            ),
+        }
+    )
+    grouped = stats.dropna(subset=["fk_dak"]).groupby("fk_dak", dropna=True)
+    approved_cheque_counts = grouped["approved_v_cheque_id"].nunique(dropna=True)
+    schedule3_pv_counts = grouped["schedule3_pv_id"].nunique(dropna=True)
+
+    rule1_mask = (
+        cheque_status.eq("V")
+        & cheque_approved.eq(False)
+        & fk_key.notna()
+        & has_schedule.groupby(fk_key).transform("any").fillna(False)
+    )
+
+    approved_counts_by_row = fk_key.map(approved_cheque_counts).fillna(0).astype(int)
+    schedule_counts_by_row = fk_key.map(schedule3_pv_counts).fillna(0).astype(int)
+    rule2_mask = (
+        cheque_status.eq("V")
+        & cheque_approved.eq(True)
+        & fk_key.notna()
+        & approved_counts_by_row.ne(schedule_counts_by_row)
+    )
+
+    dropped_row_indexes: set[int] = set()
+    rule_summaries: list[dict[str, object]] = []
+    for rule_name, rule_mask in (
+        ("RULE_1_NOT_APPROVED_BUT_EXISTS_IN_SCHEDULE3", rule1_mask),
+        ("RULE_2_APPROVED_CHEQUE_COUNT_NOT_MATCHING_SCHEDULE3", rule2_mask),
+    ):
+        rule_indexes = set(working_df.index[rule_mask.fillna(False)].tolist())
+        if not rule_indexes:
+            continue
+        dropped_row_indexes.update(rule_indexes)
+        rule_summaries.append(
+            {
+                "rule_name": rule_name,
+                "dropped_row_count": len(rule_indexes),
+                "fk_dak_count": int(fk_key.loc[sorted(rule_indexes)].nunique(dropna=True)),
+            }
+        )
+
+    if dropped_row_indexes:
+        working_df = working_df.drop(index=sorted(dropped_row_indexes))
+
+    summary["dropped_row_count"] = len(dropped_row_indexes)
+    summary["rules_applied"] = rule_summaries
+    return working_df, summary
 
 
 def filter_columns(
@@ -864,7 +1142,6 @@ def build_training_pipeline(
         boolean_pipeline = Pipeline(
             steps=[
                 ("imputer", SimpleImputer(strategy="most_frequent")),
-                ("one_hot", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
             ]
         )
         transformers.append(("boolean", boolean_pipeline, boolean_columns))
@@ -873,7 +1150,7 @@ def build_training_pipeline(
         categorical_pipeline = Pipeline(
             steps=[
                 ("imputer", SimpleImputer(strategy="most_frequent")),
-                ("one_hot", OneHotEncoder(handle_unknown="ignore", sparse_output=False)),
+                ("one_hot", OneHotEncoder(handle_unknown="ignore", sparse_output=True)),
             ]
         )
         transformers.append(("categorical", categorical_pipeline, categorical_columns))
@@ -881,6 +1158,7 @@ def build_training_pipeline(
     preprocessor = ColumnTransformer(
         transformers=transformers,
         remainder="drop",
+        sparse_threshold=1.0,
     )
 
     return Pipeline(
@@ -910,9 +1188,7 @@ def get_transformed_feature_names(
         feature_names.extend(numeric_columns)
 
     if boolean_columns:
-        boolean_transformer = preprocessor.named_transformers_["boolean"]
-        boolean_one_hot: OneHotEncoder = boolean_transformer.named_steps["one_hot"]
-        feature_names.extend(boolean_one_hot.get_feature_names_out(boolean_columns).tolist())
+        feature_names.extend(boolean_columns)
 
     if categorical_columns:
         categorical_transformer = preprocessor.named_transformers_["categorical"]
@@ -999,7 +1275,7 @@ def build_column_operation_map(
     for column_name in numeric_columns:
         append_column_operation(operation_map, column_name, "numeric_standardized")
     for column_name in boolean_columns:
-        append_column_operation(operation_map, column_name, "boolean_one_hot_encoded")
+        append_column_operation(operation_map, column_name, "boolean_converted_to_numeric")
     for column_name in categorical_columns:
         append_column_operation(operation_map, column_name, "categorical_one_hot_encoded")
     for column_name in unsupported_columns:
@@ -1021,6 +1297,7 @@ def train_dataset(
     models_dir: Path,
     reports_dir: Path,
 ) -> dict:
+    effective_list_date_from = dataset_list_date_from(dataset_name, args)
     tables_in_dataset = [base_table, *join_tables]
     schema_df = merged_schema_for_tables(base_table, join_tables, schema_map)
     raw_joined_columns = raw_joined_columns_for_tables(tables_in_dataset, schema_map)
@@ -1028,6 +1305,7 @@ def train_dataset(
         base_table,
         join_tables,
         schema_map,
+        list_date_from=effective_list_date_from,
         list_date_cutoff=args.list_date_cutoff,
     )
     source_row_count = int(query_postgres(count_sql).iloc[0]["row_count"])
@@ -1036,7 +1314,10 @@ def train_dataset(
         base_table,
         join_tables,
         schema_map,
+        dataset_name=dataset_name,
+        list_date_from=effective_list_date_from,
         list_date_cutoff=args.list_date_cutoff,
+        max_training_rows=args.max_training_rows,
     )
     raw_df = query_postgres(sql)
     row_filtered_df, invoice_row_filter_summary = drop_voided_invoice_rows(raw_df, schema_df)
@@ -1068,6 +1349,7 @@ def train_dataset(
             categorical_cardinality_threshold=args.categorical_cardinality_threshold,
         )
     )
+    feature_ready_df = normalize_boolean_feature_columns(feature_ready_df, boolean_columns)
     feature_df = feature_ready_df.drop(columns=unsupported_columns, errors="ignore")
 
     if not numeric_columns and not boolean_columns and not categorical_columns:
@@ -1114,10 +1396,13 @@ def train_dataset(
             "dataset_name": dataset_name,
             "base_table": base_table,
             "join_tables": join_tables,
+            "list_date_from": effective_list_date_from,
             "list_date_cutoff": args.list_date_cutoff,
+            "max_training_rows": args.max_training_rows,
             "sql": sql,
             "pipeline": training_pipeline,
-            "raw_columns": raw_df.columns.tolist(),
+            "raw_columns": raw_joined_columns,
+            "model_raw_columns": raw_df.columns.tolist(),
             "raw_joined_columns": raw_joined_columns,
             "cleaned_columns": cleaned_df.columns.tolist(),
             "date_sequence_checked_columns": dated_df.columns.tolist(),
@@ -1146,7 +1431,9 @@ def train_dataset(
         "dataset_name": dataset_name,
         "base_table": base_table,
         "join_tables": join_tables,
+        "list_date_from": effective_list_date_from,
         "list_date_cutoff": args.list_date_cutoff,
+        "max_training_rows": args.max_training_rows,
         "join_sql": sql.strip(),
         "source_row_count": source_row_count,
         "queried_row_count": int(len(raw_df.index)),
@@ -1159,8 +1446,6 @@ def train_dataset(
         "cleaned_column_count": int(len(cleaned_df.columns)),
         "feature_input_column_count": int(len(feature_df.columns)),
         "transformed_feature_count": int(len(transformed_feature_names)),
-        "raw_columns": raw_df.columns.tolist(),
-        "raw_joined_columns": raw_joined_columns,
         "cleaned_columns": cleaned_df.columns.tolist(),
         "feature_input_columns": feature_df.columns.tolist(),
         "transformed_feature_names": transformed_feature_names,
@@ -1172,7 +1457,7 @@ def train_dataset(
         "original_date_columns_dropped_before_training": original_date_columns_dropped,
         "date_gap_features": created_gap_features,
         "numeric_columns_standardized": numeric_columns,
-        "boolean_columns_one_hot_encoded": boolean_columns,
+        "boolean_columns_converted_to_numeric": boolean_columns,
         "categorical_columns_one_hot_encoded": categorical_columns,
         "unsupported_columns_dropped_before_training": unsupported_columns,
         "column_operation_map": column_operation_map,
@@ -1226,6 +1511,9 @@ def main() -> None:
                 "dataset_name": report["dataset_name"],
                 "base_table": report["base_table"],
                 "join_tables": report["join_tables"],
+                "list_date_from": report["list_date_from"],
+                "list_date_cutoff": report["list_date_cutoff"],
+                "max_training_rows": report["max_training_rows"],
                 "source_row_count": report["source_row_count"],
                 "queried_row_count": report["queried_row_count"],
                 "post_invoice_filter_row_count": report["post_invoice_filter_row_count"],
@@ -1251,6 +1539,8 @@ def main() -> None:
             f"Trained {report['dataset_name']}: "
             f"{report['training_row_count']} training rows "
             f"(from {report['source_row_count']} source rows), "
+            f"list_date_from={report['list_date_from'] or 'none'}, "
+            f"list_date_cutoff={report['list_date_cutoff']}, "
             f"{report['transformed_feature_count']} transformed features, "
             f"{report['anomaly_count']} anomalies"
         )

@@ -10,6 +10,7 @@ from typing import Any, Callable, Dict, Optional, TypeVar, Tuple
 
 from app.core.valkey import delete as valkey_delete
 from app.core.valkey import delete_prefix as valkey_delete_prefix
+from app.core.valkey import count_prefix as valkey_count_prefix
 from app.core.valkey import get_json as valkey_get_json
 from app.core.valkey import set_json as valkey_set_json
 
@@ -106,7 +107,7 @@ class TTLCache:
         with self._lock:
             if key is None:
                 self._cache.clear()
-                logger.info(f"Cache cleared (all entries)")
+                logger.info("Cache cleared (all entries)")
             else:
                 if key in self._cache:
                     del self._cache[key]
@@ -137,7 +138,8 @@ class TTLCache:
     def size(self) -> int:
         """Get current cache size."""
         if self.namespace:
-            return 0
+            shared_count = valkey_count_prefix(f"{self.namespace}:")
+            return int(shared_count or 0)
         with self._lock:
             return len(self._cache)
 

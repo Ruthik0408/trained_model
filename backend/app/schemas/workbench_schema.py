@@ -213,46 +213,6 @@ class WorkbenchRunRequest(BaseModel):
         return _validate_safe_identifier(value, "source_database")
 
 
-class BuiltinRuleRequest(BaseModel):
-    """Payload for suggesting built-in feature rules from selected tables."""
-
-    model_config = ConfigDict(
-        json_schema_extra={
-            "example": {
-                "selected_tables": ["bills", "vendors"],
-                "joins": [
-                    {
-                        "left_table": "bills",
-                        "left_column": "vendor_id",
-                        "right_table": "vendors",
-                        "right_column": "vendor_id",
-                        "join_type": "left",
-                    }
-                ],
-                "from_date": "2025-01-01",
-                "to_date": "2025-12-31",
-            }
-        }
-    )
-
-    source_database: str | None = None
-    selected_tables: list[str] = Field(min_length=1, max_length=3)
-    joins: list[JoinConfig] = Field(default_factory=list)
-    from_date: date | None = None
-    to_date: date | None = None
-
-    @field_validator("selected_tables")
-    @classmethod
-    def validate_selected_tables(cls, value: list[str]) -> list[str]:
-        return [_validate_safe_identifier(item, "selected_tables") for item in value]
-
-    @field_validator("source_database")
-    @classmethod
-    def validate_source_database(cls, value: str | None) -> str | None:
-        if value is None:
-            return None
-        return _validate_safe_identifier(value, "source_database")
-
 class ColumnInfo(BaseModel):
     table_name: str
     column_name: str
@@ -309,27 +269,6 @@ class WorkbenchRunResponse(BaseModel):
     final_anomaly_count: int
     amount_total: float | None = None
     metrics: dict
-class ReviewTableRow(BaseModel):
-    serial_no: int
-    prediction_id: int
-    anomaly: str
-    reason: str | None = None
-    amount: float | None = None
-    total_amount: float = 0.0
-    review_status: str | None = None
-    feedback: str | None = None
-    bill_no: str | None = None
-    vendor_name: str | None = None
-    office_name: str | None = None
-    detected_on: str | None = None
-    anomaly_type: str | None = None
-    risk_score: float | None = None
-class ReviewTableResponse(BaseModel):
-    rows: list[ReviewTableRow]
-    total_amount: float = 0.0
-    total_rows: int
-    dataset_table: str | None = None
-    run_id: int | None = None
 class AnomalyListRow(BaseModel):
     id: int | str | None = None
     fk_dak: int | str | None = None

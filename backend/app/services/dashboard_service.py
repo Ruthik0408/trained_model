@@ -4,7 +4,7 @@ import logging
 from typing import Any
 
 import pandas as pd
-from sqlalchemy import text
+from sqlalchemy import bindparam, text
 from sqlalchemy.orm import Session
 
 from app.core.cache import DATASET_SUMMARY_CACHE, QUERY_RESULT_CACHE, TTLCache
@@ -18,7 +18,6 @@ from app.services.workbench.constants import (
     ISOLATION_RULE_COLUMN,
     ML_FEATURES_TABLE,
     ML_THRESHOLD_COLUMN,
-    RESULT_SCHEMA,
     REVIEW_PAYLOAD_COLUMN,
     RUN_ID_COLUMN,
     SELECTED_TABLES_COLUMN,
@@ -47,6 +46,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_REVIEW_PAGE_SIZE = 50
 _latest_dataset_cache = TTLCache(ttl_seconds=5.0, namespace="latest_dataset")
 _latest_run_id_cache = TTLCache(ttl_seconds=5.0, namespace="latest_run_id")
+_NO_LATEST_RUN_ID = "__NO_LATEST_RUN_ID__"
 
 def _sql_truthy(column_name: str) -> str:
     column_ref = _quote(column_name)
@@ -65,111 +65,6 @@ _ANOMALY_FILTER_CLAUSES: dict[str, str] = {
         ")"
     ),
 }
-
-def review_table_data(
-    db: Session,
-    dataset_table: str | None = None,
-    *,
-    anomaly_filter: str = "all",
-    limit: int | None = None,
-    offset: int = 0,
-    run_id: int | None = None,
-) -> dict[str, Any]:
-    cache_key = (
-        f"review_table:{dataset_table or 'latest'}:{anomaly_filter}:"
-        f"{limit or DEFAULT_REVIEW_PAGE_SIZE}:{offset}:{run_id or 'latest'}"
-    )
-    cached = QUERY_RESULT_CACHE.get(cache_key)
-    if cached is not None:
-        return cached
-    selected_dataset = dataset_table or _latest_dataset_table(db)
-    if not selected_dataset:
-        return {
-            "rows": [],
-            "total_amount": 0.0,
-            "total_rows": 0,
-            "dataset_table": None,
-        }
-
-    selected_run_id = run_id if run_id is not None else _latest_run_id_for_dataset(db, selected_dataset)
-    selected_ml_run_id = _ml_run_id_for_app_run(db, selected_run_id)
-    summary = _dataset_summary(
-        db,
-        selected_dataset,
-        anomaly_filter=anomaly_filter,
-        run_id=selected_ml_run_id,
-        app_run_id=selected_run_id,
-    )
-    review_data = review_rows_data(
-        db,
-        dataset_table=selected_dataset,
-        anomaly_filter=anomaly_filter,
-        limit=limit,
-        offset=offset,
-        run_id=selected_run_id,
-    )
-    rows = []
-    running_total = 0.0
-    for index, item in enumerate(review_data["rows"], start=1):
-        payload = item.get("row_payload_json") or {}
-        amount = _payload_amount(payload)
-        running_total += amount
-        reasons = item.get("reasons_json") or {}
-        risk_score = _safe_numeric_scalar(item.get("ml_score"), default=0.0) * 100.0
-        detected_on = _payload_text(
-            payload,
-            [
-                "reference_date",
-                "bill_date",
-                "invoice_date",
-                "list_date",
-                "created_at",
-                "cheque_slip_date",
-                "dp_sheet_date",
-            ],
-        )
-        vendor_name = _payload_text(
-            payload,
-            ["resolved_vendor_name", "vendor_name", "sender_name", "beneficiary_name"],
-        )
-        office_name = _payload_text(
-            payload,
-            ["resolved_office_name", "office_name", "resolved_section_name", "section_name"],
-        )
-        bill_no = _payload_text(
-            payload,
-            ["bill_no", "reference_no", "invoice_no", "invoice_number", "payment_detail"],
-            default=f"ID {item['prediction_id']}",
-        )
-        anomaly_type = ", ".join(reasons.get("reason_list", [])) or item.get("rule_codes") or "No reason"
-        rows.append(
-            {
-                "serial_no": index,
-                "prediction_id": item["prediction_id"],
-                "anomaly": "Yes" if item.get("final_label") else "No",
-                "reason": anomaly_type,
-                "amount": amount,
-                "total_amount": running_total,
-                "review_status": item.get("review_status"),
-                "feedback": item.get("feedback"),
-                "bill_no": bill_no,
-                "vendor_name": vendor_name or "Unknown Vendor",
-                "office_name": office_name or "Unknown Office",
-                "detected_on": detected_on,
-                "anomaly_type": anomaly_type,
-                "risk_score": round(risk_score, 2),
-            }
-        )
-    result = {
-        "rows": rows,
-        "total_amount": float(summary["total_amount"]),
-        "total_rows": int(summary["total_rows"]),
-        "dataset_table": selected_dataset,
-        "run_id": selected_run_id,
-        "pagination": review_data.get("pagination", {}),
-    }
-    QUERY_RESULT_CACHE.set(cache_key, result)
-    return result
 
 def review_rows_data(
     db: Session,
@@ -344,19 +239,35 @@ def anomaly_list_data(
     with _source_connect() as conn:
         table_option_rows = conn.execute(table_options_sql).mappings().all()
 
+    raw_filters_by_normalized: dict[str, list[str]] = {}
+    for row in table_option_rows:
+        raw_key = str(row.get("table_key") or "")
+        normalized_key = _normalize_selected_tables_key(raw_key)
+        if raw_key and normalized_key:
+            raw_filters_by_normalized.setdefault(normalized_key, []).append(raw_key)
+    table_option_counts: dict[str, int] = {}
+    for row in table_option_rows:
+        normalized_key = _normalize_selected_tables_key(row.get("table_key"))
+        if not normalized_key:
+            continue
+        table_option_counts[normalized_key] = table_option_counts.get(normalized_key, 0) + int(row.get("row_count") or 0)
     valid_table_filters = {
         str(row.get("table_key") or "")
         for row in table_option_rows
         if row.get("table_key") not in (None, "")
     }
-    if table_filter and table_filter not in valid_table_filters:
+    normalized_table_filter = _normalize_selected_tables_key(table_filter)
+    if table_filter and table_filter not in valid_table_filters and normalized_table_filter not in raw_filters_by_normalized:
         raise ValueError(f"Unknown table filter: {table_filter}")
+    table_filter_values = raw_filters_by_normalized.get(normalized_table_filter, [])
+    if table_filter and not table_filter_values:
+        table_filter_values = [table_filter]
 
     where_parts = []
     params: dict[str, Any] = {}
-    if table_filter:
-        where_parts.append(f"{_quote(SELECTED_TABLES_COLUMN)} = :table_filter")
-        params["table_filter"] = table_filter
+    if table_filter_values:
+        where_parts.append(f"{_quote(SELECTED_TABLES_COLUMN)} IN :table_filters")
+        params["table_filters"] = sorted(set(table_filter_values))
     if clean_anomaly_type == "rule":
         where_parts.append(_sql_truthy(USER_RULE_COLUMN))
     elif clean_anomaly_type == "ml":
@@ -390,6 +301,11 @@ def anomaly_list_data(
         {where_clause}
         """
     )
+    if table_filter_values:
+        expanding_filter = bindparam("table_filters", expanding=True)
+        page_sql = page_sql.bindparams(expanding_filter)
+        count_sql = count_sql.bindparams(expanding_filter)
+        feedback_sql = feedback_sql.bindparams(expanding_filter)
 
     with _source_connect() as conn:
         total_rows = int(conn.execute(count_sql, params).scalar() or 0)
@@ -408,11 +324,11 @@ def anomaly_list_data(
         },
         "table_options": [
             {
-                "value": str(row.get("table_key") or ""),
-                "label": _format_selected_tables_label(row.get("table_key")),
-                "row_count": int(row.get("row_count") or 0),
+                "value": table_key,
+                "label": _format_selected_tables_label(table_key),
+                "row_count": row_count,
             }
-            for row in table_option_rows
+            for table_key, row_count in sorted(table_option_counts.items())
         ],
         "pagination": {
             "limit": page_limit,
@@ -431,7 +347,7 @@ def _anomaly_list_row(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": _safe_json(row.get(SERIAL_COLUMN)),
         "fk_dak": _safe_json(row.get(FK_DAK_COLUMN)),
-        "table_key": _safe_json(row.get(SELECTED_TABLES_COLUMN)),
+        "table_key": _normalize_selected_tables_key(row.get(SELECTED_TABLES_COLUMN)),
         "table_label": _format_selected_tables_label(row.get(SELECTED_TABLES_COLUMN)),
         "anomaly_type": _anomaly_type_label(rule_flag, ml_flag),
         "anomaly_description": description,
@@ -470,13 +386,19 @@ def _anomaly_type_label(rule_flag: bool, ml_flag: bool) -> str:
     return "Anomaly"
 
 def _format_selected_tables_label(value: Any) -> str:
-    raw = str(value or "").strip()
+    raw = _normalize_selected_tables_key(value)
     if not raw:
         return "Unknown"
     tables = [part for part in raw.split(".") if part and part.lower() != "null"]
     if not tables:
         tables = [raw]
     return " + ".join(table.replace("_", " ") for table in tables)
+
+def _normalize_selected_tables_key(value: Any) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        return ""
+    return ".".join(part for part in raw.split(".") if part and part.lower() != "null")
 
 def report_data(
     db: Session,
@@ -583,13 +505,16 @@ def _latest_dataset_table(db: Session) -> str | None:
 def _latest_run_id_for_dataset(db: Session, dataset_table: str) -> int | None:
     cached = _latest_run_id_cache.get(dataset_table)
     if cached is not None:
-        return int(cached) if cached is not None else None
+        if cached == _NO_LATEST_RUN_ID:
+            return None
+        return int(cached)
     for run in _iter_recent_runs(db):
         metrics = run.metrics_json or {}
         if metrics.get("dataset_table") == dataset_table:
             value = int(run.run_id)
             _latest_run_id_cache.set(dataset_table, value)
             return value
+    _latest_run_id_cache.set(dataset_table, _NO_LATEST_RUN_ID)
     return None
 
 def _ml_run_id_for_app_run(db: Session, app_run_id: int | None) -> int | None:
@@ -833,14 +758,18 @@ def _dataset_row_to_prediction(
     payload = _dataset_payload(row)
     feature_payload = _parse_json_text(row.get(FEATURE_VALUES_COLUMN), {})
     ml_feature_signals = []
+    rule_evidence = []
     if isinstance(feature_payload, dict):
         raw_signals = feature_payload.get("__ml_explanation_signals")
         if isinstance(raw_signals, list):
             ml_feature_signals = [item for item in raw_signals if isinstance(item, dict)]
+        raw_rule_evidence = feature_payload.get("__rule_evidence")
+        if isinstance(raw_rule_evidence, list):
+            rule_evidence = [item for item in raw_rule_evidence if isinstance(item, dict)]
     if_reason = None
     if_reason_model = None
     if_reason_fallback = False
-    payload["review_key"] = row.get(SELECTED_TABLES_COLUMN)
+    payload["review_key"] = _normalize_selected_tables_key(row.get(SELECTED_TABLES_COLUMN))
     user_rule = _safe_bool(row.get(USER_RULE_COLUMN))
     isolation_rule = _safe_bool(row.get(ISOLATION_RULE_COLUMN))
     if not isolation_rule:
@@ -895,6 +824,7 @@ def _dataset_row_to_prediction(
             "if_score": if_score,
             "ml_threshold": ml_threshold,
             "ml_feature_signals": ml_feature_signals,
+            "rule_evidence": rule_evidence,
             "if_reason": if_reason,
             "if_reason_model": if_reason_model,
             "if_reason_fallback": if_reason_fallback,
@@ -1158,15 +1088,15 @@ def _fetch_name_map(
 ) -> dict[int, str]:
     if not ids:
         return {}
-    id_list = ",".join(str(int(value)) for value in sorted(ids))
+    id_values = [int(value) for value in sorted(ids)]
     sql = text(
         f"SELECT {_quote(id_column)} AS row_id, {_quote(value_column)} AS row_value "
         f"FROM {_source_table_ref(table_name)} "
-        f"WHERE {_quote(id_column)} IN ({id_list})"
-    )
+        f"WHERE {_quote(id_column)} IN :ids"
+    ).bindparams(bindparam("ids", expanding=True))
     try:
         with _source_connect() as conn:
-            rows = conn.execute(sql).mappings().all()
+            rows = conn.execute(sql, {"ids": id_values}).mappings().all()
     except Exception as exc:
         logger.warning("Skipping optional lookup table %s: %s", table_name, exc)
         return {}

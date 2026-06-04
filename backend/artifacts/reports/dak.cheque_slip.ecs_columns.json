@@ -1,0 +1,1756 @@
+{
+  "dataset_name": "dak.cheque_slip.ecs",
+  "base_table": "dak",
+  "join_tables": [
+    "cheque_slip",
+    "ecs"
+  ],
+  "list_date_from": "2025-01-01",
+  "list_date_cutoff": "2026-01-01",
+  "max_training_rows": 300000,
+  "join_sql": "SELECT\n            dak.\"id\" AS \"dak_id\", dak.\"list_no\" AS \"dak_list_no\", dak.\"dakid_no\" AS \"dak_dakid_no\", dak.\"fk_section\" AS \"dak_fk_section\", dak.\"fk_dak_type\" AS \"dak_fk_dak_type\", dak.\"fk_bill_type\" AS \"dak_fk_bill_type\", dak.\"fk_unit\" AS \"dak_fk_unit\", dak.\"fk_imprest\" AS \"dak_fk_imprest\", dak.\"fk_dad_employee\" AS \"dak_fk_dad_employee\", dak.\"fk_civ_employee\" AS \"dak_fk_civ_employee\", dak.\"emp_no\" AS \"dak_emp_no\", dak.\"gpf_pran_ppan_no\" AS \"dak_gpf_pran_ppan_no\", dak.\"dad_account_no\" AS \"dak_dad_account_no\", dak.\"reference_no\" AS \"dak_reference_no\", dak.\"reference_date\" AS \"dak_reference_date\", dak.\"subject\" AS \"dak_subject\", dak.\"bill_no\" AS \"dak_bill_no\", dak.\"bill_date\" AS \"dak_bill_date\", dak.\"amount\" AS \"dak_amount\", dak.\"disposal_no\" AS \"dak_disposal_no\", dak.\"disposal_date\" AS \"dak_disposal_date\", dak.\"fk_outward_dak\" AS \"dak_fk_outward_dak\", dak.\"record_status\" AS \"dak_record_status\", dak.\"reason\" AS \"dak_reason\", dak.\"remarks\" AS \"dak_remarks\", dak.\"fk_dak_entry_usr\" AS \"dak_fk_dak_entry_usr\", dak.\"fk_usr\" AS \"dak_fk_usr\", dak.\"task_no\" AS \"dak_task_no\", dak.\"rescheduled\" AS \"dak_rescheduled\", dak.\"fk_old_dak\" AS \"dak_fk_old_dak\", dak.\"multiple_entry\" AS \"dak_multiple_entry\", dak.\"temp_dak_id\" AS \"dak_temp_dak_id\", dak.\"created_at\" AS \"dak_created_at\", dak.\"fk_dad_office\" AS \"dak_fk_dad_office\", dak.\"fk_task_usr\" AS \"dak_fk_task_usr\", dak.\"fk_office_id\" AS \"dak_fk_office_id\", dak.\"month_year\" AS \"dak_month_year\", dak.\"dak_year\" AS \"dak_dak_year\", dak.\"priority\" AS \"dak_priority\", dak.\"list_date\" AS \"dak_list_date\", dak.\"fk_vendor\" AS \"dak_fk_vendor\", dak.\"sender_name\" AS \"dak_sender_name\", dak.\"sender_city\" AS \"dak_sender_city\", dak.\"mode_of_receipt\" AS \"dak_mode_of_receipt\", dak.\"regn_no\" AS \"dak_regn_no\", dak.\"security_grading\" AS \"dak_security_grading\", dak.\"gem_bill\" AS \"dak_gem_bill\", dak.\"fis_doc_no\" AS \"dak_fis_doc_no\", dak.\"fis_date\" AS \"dak_fis_date\", dak.\"fis_code_head\" AS \"dak_fis_code_head\", dak.\"fis_xml_file_no\" AS \"dak_fis_xml_file_no\", dak.\"fk_fis_imported_by\" AS \"dak_fk_fis_imported_by\", dak.\"fis_imported_at\" AS \"dak_fis_imported_at\", dak.\"pfms_bill\" AS \"dak_pfms_bill\", dak.\"pfms_sanction_id\" AS \"dak_pfms_sanction_id\", dak.\"pfms_sanction_date\" AS \"dak_pfms_sanction_date\", dak.\"fk_auditor_disposal\" AS \"dak_fk_auditor_disposal\", dak.\"fk_aao_disposal\" AS \"dak_fk_aao_disposal\", dak.\"fk_ao_disposal\" AS \"dak_fk_ao_disposal\", dak.\"auditor_disposal_date\" AS \"dak_auditor_disposal_date\", dak.\"aao_disposal_date\" AS \"dak_aao_disposal_date\", dak.\"ao_disposal_date\" AS \"dak_ao_disposal_date\", dak.\"kpi_bill_type\" AS \"dak_kpi_bill_type\", dak.\"msme_cat\" AS \"dak_msme_cat\", dak.\"make_cat\" AS \"dak_make_cat\", dak.\"exp_cat\" AS \"dak_exp_cat\", dak.\"codehead\" AS \"dak_codehead\", dak.\"major_head\" AS \"dak_major_head\", dak.\"uuid\" AS \"dak_uuid\", dak.\"fk_central_unit\" AS \"dak_fk_central_unit\", dak.\"fk_central_vendor\" AS \"dak_fk_central_vendor\", dak.\"fk_central_civ_employee\" AS \"dak_fk_central_civ_employee\", dak.\"file_path\" AS \"dak_file_path\", cheque_slip.\"id\" AS \"cheque_slip_id\", cheque_slip.\"fk_dak\" AS \"cheque_slip_fk_dak\", cheque_slip.\"fk_treasury_bank\" AS \"cheque_slip_fk_treasury_bank\", cheque_slip.\"fk_favour_bank\" AS \"cheque_slip_fk_favour_bank\", cheque_slip.\"payment_detail\" AS \"cheque_slip_payment_detail\", cheque_slip.\"account_no\" AS \"cheque_slip_account_no\", cheque_slip.\"amount\" AS \"cheque_slip_amount\", cheque_slip.\"npb_date\" AS \"cheque_slip_npb_date\", cheque_slip.\"dv_no\" AS \"cheque_slip_dv_no\", cheque_slip.\"cheque_slip_date\" AS \"cheque_slip_cheque_slip_date\", cheque_slip.\"dp_sheet_no\" AS \"cheque_slip_dp_sheet_no\", cheque_slip.\"schedule3_item_no\" AS \"cheque_slip_schedule3_item_no\", cheque_slip.\"fk_unit\" AS \"cheque_slip_fk_unit\", cheque_slip.\"fk_schedule3\" AS \"cheque_slip_fk_schedule3\", cheque_slip.\"fk_ecs_payment_mode\" AS \"cheque_slip_fk_ecs_payment_mode\", cheque_slip.\"fk_auditor\" AS \"cheque_slip_fk_auditor\", cheque_slip.\"fk_aao\" AS \"cheque_slip_fk_aao\", cheque_slip.\"fk_ao\" AS \"cheque_slip_fk_ao\", cheque_slip.\"auditor_date\" AS \"cheque_slip_auditor_date\", cheque_slip.\"aao_date\" AS \"cheque_slip_aao_date\", cheque_slip.\"ao_date\" AS \"cheque_slip_ao_date\", cheque_slip.\"approved\" AS \"cheque_slip_approved\", cheque_slip.\"selected\" AS \"cheque_slip_selected\", cheque_slip.\"created_at\" AS \"cheque_slip_created_at\", cheque_slip.\"fk_office_id\" AS \"cheque_slip_fk_office_id\", cheque_slip.\"fk_bank_pan_detail\" AS \"cheque_slip_fk_bank_pan_detail\", cheque_slip.\"record_status\" AS \"cheque_slip_record_status\", cheque_slip.\"email_date\" AS \"cheque_slip_email_date\", cheque_slip.\"email_sent\" AS \"cheque_slip_email_sent\", cheque_slip.\"ind_npb_date\" AS \"cheque_slip_ind_npb_date\", cheque_slip.\"fk_vendor\" AS \"cheque_slip_fk_vendor\", cheque_slip.\"fk_consolidated_dak\" AS \"cheque_slip_fk_consolidated_dak\", cheque_slip.\"fk_central_beneficiary\" AS \"cheque_slip_fk_central_beneficiary\", cheque_slip.\"fk_central_vendor\" AS \"cheque_slip_fk_central_vendor\", cheque_slip.\"fk_central_unit\" AS \"cheque_slip_fk_central_unit\", cheque_slip.\"fk_central_treasury_bank\" AS \"cheque_slip_fk_central_treasury_bank\", cheque_slip.\"fk_central_favour_bank\" AS \"cheque_slip_fk_central_favour_bank\", ecs.\"id\" AS \"ecs_id\", ecs.\"fk_bank_pan_detail\" AS \"ecs_fk_bank_pan_detail\", ecs.\"fk_dak\" AS \"ecs_fk_dak\", ecs.\"month\" AS \"ecs_month\", ecs.\"amount\" AS \"ecs_amount\", ecs.\"fk_ecs_payment_mode\" AS \"ecs_fk_ecs_payment_mode\", ecs.\"fk_ecs_payment_type\" AS \"ecs_fk_ecs_payment_type\", ecs.\"cmp_file_gen_date\" AS \"ecs_cmp_file_gen_date\", ecs.\"npb_date\" AS \"ecs_npb_date\", ecs.\"fk_schedule3\" AS \"ecs_fk_schedule3\", ecs.\"fk_cheque_slip\" AS \"ecs_fk_cheque_slip\", ecs.\"payment_reference_no\" AS \"ecs_payment_reference_no\", ecs.\"to_be_paid\" AS \"ecs_to_be_paid\", ecs.\"file_no\" AS \"ecs_file_no\", ecs.\"released\" AS \"ecs_released\", ecs.\"fk_auditor\" AS \"ecs_fk_auditor\", ecs.\"fk_aao\" AS \"ecs_fk_aao\", ecs.\"fk_ao\" AS \"ecs_fk_ao\", ecs.\"auditor_date\" AS \"ecs_auditor_date\", ecs.\"aao_date\" AS \"ecs_aao_date\", ecs.\"ao_date\" AS \"ecs_ao_date\", ecs.\"approved\" AS \"ecs_approved\", ecs.\"remarks\" AS \"ecs_remarks\", ecs.\"created_at\" AS \"ecs_created_at\", ecs.\"fk_office_id\" AS \"ecs_fk_office_id\", ecs.\"utr_no\" AS \"ecs_utr_no\", ecs.\"utr_date\" AS \"ecs_utr_date\", ecs.\"cmp_reference_no\" AS \"ecs_cmp_reference_no\", ecs.\"scroll_no\" AS \"ecs_scroll_no\", ecs.\"scroll_date\" AS \"ecs_scroll_date\", ecs.\"record_status\" AS \"ecs_record_status\", ecs.\"fk_go\" AS \"ecs_fk_go\", ecs.\"go_date\" AS \"ecs_go_date\", ecs.\"rollback\" AS \"ecs_rollback\", ecs.\"fk_auditor_rej\" AS \"ecs_fk_auditor_rej\", ecs.\"auditor_date_rej\" AS \"ecs_auditor_date_rej\", ecs.\"fk_aao_rej\" AS \"ecs_fk_aao_rej\", ecs.\"aao_date_rej\" AS \"ecs_aao_date_rej\", ecs.\"fk_ao_rej\" AS \"ecs_fk_ao_rej\", ecs.\"ao_date_rej\" AS \"ecs_ao_date_rej\", ecs.\"fk_auditor_accounts_rej\" AS \"ecs_fk_auditor_accounts_rej\", ecs.\"auditor_date_accounts_rej\" AS \"ecs_auditor_date_accounts_rej\", ecs.\"fk_aao_accounts_rej\" AS \"ecs_fk_aao_accounts_rej\", ecs.\"aao_date_accounts_rej\" AS \"ecs_aao_date_accounts_rej\", ecs.\"fk_ao_accounts_rej\" AS \"ecs_fk_ao_accounts_rej\", ecs.\"ao_date_accounts_rej\" AS \"ecs_ao_date_accounts_rej\", ecs.\"rejection_status\" AS \"ecs_rejection_status\", ecs.\"rejection_approved_ds\" AS \"ecs_rejection_approved_ds\", ecs.\"rejection_approved_as\" AS \"ecs_rejection_approved_as\", ecs.\"rejection_reason\" AS \"ecs_rejection_reason\", ecs.\"cda13_no\" AS \"ecs_cda13_no\", ecs.\"cda13_date\" AS \"ecs_cda13_date\", ecs.\"rejection_scroll_no\" AS \"ecs_rejection_scroll_no\", ecs.\"rejection_scroll_date\" AS \"ecs_rejection_scroll_date\", ecs.\"cmp_rejection_reason\" AS \"ecs_cmp_rejection_reason\", ecs.\"rollback_approved\" AS \"ecs_rollback_approved\", ecs.\"sub_office_code\" AS \"ecs_sub_office_code\", ecs.\"fk_cda13_bpd\" AS \"ecs_fk_cda13_bpd\", ecs.\"table_recoveries\" AS \"ecs_table_recoveries\", ecs.\"cmp_payment_status\" AS \"ecs_cmp_payment_status\", ecs.\"echs_sid\" AS \"ecs_echs_sid\", ecs.\"echs_claim_id\" AS \"ecs_echs_claim_id\", ecs.\"fk_central_beneficiary\" AS \"ecs_fk_central_beneficiary\", ecs.\"fk_cda13_central_beneficiary\" AS \"ecs_fk_cda13_central_beneficiary\"\n        FROM dak\n        JOIN cheque_slip ON dak.\"id\" = cheque_slip.\"fk_dak\"\nJOIN ecs ON cheque_slip.\"fk_dak\" = ecs.\"fk_dak\"\n        WHERE dak.list_date >= '2025-01-01' AND dak.list_date < '2026-01-01'\n    \n        ORDER BY dak.\"list_date\", dak.\"id\"\n        LIMIT 300000",
+  "source_row_count": 7715826,
+  "queried_row_count": 300000,
+  "post_invoice_filter_row_count": 300000,
+  "post_date_sequence_filter_row_count": 299787,
+  "training_row_count": 299787,
+  "anomaly_count": 14988,
+  "inlier_count": 284799,
+  "raw_column_count": 174,
+  "cleaned_column_count": 33,
+  "feature_input_column_count": 23,
+  "transformed_feature_count": 28,
+  "cleaned_columns": [
+    "dak_reference_date",
+    "dak_bill_date",
+    "dak_amount",
+    "dak_disposal_date",
+    "dak_record_status",
+    "dak_multiple_entry",
+    "dak_created_at",
+    "dak_month_year",
+    "dak_dak_year",
+    "dak_list_date",
+    "dak_kpi_bill_type",
+    "cheque_slip_amount",
+    "cheque_slip_cheque_slip_date",
+    "cheque_slip_auditor_date",
+    "cheque_slip_aao_date",
+    "cheque_slip_ao_date",
+    "cheque_slip_approved",
+    "cheque_slip_selected",
+    "cheque_slip_created_at",
+    "cheque_slip_record_status",
+    "ecs_month",
+    "ecs_amount",
+    "ecs_cmp_file_gen_date",
+    "ecs_to_be_paid",
+    "ecs_released",
+    "ecs_auditor_date",
+    "ecs_aao_date",
+    "ecs_approved",
+    "ecs_created_at",
+    "ecs_utr_date",
+    "ecs_scroll_date",
+    "ecs_record_status",
+    "ecs_cmp_payment_status"
+  ],
+  "feature_input_columns": [
+    "dak_amount",
+    "dak_record_status",
+    "dak_multiple_entry",
+    "dak_month_year",
+    "dak_dak_year",
+    "cheque_slip_amount",
+    "cheque_slip_approved",
+    "cheque_slip_selected",
+    "cheque_slip_record_status",
+    "ecs_month",
+    "ecs_amount",
+    "ecs_to_be_paid",
+    "ecs_released",
+    "ecs_approved",
+    "ecs_record_status",
+    "ecs_cmp_payment_status",
+    "gap_days_dak_bill_date_to_dak_reference_date",
+    "gap_days_ecs_cmp_file_gen_date_to_dak_disposal_date",
+    "gap_days_dak_reference_date_to_cheque_slip_auditor_date",
+    "gap_days_cheque_slip_auditor_date_to_cheque_slip_aao_date",
+    "gap_days_cheque_slip_aao_date_to_cheque_slip_ao_date",
+    "gap_days_dak_reference_date_to_ecs_auditor_date",
+    "gap_days_ecs_auditor_date_to_ecs_aao_date"
+  ],
+  "transformed_feature_names": [
+    "cheque_slip_amount",
+    "dak_amount",
+    "ecs_amount",
+    "gap_days_cheque_slip_aao_date_to_cheque_slip_ao_date",
+    "gap_days_cheque_slip_auditor_date_to_cheque_slip_aao_date",
+    "gap_days_dak_bill_date_to_dak_reference_date",
+    "gap_days_dak_reference_date_to_cheque_slip_auditor_date",
+    "gap_days_dak_reference_date_to_ecs_auditor_date",
+    "gap_days_ecs_auditor_date_to_ecs_aao_date",
+    "gap_days_ecs_cmp_file_gen_date_to_dak_disposal_date",
+    "dak_multiple_entry",
+    "cheque_slip_approved",
+    "cheque_slip_selected",
+    "ecs_to_be_paid",
+    "ecs_released",
+    "ecs_approved",
+    "dak_record_status_D",
+    "dak_month_year_01/2025",
+    "dak_month_year_12/2024",
+    "dak_dak_year_2024-2025",
+    "cheque_slip_record_status_R",
+    "cheque_slip_record_status_V",
+    "ecs_month_01/2025",
+    "ecs_month_02/2025",
+    "ecs_record_status_R",
+    "ecs_record_status_V",
+    "ecs_cmp_payment_status_1.0",
+    "ecs_cmp_payment_status_9.0"
+  ],
+  "invoice_row_filter_summary": {
+    "dropped_row_count": 0,
+    "tables_applied": []
+  },
+  "dropped_columns_summary": {
+    "high_null_columns": [
+      "cheque_slip_account_no",
+      "cheque_slip_email_date",
+      "cheque_slip_email_sent",
+      "cheque_slip_fk_central_treasury_bank",
+      "cheque_slip_fk_consolidated_dak",
+      "cheque_slip_fk_schedule3",
+      "cheque_slip_fk_treasury_bank",
+      "cheque_slip_ind_npb_date",
+      "cheque_slip_npb_date",
+      "cheque_slip_schedule3_item_no",
+      "dak_aao_disposal_date",
+      "dak_ao_disposal_date",
+      "dak_auditor_disposal_date",
+      "dak_codehead",
+      "dak_dad_account_no",
+      "dak_emp_no",
+      "dak_exp_cat",
+      "dak_file_path",
+      "dak_fis_code_head",
+      "dak_fis_date",
+      "dak_fis_doc_no",
+      "dak_fis_imported_at",
+      "dak_fis_xml_file_no",
+      "dak_fk_aao_disposal",
+      "dak_fk_ao_disposal",
+      "dak_fk_auditor_disposal",
+      "dak_fk_bill_type",
+      "dak_fk_central_civ_employee",
+      "dak_fk_central_vendor",
+      "dak_fk_civ_employee",
+      "dak_fk_dad_employee",
+      "dak_fk_dak_entry_usr",
+      "dak_fk_fis_imported_by",
+      "dak_fk_imprest",
+      "dak_fk_old_dak",
+      "dak_fk_outward_dak",
+      "dak_fk_usr",
+      "dak_fk_vendor",
+      "dak_gem_bill",
+      "dak_gpf_pran_ppan_no",
+      "dak_major_head",
+      "dak_make_cat",
+      "dak_mode_of_receipt",
+      "dak_msme_cat",
+      "dak_pfms_bill",
+      "dak_pfms_sanction_date",
+      "dak_pfms_sanction_id",
+      "dak_priority",
+      "dak_reason",
+      "dak_regn_no",
+      "dak_remarks",
+      "dak_rescheduled",
+      "dak_security_grading",
+      "dak_sender_city",
+      "dak_sender_name",
+      "dak_task_no",
+      "dak_temp_dak_id",
+      "dak_uuid",
+      "ecs_aao_date_accounts_rej",
+      "ecs_aao_date_rej",
+      "ecs_ao_date",
+      "ecs_ao_date_accounts_rej",
+      "ecs_ao_date_rej",
+      "ecs_auditor_date_accounts_rej",
+      "ecs_auditor_date_rej",
+      "ecs_cda13_date",
+      "ecs_cda13_no",
+      "ecs_cmp_rejection_reason",
+      "ecs_echs_claim_id",
+      "ecs_echs_sid",
+      "ecs_fk_aao_accounts_rej",
+      "ecs_fk_aao_rej",
+      "ecs_fk_ao",
+      "ecs_fk_ao_accounts_rej",
+      "ecs_fk_ao_rej",
+      "ecs_fk_auditor_accounts_rej",
+      "ecs_fk_auditor_rej",
+      "ecs_fk_cda13_bpd",
+      "ecs_fk_cda13_central_beneficiary",
+      "ecs_fk_ecs_payment_type",
+      "ecs_fk_go",
+      "ecs_go_date",
+      "ecs_npb_date",
+      "ecs_rejection_approved_as",
+      "ecs_rejection_approved_ds",
+      "ecs_rejection_reason",
+      "ecs_rejection_scroll_date",
+      "ecs_rejection_scroll_no",
+      "ecs_rejection_status",
+      "ecs_remarks",
+      "ecs_rollback",
+      "ecs_rollback_approved",
+      "ecs_sub_office_code",
+      "ecs_table_recoveries"
+    ],
+    "id_like_columns": [
+      "cheque_slip_dp_sheet_no",
+      "cheque_slip_dv_no",
+      "cheque_slip_fk_aao",
+      "cheque_slip_fk_ao",
+      "cheque_slip_fk_auditor",
+      "cheque_slip_fk_bank_pan_detail",
+      "cheque_slip_fk_central_beneficiary",
+      "cheque_slip_fk_central_favour_bank",
+      "cheque_slip_fk_central_unit",
+      "cheque_slip_fk_central_vendor",
+      "cheque_slip_fk_dak",
+      "cheque_slip_fk_ecs_payment_mode",
+      "cheque_slip_fk_favour_bank",
+      "cheque_slip_fk_office_id",
+      "cheque_slip_fk_unit",
+      "cheque_slip_fk_vendor",
+      "cheque_slip_id",
+      "dak_bill_no",
+      "dak_dakid_no",
+      "dak_disposal_no",
+      "dak_fk_central_unit",
+      "dak_fk_dad_office",
+      "dak_fk_dak_type",
+      "dak_fk_office_id",
+      "dak_fk_section",
+      "dak_fk_task_usr",
+      "dak_fk_unit",
+      "dak_id",
+      "dak_list_no",
+      "dak_reference_no",
+      "ecs_cmp_reference_no",
+      "ecs_file_no",
+      "ecs_fk_aao",
+      "ecs_fk_auditor",
+      "ecs_fk_bank_pan_detail",
+      "ecs_fk_central_beneficiary",
+      "ecs_fk_cheque_slip",
+      "ecs_fk_dak",
+      "ecs_fk_ecs_payment_mode",
+      "ecs_fk_office_id",
+      "ecs_fk_schedule3",
+      "ecs_id",
+      "ecs_payment_reference_no",
+      "ecs_scroll_no",
+      "ecs_utr_no"
+    ],
+    "text_like_columns": [
+      "cheque_slip_payment_detail",
+      "dak_subject"
+    ],
+    "long_varchar_columns": [
+      "dak_bill_no",
+      "dak_dakid_no",
+      "dak_disposal_no",
+      "dak_reference_no",
+      "ecs_cmp_reference_no",
+      "ecs_file_no",
+      "ecs_payment_reference_no",
+      "ecs_utr_no"
+    ],
+    "final_dropped_columns": [
+      "cheque_slip_account_no",
+      "cheque_slip_dp_sheet_no",
+      "cheque_slip_dv_no",
+      "cheque_slip_email_date",
+      "cheque_slip_email_sent",
+      "cheque_slip_fk_aao",
+      "cheque_slip_fk_ao",
+      "cheque_slip_fk_auditor",
+      "cheque_slip_fk_bank_pan_detail",
+      "cheque_slip_fk_central_beneficiary",
+      "cheque_slip_fk_central_favour_bank",
+      "cheque_slip_fk_central_treasury_bank",
+      "cheque_slip_fk_central_unit",
+      "cheque_slip_fk_central_vendor",
+      "cheque_slip_fk_consolidated_dak",
+      "cheque_slip_fk_dak",
+      "cheque_slip_fk_ecs_payment_mode",
+      "cheque_slip_fk_favour_bank",
+      "cheque_slip_fk_office_id",
+      "cheque_slip_fk_schedule3",
+      "cheque_slip_fk_treasury_bank",
+      "cheque_slip_fk_unit",
+      "cheque_slip_fk_vendor",
+      "cheque_slip_id",
+      "cheque_slip_ind_npb_date",
+      "cheque_slip_npb_date",
+      "cheque_slip_payment_detail",
+      "cheque_slip_schedule3_item_no",
+      "dak_aao_disposal_date",
+      "dak_ao_disposal_date",
+      "dak_auditor_disposal_date",
+      "dak_bill_no",
+      "dak_codehead",
+      "dak_dad_account_no",
+      "dak_dakid_no",
+      "dak_disposal_no",
+      "dak_emp_no",
+      "dak_exp_cat",
+      "dak_file_path",
+      "dak_fis_code_head",
+      "dak_fis_date",
+      "dak_fis_doc_no",
+      "dak_fis_imported_at",
+      "dak_fis_xml_file_no",
+      "dak_fk_aao_disposal",
+      "dak_fk_ao_disposal",
+      "dak_fk_auditor_disposal",
+      "dak_fk_bill_type",
+      "dak_fk_central_civ_employee",
+      "dak_fk_central_unit",
+      "dak_fk_central_vendor",
+      "dak_fk_civ_employee",
+      "dak_fk_dad_employee",
+      "dak_fk_dad_office",
+      "dak_fk_dak_entry_usr",
+      "dak_fk_dak_type",
+      "dak_fk_fis_imported_by",
+      "dak_fk_imprest",
+      "dak_fk_office_id",
+      "dak_fk_old_dak",
+      "dak_fk_outward_dak",
+      "dak_fk_section",
+      "dak_fk_task_usr",
+      "dak_fk_unit",
+      "dak_fk_usr",
+      "dak_fk_vendor",
+      "dak_gem_bill",
+      "dak_gpf_pran_ppan_no",
+      "dak_id",
+      "dak_list_no",
+      "dak_major_head",
+      "dak_make_cat",
+      "dak_mode_of_receipt",
+      "dak_msme_cat",
+      "dak_pfms_bill",
+      "dak_pfms_sanction_date",
+      "dak_pfms_sanction_id",
+      "dak_priority",
+      "dak_reason",
+      "dak_reference_no",
+      "dak_regn_no",
+      "dak_remarks",
+      "dak_rescheduled",
+      "dak_security_grading",
+      "dak_sender_city",
+      "dak_sender_name",
+      "dak_subject",
+      "dak_task_no",
+      "dak_temp_dak_id",
+      "dak_uuid",
+      "ecs_aao_date_accounts_rej",
+      "ecs_aao_date_rej",
+      "ecs_ao_date",
+      "ecs_ao_date_accounts_rej",
+      "ecs_ao_date_rej",
+      "ecs_auditor_date_accounts_rej",
+      "ecs_auditor_date_rej",
+      "ecs_cda13_date",
+      "ecs_cda13_no",
+      "ecs_cmp_reference_no",
+      "ecs_cmp_rejection_reason",
+      "ecs_echs_claim_id",
+      "ecs_echs_sid",
+      "ecs_file_no",
+      "ecs_fk_aao",
+      "ecs_fk_aao_accounts_rej",
+      "ecs_fk_aao_rej",
+      "ecs_fk_ao",
+      "ecs_fk_ao_accounts_rej",
+      "ecs_fk_ao_rej",
+      "ecs_fk_auditor",
+      "ecs_fk_auditor_accounts_rej",
+      "ecs_fk_auditor_rej",
+      "ecs_fk_bank_pan_detail",
+      "ecs_fk_cda13_bpd",
+      "ecs_fk_cda13_central_beneficiary",
+      "ecs_fk_central_beneficiary",
+      "ecs_fk_cheque_slip",
+      "ecs_fk_dak",
+      "ecs_fk_ecs_payment_mode",
+      "ecs_fk_ecs_payment_type",
+      "ecs_fk_go",
+      "ecs_fk_office_id",
+      "ecs_fk_schedule3",
+      "ecs_go_date",
+      "ecs_id",
+      "ecs_npb_date",
+      "ecs_payment_reference_no",
+      "ecs_rejection_approved_as",
+      "ecs_rejection_approved_ds",
+      "ecs_rejection_reason",
+      "ecs_rejection_scroll_date",
+      "ecs_rejection_scroll_no",
+      "ecs_rejection_status",
+      "ecs_remarks",
+      "ecs_rollback",
+      "ecs_rollback_approved",
+      "ecs_scroll_no",
+      "ecs_sub_office_code",
+      "ecs_table_recoveries",
+      "ecs_utr_no"
+    ]
+  },
+  "converted_date_columns": [
+    "dak_reference_date",
+    "dak_bill_date",
+    "dak_disposal_date",
+    "dak_created_at",
+    "dak_list_date",
+    "cheque_slip_cheque_slip_date",
+    "cheque_slip_auditor_date",
+    "cheque_slip_aao_date",
+    "cheque_slip_ao_date",
+    "cheque_slip_created_at",
+    "ecs_cmp_file_gen_date",
+    "ecs_auditor_date",
+    "ecs_aao_date",
+    "ecs_created_at",
+    "ecs_utr_date",
+    "ecs_scroll_date"
+  ],
+  "date_stage_plan": {
+    "global_stage_columns": {
+      "invoice_date": null,
+      "bill_date": "dak_bill_date",
+      "reference_date": "dak_reference_date",
+      "dp_sheet_date": null,
+      "cmp_date": "ecs_cmp_file_gen_date"
+    },
+    "same_table_stage_columns": {
+      "dak": {
+        "go_date": null,
+        "auditor_stage": null,
+        "aao_stage": null,
+        "disposal_date": "dak_disposal_date",
+        "ao_stage": null
+      },
+      "cheque_slip": {
+        "go_date": null,
+        "auditor_stage": "cheque_slip_auditor_date",
+        "aao_stage": "cheque_slip_aao_date",
+        "disposal_date": null,
+        "ao_stage": "cheque_slip_ao_date"
+      },
+      "ecs": {
+        "go_date": null,
+        "auditor_stage": "ecs_auditor_date",
+        "aao_stage": "ecs_aao_date",
+        "disposal_date": null,
+        "ao_stage": null
+      }
+    },
+    "table_paths": {
+      "dak": [
+        {
+          "stage_name": "invoice_date",
+          "column_name": null
+        },
+        {
+          "stage_name": "bill_date",
+          "column_name": "dak_bill_date"
+        },
+        {
+          "stage_name": "reference_date",
+          "column_name": "dak_reference_date"
+        },
+        {
+          "stage_name": "auditor_stage",
+          "column_name": null
+        },
+        {
+          "stage_name": "aao_stage",
+          "column_name": null
+        },
+        {
+          "stage_name": "ao_stage",
+          "column_name": null
+        },
+        {
+          "stage_name": "go_date",
+          "column_name": null
+        },
+        {
+          "stage_name": "dp_sheet_date",
+          "column_name": null
+        },
+        {
+          "stage_name": "cmp_date",
+          "column_name": "ecs_cmp_file_gen_date"
+        },
+        {
+          "stage_name": "disposal_date",
+          "column_name": "dak_disposal_date"
+        }
+      ],
+      "cheque_slip": [
+        {
+          "stage_name": "invoice_date",
+          "column_name": null
+        },
+        {
+          "stage_name": "bill_date",
+          "column_name": "dak_bill_date"
+        },
+        {
+          "stage_name": "reference_date",
+          "column_name": "dak_reference_date"
+        },
+        {
+          "stage_name": "auditor_stage",
+          "column_name": "cheque_slip_auditor_date"
+        },
+        {
+          "stage_name": "aao_stage",
+          "column_name": "cheque_slip_aao_date"
+        },
+        {
+          "stage_name": "ao_stage",
+          "column_name": "cheque_slip_ao_date"
+        },
+        {
+          "stage_name": "go_date",
+          "column_name": null
+        },
+        {
+          "stage_name": "dp_sheet_date",
+          "column_name": null
+        },
+        {
+          "stage_name": "cmp_date",
+          "column_name": "ecs_cmp_file_gen_date"
+        },
+        {
+          "stage_name": "disposal_date",
+          "column_name": null
+        }
+      ],
+      "ecs": [
+        {
+          "stage_name": "invoice_date",
+          "column_name": null
+        },
+        {
+          "stage_name": "bill_date",
+          "column_name": "dak_bill_date"
+        },
+        {
+          "stage_name": "reference_date",
+          "column_name": "dak_reference_date"
+        },
+        {
+          "stage_name": "auditor_stage",
+          "column_name": "ecs_auditor_date"
+        },
+        {
+          "stage_name": "aao_stage",
+          "column_name": "ecs_aao_date"
+        },
+        {
+          "stage_name": "ao_stage",
+          "column_name": null
+        },
+        {
+          "stage_name": "go_date",
+          "column_name": null
+        },
+        {
+          "stage_name": "dp_sheet_date",
+          "column_name": null
+        },
+        {
+          "stage_name": "cmp_date",
+          "column_name": "ecs_cmp_file_gen_date"
+        },
+        {
+          "stage_name": "disposal_date",
+          "column_name": null
+        }
+      ]
+    }
+  },
+  "date_sequence_summary": {
+    "dropped_row_count": 213,
+    "checks": [
+      {
+        "table_name": "dak",
+        "previous_stage": "invoice_date",
+        "next_stage": "bill_date",
+        "previous_column": null,
+        "next_column": "dak_bill_date",
+        "rows_checked": 0,
+        "invalid_row_count": 0,
+        "status": "skipped_missing_column"
+      },
+      {
+        "table_name": "dak",
+        "previous_stage": "bill_date",
+        "next_stage": "reference_date",
+        "previous_column": "dak_bill_date",
+        "next_column": "dak_reference_date",
+        "rows_checked": 299729,
+        "invalid_row_count": 213,
+        "status": "checked"
+      },
+      {
+        "table_name": "dak",
+        "previous_stage": "reference_date",
+        "next_stage": "auditor_stage",
+        "previous_column": "dak_reference_date",
+        "next_column": null,
+        "rows_checked": 0,
+        "invalid_row_count": 0,
+        "status": "skipped_missing_column"
+      },
+      {
+        "table_name": "dak",
+        "previous_stage": "auditor_stage",
+        "next_stage": "aao_stage",
+        "previous_column": null,
+        "next_column": null,
+        "rows_checked": 0,
+        "invalid_row_count": 0,
+        "status": "skipped_missing_column"
+      },
+      {
+        "table_name": "dak",
+        "previous_stage": "aao_stage",
+        "next_stage": "ao_stage",
+        "previous_column": null,
+        "next_column": null,
+        "rows_checked": 0,
+        "invalid_row_count": 0,
+        "status": "skipped_missing_column"
+      },
+      {
+        "table_name": "dak",
+        "previous_stage": "ao_stage",
+        "next_stage": "go_date",
+        "previous_column": null,
+        "next_column": null,
+        "rows_checked": 0,
+        "invalid_row_count": 0,
+        "status": "skipped_missing_column"
+      },
+      {
+        "table_name": "dak",
+        "previous_stage": "go_date",
+        "next_stage": "dp_sheet_date",
+        "previous_column": null,
+        "next_column": null,
+        "rows_checked": 0,
+        "invalid_row_count": 0,
+        "status": "skipped_missing_column"
+      },
+      {
+        "table_name": "dak",
+        "previous_stage": "dp_sheet_date",
+        "next_stage": "cmp_date",
+        "previous_column": null,
+        "next_column": "ecs_cmp_file_gen_date",
+        "rows_checked": 0,
+        "invalid_row_count": 0,
+        "status": "skipped_missing_column"
+      },
+      {
+        "table_name": "dak",
+        "previous_stage": "cmp_date",
+        "next_stage": "disposal_date",
+        "previous_column": "ecs_cmp_file_gen_date",
+        "next_column": "dak_disposal_date",
+        "rows_checked": 300000,
+        "invalid_row_count": 0,
+        "status": "checked"
+      },
+      {
+        "table_name": "cheque_slip",
+        "previous_stage": "invoice_date",
+        "next_stage": "bill_date",
+        "previous_column": null,
+        "next_column": "dak_bill_date",
+        "rows_checked": 0,
+        "invalid_row_count": 0,
+        "status": "skipped_missing_column"
+      },
+      {
+        "table_name": "cheque_slip",
+        "previous_stage": "bill_date",
+        "next_stage": "reference_date",
+        "previous_column": "dak_bill_date",
+        "next_column": "dak_reference_date",
+        "rows_checked": 299729,
+        "invalid_row_count": 213,
+        "status": "checked"
+      },
+      {
+        "table_name": "cheque_slip",
+        "previous_stage": "reference_date",
+        "next_stage": "auditor_stage",
+        "previous_column": "dak_reference_date",
+        "next_column": "cheque_slip_auditor_date",
+        "rows_checked": 79705,
+        "invalid_row_count": 0,
+        "status": "checked"
+      },
+      {
+        "table_name": "cheque_slip",
+        "previous_stage": "auditor_stage",
+        "next_stage": "aao_stage",
+        "previous_column": "cheque_slip_auditor_date",
+        "next_column": "cheque_slip_aao_date",
+        "rows_checked": 76568,
+        "invalid_row_count": 0,
+        "status": "checked"
+      },
+      {
+        "table_name": "cheque_slip",
+        "previous_stage": "aao_stage",
+        "next_stage": "ao_stage",
+        "previous_column": "cheque_slip_aao_date",
+        "next_column": "cheque_slip_ao_date",
+        "rows_checked": 277773,
+        "invalid_row_count": 0,
+        "status": "checked"
+      },
+      {
+        "table_name": "cheque_slip",
+        "previous_stage": "ao_stage",
+        "next_stage": "go_date",
+        "previous_column": "cheque_slip_ao_date",
+        "next_column": null,
+        "rows_checked": 0,
+        "invalid_row_count": 0,
+        "status": "skipped_missing_column"
+      },
+      {
+        "table_name": "cheque_slip",
+        "previous_stage": "go_date",
+        "next_stage": "dp_sheet_date",
+        "previous_column": null,
+        "next_column": null,
+        "rows_checked": 0,
+        "invalid_row_count": 0,
+        "status": "skipped_missing_column"
+      },
+      {
+        "table_name": "cheque_slip",
+        "previous_stage": "dp_sheet_date",
+        "next_stage": "cmp_date",
+        "previous_column": null,
+        "next_column": "ecs_cmp_file_gen_date",
+        "rows_checked": 0,
+        "invalid_row_count": 0,
+        "status": "skipped_missing_column"
+      },
+      {
+        "table_name": "cheque_slip",
+        "previous_stage": "cmp_date",
+        "next_stage": "disposal_date",
+        "previous_column": "ecs_cmp_file_gen_date",
+        "next_column": null,
+        "rows_checked": 0,
+        "invalid_row_count": 0,
+        "status": "skipped_missing_column"
+      },
+      {
+        "table_name": "ecs",
+        "previous_stage": "invoice_date",
+        "next_stage": "bill_date",
+        "previous_column": null,
+        "next_column": "dak_bill_date",
+        "rows_checked": 0,
+        "invalid_row_count": 0,
+        "status": "skipped_missing_column"
+      },
+      {
+        "table_name": "ecs",
+        "previous_stage": "bill_date",
+        "next_stage": "reference_date",
+        "previous_column": "dak_bill_date",
+        "next_column": "dak_reference_date",
+        "rows_checked": 299729,
+        "invalid_row_count": 213,
+        "status": "checked"
+      },
+      {
+        "table_name": "ecs",
+        "previous_stage": "reference_date",
+        "next_stage": "auditor_stage",
+        "previous_column": "dak_reference_date",
+        "next_column": "ecs_auditor_date",
+        "rows_checked": 297312,
+        "invalid_row_count": 0,
+        "status": "checked"
+      },
+      {
+        "table_name": "ecs",
+        "previous_stage": "auditor_stage",
+        "next_stage": "aao_stage",
+        "previous_column": "ecs_auditor_date",
+        "next_column": "ecs_aao_date",
+        "rows_checked": 296611,
+        "invalid_row_count": 0,
+        "status": "checked"
+      },
+      {
+        "table_name": "ecs",
+        "previous_stage": "aao_stage",
+        "next_stage": "ao_stage",
+        "previous_column": "ecs_aao_date",
+        "next_column": null,
+        "rows_checked": 0,
+        "invalid_row_count": 0,
+        "status": "skipped_missing_column"
+      },
+      {
+        "table_name": "ecs",
+        "previous_stage": "ao_stage",
+        "next_stage": "go_date",
+        "previous_column": null,
+        "next_column": null,
+        "rows_checked": 0,
+        "invalid_row_count": 0,
+        "status": "skipped_missing_column"
+      },
+      {
+        "table_name": "ecs",
+        "previous_stage": "go_date",
+        "next_stage": "dp_sheet_date",
+        "previous_column": null,
+        "next_column": null,
+        "rows_checked": 0,
+        "invalid_row_count": 0,
+        "status": "skipped_missing_column"
+      },
+      {
+        "table_name": "ecs",
+        "previous_stage": "dp_sheet_date",
+        "next_stage": "cmp_date",
+        "previous_column": null,
+        "next_column": "ecs_cmp_file_gen_date",
+        "rows_checked": 0,
+        "invalid_row_count": 0,
+        "status": "skipped_missing_column"
+      },
+      {
+        "table_name": "ecs",
+        "previous_stage": "cmp_date",
+        "next_stage": "disposal_date",
+        "previous_column": "ecs_cmp_file_gen_date",
+        "next_column": null,
+        "rows_checked": 0,
+        "invalid_row_count": 0,
+        "status": "skipped_missing_column"
+      }
+    ]
+  },
+  "original_date_columns_dropped_before_training": [
+    "dak_reference_date",
+    "dak_bill_date",
+    "dak_disposal_date",
+    "dak_created_at",
+    "dak_list_date",
+    "cheque_slip_cheque_slip_date",
+    "cheque_slip_auditor_date",
+    "cheque_slip_aao_date",
+    "cheque_slip_ao_date",
+    "cheque_slip_created_at",
+    "ecs_cmp_file_gen_date",
+    "ecs_auditor_date",
+    "ecs_aao_date",
+    "ecs_created_at",
+    "ecs_utr_date",
+    "ecs_scroll_date"
+  ],
+  "date_gap_features": [
+    {
+      "table_name": "dak",
+      "feature_name": "gap_days_dak_bill_date_to_dak_reference_date",
+      "previous_stage": "bill_date",
+      "next_stage": "reference_date",
+      "previous_column": "dak_bill_date",
+      "next_column": "dak_reference_date"
+    },
+    {
+      "table_name": "dak",
+      "feature_name": "gap_days_ecs_cmp_file_gen_date_to_dak_disposal_date",
+      "previous_stage": "cmp_date",
+      "next_stage": "disposal_date",
+      "previous_column": "ecs_cmp_file_gen_date",
+      "next_column": "dak_disposal_date"
+    },
+    {
+      "table_name": "cheque_slip",
+      "feature_name": "gap_days_dak_reference_date_to_cheque_slip_auditor_date",
+      "previous_stage": "reference_date",
+      "next_stage": "auditor_stage",
+      "previous_column": "dak_reference_date",
+      "next_column": "cheque_slip_auditor_date"
+    },
+    {
+      "table_name": "cheque_slip",
+      "feature_name": "gap_days_cheque_slip_auditor_date_to_cheque_slip_aao_date",
+      "previous_stage": "auditor_stage",
+      "next_stage": "aao_stage",
+      "previous_column": "cheque_slip_auditor_date",
+      "next_column": "cheque_slip_aao_date"
+    },
+    {
+      "table_name": "cheque_slip",
+      "feature_name": "gap_days_cheque_slip_aao_date_to_cheque_slip_ao_date",
+      "previous_stage": "aao_stage",
+      "next_stage": "ao_stage",
+      "previous_column": "cheque_slip_aao_date",
+      "next_column": "cheque_slip_ao_date"
+    },
+    {
+      "table_name": "ecs",
+      "feature_name": "gap_days_dak_reference_date_to_ecs_auditor_date",
+      "previous_stage": "reference_date",
+      "next_stage": "auditor_stage",
+      "previous_column": "dak_reference_date",
+      "next_column": "ecs_auditor_date"
+    },
+    {
+      "table_name": "ecs",
+      "feature_name": "gap_days_ecs_auditor_date_to_ecs_aao_date",
+      "previous_stage": "auditor_stage",
+      "next_stage": "aao_stage",
+      "previous_column": "ecs_auditor_date",
+      "next_column": "ecs_aao_date"
+    }
+  ],
+  "numeric_columns_standardized": [
+    "cheque_slip_amount",
+    "dak_amount",
+    "ecs_amount",
+    "gap_days_cheque_slip_aao_date_to_cheque_slip_ao_date",
+    "gap_days_cheque_slip_auditor_date_to_cheque_slip_aao_date",
+    "gap_days_dak_bill_date_to_dak_reference_date",
+    "gap_days_dak_reference_date_to_cheque_slip_auditor_date",
+    "gap_days_dak_reference_date_to_ecs_auditor_date",
+    "gap_days_ecs_auditor_date_to_ecs_aao_date",
+    "gap_days_ecs_cmp_file_gen_date_to_dak_disposal_date"
+  ],
+  "boolean_columns_converted_to_numeric": [
+    "dak_multiple_entry",
+    "cheque_slip_approved",
+    "cheque_slip_selected",
+    "ecs_to_be_paid",
+    "ecs_released",
+    "ecs_approved"
+  ],
+  "categorical_columns_one_hot_encoded": [
+    "dak_record_status",
+    "dak_month_year",
+    "dak_dak_year",
+    "cheque_slip_record_status",
+    "ecs_month",
+    "ecs_record_status",
+    "ecs_cmp_payment_status"
+  ],
+  "unsupported_columns_dropped_before_training": [
+    "dak_kpi_bill_type"
+  ],
+  "column_operation_map": {
+    "cheque_slip_aao_date": [
+      "selected_from_sql",
+      "converted_to_datetime_for_checks",
+      "used_in_date_sequence_check",
+      "dropped_raw_date_before_training",
+      "used_for_date_gap_feature"
+    ],
+    "cheque_slip_account_no": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "cheque_slip_amount": [
+      "selected_from_sql",
+      "numeric_standardized"
+    ],
+    "cheque_slip_ao_date": [
+      "selected_from_sql",
+      "converted_to_datetime_for_checks",
+      "used_in_date_sequence_check",
+      "dropped_raw_date_before_training",
+      "used_for_date_gap_feature"
+    ],
+    "cheque_slip_approved": [
+      "selected_from_sql",
+      "boolean_converted_to_numeric"
+    ],
+    "cheque_slip_auditor_date": [
+      "selected_from_sql",
+      "converted_to_datetime_for_checks",
+      "used_in_date_sequence_check",
+      "dropped_raw_date_before_training",
+      "used_for_date_gap_feature"
+    ],
+    "cheque_slip_cheque_slip_date": [
+      "selected_from_sql",
+      "converted_to_datetime_for_checks",
+      "dropped_raw_date_before_training"
+    ],
+    "cheque_slip_created_at": [
+      "selected_from_sql",
+      "converted_to_datetime_for_checks",
+      "dropped_raw_date_before_training"
+    ],
+    "cheque_slip_dp_sheet_no": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "cheque_slip_dv_no": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "cheque_slip_email_date": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "cheque_slip_email_sent": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "cheque_slip_fk_aao": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "cheque_slip_fk_ao": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "cheque_slip_fk_auditor": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "cheque_slip_fk_bank_pan_detail": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "cheque_slip_fk_central_beneficiary": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "cheque_slip_fk_central_favour_bank": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "cheque_slip_fk_central_treasury_bank": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "cheque_slip_fk_central_unit": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "cheque_slip_fk_central_vendor": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "cheque_slip_fk_consolidated_dak": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "cheque_slip_fk_dak": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "cheque_slip_fk_ecs_payment_mode": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "cheque_slip_fk_favour_bank": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "cheque_slip_fk_office_id": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "cheque_slip_fk_schedule3": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "cheque_slip_fk_treasury_bank": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "cheque_slip_fk_unit": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "cheque_slip_fk_vendor": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "cheque_slip_id": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "cheque_slip_ind_npb_date": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "cheque_slip_npb_date": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "cheque_slip_payment_detail": [
+      "selected_from_sql",
+      "dropped_text_like"
+    ],
+    "cheque_slip_record_status": [
+      "selected_from_sql",
+      "categorical_one_hot_encoded"
+    ],
+    "cheque_slip_schedule3_item_no": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "cheque_slip_selected": [
+      "selected_from_sql",
+      "boolean_converted_to_numeric"
+    ],
+    "dak_aao_disposal_date": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_amount": [
+      "selected_from_sql",
+      "numeric_standardized"
+    ],
+    "dak_ao_disposal_date": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_auditor_disposal_date": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_bill_date": [
+      "selected_from_sql",
+      "converted_to_datetime_for_checks",
+      "used_in_date_sequence_check",
+      "dropped_raw_date_before_training",
+      "used_for_date_gap_feature"
+    ],
+    "dak_bill_no": [
+      "selected_from_sql",
+      "dropped_long_varchar",
+      "identified_as_id_like"
+    ],
+    "dak_codehead": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_created_at": [
+      "selected_from_sql",
+      "converted_to_datetime_for_checks",
+      "dropped_raw_date_before_training"
+    ],
+    "dak_dad_account_no": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_dak_year": [
+      "selected_from_sql",
+      "categorical_one_hot_encoded"
+    ],
+    "dak_dakid_no": [
+      "selected_from_sql",
+      "dropped_long_varchar",
+      "identified_as_id_like"
+    ],
+    "dak_disposal_date": [
+      "selected_from_sql",
+      "converted_to_datetime_for_checks",
+      "used_in_date_sequence_check",
+      "dropped_raw_date_before_training",
+      "used_for_date_gap_feature"
+    ],
+    "dak_disposal_no": [
+      "selected_from_sql",
+      "dropped_long_varchar",
+      "identified_as_id_like"
+    ],
+    "dak_emp_no": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_exp_cat": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_file_path": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fis_code_head": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fis_date": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fis_doc_no": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fis_imported_at": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fis_xml_file_no": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fk_aao_disposal": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fk_ao_disposal": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fk_auditor_disposal": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fk_bill_type": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fk_central_civ_employee": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fk_central_unit": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "dak_fk_central_vendor": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fk_civ_employee": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fk_dad_employee": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fk_dad_office": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "dak_fk_dak_entry_usr": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fk_dak_type": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "dak_fk_fis_imported_by": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fk_imprest": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fk_office_id": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "dak_fk_old_dak": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fk_outward_dak": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fk_section": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "dak_fk_task_usr": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "dak_fk_unit": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "dak_fk_usr": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fk_vendor": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_gem_bill": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_gpf_pran_ppan_no": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_id": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "dak_kpi_bill_type": [
+      "selected_from_sql",
+      "dropped_before_training"
+    ],
+    "dak_list_date": [
+      "selected_from_sql",
+      "converted_to_datetime_for_checks",
+      "dropped_raw_date_before_training"
+    ],
+    "dak_list_no": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "dak_major_head": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_make_cat": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_mode_of_receipt": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_month_year": [
+      "selected_from_sql",
+      "categorical_one_hot_encoded"
+    ],
+    "dak_msme_cat": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_multiple_entry": [
+      "selected_from_sql",
+      "boolean_converted_to_numeric"
+    ],
+    "dak_pfms_bill": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_pfms_sanction_date": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_pfms_sanction_id": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_priority": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_reason": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_record_status": [
+      "selected_from_sql",
+      "categorical_one_hot_encoded"
+    ],
+    "dak_reference_date": [
+      "selected_from_sql",
+      "converted_to_datetime_for_checks",
+      "used_in_date_sequence_check",
+      "dropped_raw_date_before_training",
+      "used_for_date_gap_feature"
+    ],
+    "dak_reference_no": [
+      "selected_from_sql",
+      "dropped_long_varchar",
+      "identified_as_id_like"
+    ],
+    "dak_regn_no": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_remarks": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_rescheduled": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_security_grading": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_sender_city": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_sender_name": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_subject": [
+      "selected_from_sql",
+      "dropped_text_like"
+    ],
+    "dak_task_no": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_temp_dak_id": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_uuid": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "ecs_aao_date": [
+      "selected_from_sql",
+      "converted_to_datetime_for_checks",
+      "used_in_date_sequence_check",
+      "dropped_raw_date_before_training",
+      "used_for_date_gap_feature"
+    ],
+    "ecs_aao_date_accounts_rej": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "ecs_aao_date_rej": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "ecs_amount": [
+      "selected_from_sql",
+      "numeric_standardized"
+    ],
+    "ecs_ao_date": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "ecs_ao_date_accounts_rej": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "ecs_ao_date_rej": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "ecs_approved": [
+      "selected_from_sql",
+      "boolean_converted_to_numeric"
+    ],
+    "ecs_auditor_date": [
+      "selected_from_sql",
+      "converted_to_datetime_for_checks",
+      "used_in_date_sequence_check",
+      "dropped_raw_date_before_training",
+      "used_for_date_gap_feature"
+    ],
+    "ecs_auditor_date_accounts_rej": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "ecs_auditor_date_rej": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "ecs_cda13_date": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "ecs_cda13_no": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "ecs_cmp_file_gen_date": [
+      "selected_from_sql",
+      "converted_to_datetime_for_checks",
+      "used_in_date_sequence_check",
+      "dropped_raw_date_before_training",
+      "used_for_date_gap_feature"
+    ],
+    "ecs_cmp_payment_status": [
+      "selected_from_sql",
+      "categorical_one_hot_encoded"
+    ],
+    "ecs_cmp_reference_no": [
+      "selected_from_sql",
+      "dropped_long_varchar",
+      "identified_as_id_like"
+    ],
+    "ecs_cmp_rejection_reason": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "ecs_created_at": [
+      "selected_from_sql",
+      "converted_to_datetime_for_checks",
+      "dropped_raw_date_before_training"
+    ],
+    "ecs_echs_claim_id": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "ecs_echs_sid": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "ecs_file_no": [
+      "selected_from_sql",
+      "dropped_long_varchar",
+      "identified_as_id_like"
+    ],
+    "ecs_fk_aao": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "ecs_fk_aao_accounts_rej": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "ecs_fk_aao_rej": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "ecs_fk_ao": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "ecs_fk_ao_accounts_rej": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "ecs_fk_ao_rej": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "ecs_fk_auditor": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "ecs_fk_auditor_accounts_rej": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "ecs_fk_auditor_rej": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "ecs_fk_bank_pan_detail": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "ecs_fk_cda13_bpd": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "ecs_fk_cda13_central_beneficiary": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "ecs_fk_central_beneficiary": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "ecs_fk_cheque_slip": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "ecs_fk_dak": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "ecs_fk_ecs_payment_mode": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "ecs_fk_ecs_payment_type": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "ecs_fk_go": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "ecs_fk_office_id": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "ecs_fk_schedule3": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "ecs_go_date": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "ecs_id": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "ecs_month": [
+      "selected_from_sql",
+      "categorical_one_hot_encoded"
+    ],
+    "ecs_npb_date": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "ecs_payment_reference_no": [
+      "selected_from_sql",
+      "dropped_long_varchar",
+      "identified_as_id_like"
+    ],
+    "ecs_record_status": [
+      "selected_from_sql",
+      "categorical_one_hot_encoded"
+    ],
+    "ecs_rejection_approved_as": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "ecs_rejection_approved_ds": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "ecs_rejection_reason": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "ecs_rejection_scroll_date": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "ecs_rejection_scroll_no": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "ecs_rejection_status": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "ecs_released": [
+      "selected_from_sql",
+      "boolean_converted_to_numeric"
+    ],
+    "ecs_remarks": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "ecs_rollback": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "ecs_rollback_approved": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "ecs_scroll_date": [
+      "selected_from_sql",
+      "converted_to_datetime_for_checks",
+      "dropped_raw_date_before_training"
+    ],
+    "ecs_scroll_no": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "ecs_sub_office_code": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "ecs_table_recoveries": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "ecs_to_be_paid": [
+      "selected_from_sql",
+      "boolean_converted_to_numeric"
+    ],
+    "ecs_utr_date": [
+      "selected_from_sql",
+      "converted_to_datetime_for_checks",
+      "dropped_raw_date_before_training"
+    ],
+    "ecs_utr_no": [
+      "selected_from_sql",
+      "dropped_long_varchar",
+      "identified_as_id_like"
+    ],
+    "gap_days_cheque_slip_aao_date_to_cheque_slip_ao_date": [
+      "engineered_date_gap_feature",
+      "from:cheque_slip_aao_date->cheque_slip_ao_date",
+      "numeric_standardized"
+    ],
+    "gap_days_cheque_slip_auditor_date_to_cheque_slip_aao_date": [
+      "engineered_date_gap_feature",
+      "from:cheque_slip_auditor_date->cheque_slip_aao_date",
+      "numeric_standardized"
+    ],
+    "gap_days_dak_bill_date_to_dak_reference_date": [
+      "engineered_date_gap_feature",
+      "from:dak_bill_date->dak_reference_date",
+      "numeric_standardized"
+    ],
+    "gap_days_dak_reference_date_to_cheque_slip_auditor_date": [
+      "engineered_date_gap_feature",
+      "from:dak_reference_date->cheque_slip_auditor_date",
+      "numeric_standardized"
+    ],
+    "gap_days_dak_reference_date_to_ecs_auditor_date": [
+      "engineered_date_gap_feature",
+      "from:dak_reference_date->ecs_auditor_date",
+      "numeric_standardized"
+    ],
+    "gap_days_ecs_auditor_date_to_ecs_aao_date": [
+      "engineered_date_gap_feature",
+      "from:ecs_auditor_date->ecs_aao_date",
+      "numeric_standardized"
+    ],
+    "gap_days_ecs_cmp_file_gen_date_to_dak_disposal_date": [
+      "engineered_date_gap_feature",
+      "from:ecs_cmp_file_gen_date->dak_disposal_date",
+      "numeric_standardized"
+    ]
+  },
+  "model_path": "backend/artifacts/models/dak.cheque_slip.ecs_pipeline.joblib"
+}

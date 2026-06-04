@@ -121,6 +121,25 @@ def delete_prefix(prefix: str) -> None:
         logger.warning("Valkey prefix delete failed for prefix=%s: %s", prefix, exc)
 
 
+def count_prefix(prefix: str) -> int | None:
+    client = get_valkey_client()
+    if client is None:
+        return None
+    match = _prefixed_key(f"{prefix}*")
+    count = 0
+    try:
+        cursor = 0
+        while True:
+            cursor, keys = client.scan(cursor=cursor, match=match, count=200)
+            count += len(keys)
+            if cursor == 0:
+                break
+        return count
+    except RedisError as exc:
+        logger.warning("Valkey prefix count failed for prefix=%s: %s", prefix, exc)
+        return None
+
+
 def incr(key: str, ttl_seconds: int) -> int | None:
     client = get_valkey_client()
     if client is None:

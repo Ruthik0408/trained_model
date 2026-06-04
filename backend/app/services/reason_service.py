@@ -7,6 +7,7 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+from scipy import sparse
 
 from app.core.config import settings
 from app.schemas.workbench_schema import IsolationReasonRequest
@@ -70,7 +71,7 @@ def build_feature_explanation_signals(
         return {}
 
     column_labels = list(transformed_feature_labels or _transformed_feature_labels(pipeline, feature_frame))
-    transformed_array = np.asarray(transformed)
+    transformed_array = transformed.toarray() if sparse.issparse(transformed) else np.asarray(transformed)
 
     n_cols = transformed_array.shape[1] if transformed_array.ndim == 2 else 0
     column_labels = column_labels[:n_cols]
@@ -190,13 +191,12 @@ def _assemble_deterministic_sentence(
         parts.append(_capitalise(signal_clauses[0]))
 
     if len(signal_clauses) >= 2:
-        connector = _CLAUSE_CONNECTORS[1 % len(_CLAUSE_CONNECTORS)]  # "additionally"
+        connector = _CLAUSE_CONNECTORS[1 % len(_CLAUSE_CONNECTORS)]  
         parts.append(f"{connector} {signal_clauses[1]}")
 
     if len(signal_clauses) >= 3:
-        # Only add a 3rd clause if it belongs to a different feature group
         if _different_feature_group(signal_clauses[0], signal_clauses[2]):
-            connector = _CLAUSE_CONNECTORS[4 % len(_CLAUSE_CONNECTORS)]  # "combined with"
+            connector = _CLAUSE_CONNECTORS[4 % len(_CLAUSE_CONNECTORS)]  
             parts.append(f"{connector} {signal_clauses[2]}")
 
     # Append rule reasons that are not already paraphrased in the clauses

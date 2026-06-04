@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from app.core.errors import WorkbenchValidationError
 from app.schemas.workbench_schema import JoinConfig
+from app.services.workbench.constants import logger
 
 
 BASE_TABLE = "dak"
@@ -26,7 +27,7 @@ TRAINED_JOIN_SPECS: dict[str, TrainedJoinSpec] = {
     "civ_tada_ltc_bill": TrainedJoinSpec("civ_tada_ltc_bill", "dak", "id", "fk_dak"),
     "echs_medical_bill": TrainedJoinSpec("echs_medical_bill", "dak", "id", "fk_dak"),
     "cheque_slip": TrainedJoinSpec("cheque_slip", "dak", "id", "fk_dak"),
-    "schedule3": TrainedJoinSpec("schedule3", "cheque_slip", "fk_dak", "fk_dak"),
+    "schedule3": TrainedJoinSpec("schedule3", "cheque_slip", "fk_dak", "fk_dak", "left"),
     "ecs": TrainedJoinSpec("ecs", "cheque_slip", "fk_dak", "fk_dak"),
 }
 
@@ -121,10 +122,29 @@ def trained_join_configs(selected_tables: list[str]) -> list[JoinConfig]:
     return configs
 
 
+def default_amount_field_for_tables(selected_tables: list[str]) -> str | None:
+    normalized = {str(table).strip().lower() for table in selected_tables}
+    if "dak_info" in normalized:
+        return "dak_info.amount"
+    if BASE_TABLE in normalized:
+        return "dak.amount"
+    return None
+
+
 def apply_trained_dataset_defaults(payload):
+    trained_joins = trained_join_configs(payload.selected_tables)
+    trained_tables = trained_dataset_tables(payload.selected_tables)
+    if payload.joins and payload.joins != trained_joins:
+        logger.warning(
+            "Ignoring caller-provided joins for trained dataset selection; using trained join defaults instead. selected_tables=%s",
+            payload.selected_tables,
+        )
+    updates = {
+        "selected_tables": trained_tables,
+        "joins": trained_joins,
+    }
+    if hasattr(payload, "amount_field"):
+        updates["amount_field"] = payload.amount_field or default_amount_field_for_tables(trained_tables)
     return payload.model_copy(
-        update={
-            "selected_tables": trained_dataset_tables(payload.selected_tables),
-            "joins": trained_join_configs(payload.selected_tables),
-        }
+        update=updates
     )

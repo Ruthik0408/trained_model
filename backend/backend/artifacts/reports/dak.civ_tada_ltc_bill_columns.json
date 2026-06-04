@@ -1,0 +1,1770 @@
+{
+  "dataset_name": "dak.civ_tada_ltc_bill",
+  "base_table": "dak",
+  "join_tables": [
+    "civ_tada_ltc_bill"
+  ],
+  "list_date_cutoff": "2026-01-01",
+  "join_sql": "SELECT\n            dak.\"id\" AS \"dak_id\", dak.\"list_no\" AS \"dak_list_no\", dak.\"dakid_no\" AS \"dak_dakid_no\", dak.\"fk_section\" AS \"dak_fk_section\", dak.\"fk_dak_type\" AS \"dak_fk_dak_type\", dak.\"fk_bill_type\" AS \"dak_fk_bill_type\", dak.\"fk_unit\" AS \"dak_fk_unit\", dak.\"fk_imprest\" AS \"dak_fk_imprest\", dak.\"fk_dad_employee\" AS \"dak_fk_dad_employee\", dak.\"fk_civ_employee\" AS \"dak_fk_civ_employee\", dak.\"emp_no\" AS \"dak_emp_no\", dak.\"gpf_pran_ppan_no\" AS \"dak_gpf_pran_ppan_no\", dak.\"dad_account_no\" AS \"dak_dad_account_no\", dak.\"reference_no\" AS \"dak_reference_no\", dak.\"reference_date\" AS \"dak_reference_date\", dak.\"subject\" AS \"dak_subject\", dak.\"bill_no\" AS \"dak_bill_no\", dak.\"bill_date\" AS \"dak_bill_date\", dak.\"amount\" AS \"dak_amount\", dak.\"disposal_no\" AS \"dak_disposal_no\", dak.\"disposal_date\" AS \"dak_disposal_date\", dak.\"fk_outward_dak\" AS \"dak_fk_outward_dak\", dak.\"record_status\" AS \"dak_record_status\", dak.\"reason\" AS \"dak_reason\", dak.\"remarks\" AS \"dak_remarks\", dak.\"fk_dak_entry_usr\" AS \"dak_fk_dak_entry_usr\", dak.\"fk_usr\" AS \"dak_fk_usr\", dak.\"task_no\" AS \"dak_task_no\", dak.\"rescheduled\" AS \"dak_rescheduled\", dak.\"fk_old_dak\" AS \"dak_fk_old_dak\", dak.\"multiple_entry\" AS \"dak_multiple_entry\", dak.\"temp_dak_id\" AS \"dak_temp_dak_id\", dak.\"created_at\" AS \"dak_created_at\", dak.\"fk_dad_office\" AS \"dak_fk_dad_office\", dak.\"fk_task_usr\" AS \"dak_fk_task_usr\", dak.\"fk_office_id\" AS \"dak_fk_office_id\", dak.\"month_year\" AS \"dak_month_year\", dak.\"dak_year\" AS \"dak_dak_year\", dak.\"priority\" AS \"dak_priority\", dak.\"list_date\" AS \"dak_list_date\", dak.\"fk_vendor\" AS \"dak_fk_vendor\", dak.\"sender_name\" AS \"dak_sender_name\", dak.\"sender_city\" AS \"dak_sender_city\", dak.\"mode_of_receipt\" AS \"dak_mode_of_receipt\", dak.\"regn_no\" AS \"dak_regn_no\", dak.\"security_grading\" AS \"dak_security_grading\", dak.\"gem_bill\" AS \"dak_gem_bill\", dak.\"fis_doc_no\" AS \"dak_fis_doc_no\", dak.\"fis_date\" AS \"dak_fis_date\", dak.\"fis_code_head\" AS \"dak_fis_code_head\", dak.\"fis_xml_file_no\" AS \"dak_fis_xml_file_no\", dak.\"fk_fis_imported_by\" AS \"dak_fk_fis_imported_by\", dak.\"fis_imported_at\" AS \"dak_fis_imported_at\", dak.\"pfms_bill\" AS \"dak_pfms_bill\", dak.\"pfms_sanction_id\" AS \"dak_pfms_sanction_id\", dak.\"pfms_sanction_date\" AS \"dak_pfms_sanction_date\", dak.\"fk_auditor_disposal\" AS \"dak_fk_auditor_disposal\", dak.\"fk_aao_disposal\" AS \"dak_fk_aao_disposal\", dak.\"fk_ao_disposal\" AS \"dak_fk_ao_disposal\", dak.\"auditor_disposal_date\" AS \"dak_auditor_disposal_date\", dak.\"aao_disposal_date\" AS \"dak_aao_disposal_date\", dak.\"ao_disposal_date\" AS \"dak_ao_disposal_date\", dak.\"kpi_bill_type\" AS \"dak_kpi_bill_type\", dak.\"msme_cat\" AS \"dak_msme_cat\", dak.\"make_cat\" AS \"dak_make_cat\", dak.\"exp_cat\" AS \"dak_exp_cat\", dak.\"codehead\" AS \"dak_codehead\", dak.\"major_head\" AS \"dak_major_head\", dak.\"uuid\" AS \"dak_uuid\", dak.\"fk_central_unit\" AS \"dak_fk_central_unit\", dak.\"fk_central_vendor\" AS \"dak_fk_central_vendor\", dak.\"fk_central_civ_employee\" AS \"dak_fk_central_civ_employee\", dak.\"file_path\" AS \"dak_file_path\", civ_tada_ltc_bill.\"id\" AS \"civ_tada_ltc_bill_id\", civ_tada_ltc_bill.\"fk_dak\" AS \"civ_tada_ltc_bill_fk_dak\", civ_tada_ltc_bill.\"fk_bill_type\" AS \"civ_tada_ltc_bill_fk_bill_type\", civ_tada_ltc_bill.\"fk_bill_nature\" AS \"civ_tada_ltc_bill_fk_bill_nature\", civ_tada_ltc_bill.\"fk_section\" AS \"civ_tada_ltc_bill_fk_section\", civ_tada_ltc_bill.\"fk_civ_employee\" AS \"civ_tada_ltc_bill_fk_civ_employee\", civ_tada_ltc_bill.\"fk_unit\" AS \"civ_tada_ltc_bill_fk_unit\", civ_tada_ltc_bill.\"claim_type\" AS \"civ_tada_ltc_bill_claim_type\", civ_tada_ltc_bill.\"claim_date\" AS \"civ_tada_ltc_bill_claim_date\", civ_tada_ltc_bill.\"journey_station_from\" AS \"civ_tada_ltc_bill_journey_station_from\", civ_tada_ltc_bill.\"journey_station_to\" AS \"civ_tada_ltc_bill_journey_station_to\", civ_tada_ltc_bill.\"mode_of_journey\" AS \"civ_tada_ltc_bill_mode_of_journey\", civ_tada_ltc_bill.\"block_year\" AS \"civ_tada_ltc_bill_block_year\", civ_tada_ltc_bill.\"amount_claimed\" AS \"civ_tada_ltc_bill_amount_claimed\", civ_tada_ltc_bill.\"amount_passed\" AS \"civ_tada_ltc_bill_amount_passed\", civ_tada_ltc_bill.\"advance_amount\" AS \"civ_tada_ltc_bill_advance_amount\", civ_tada_ltc_bill.\"amount_disallowed\" AS \"civ_tada_ltc_bill_amount_disallowed\", civ_tada_ltc_bill.\"penal_interest\" AS \"civ_tada_ltc_bill_penal_interest\", civ_tada_ltc_bill.\"adjustment_amount\" AS \"civ_tada_ltc_bill_adjustment_amount\", civ_tada_ltc_bill.\"posted_in_demand_register\" AS \"civ_tada_ltc_bill_posted_in_demand_register\", civ_tada_ltc_bill.\"mro_received\" AS \"civ_tada_ltc_bill_mro_received\", civ_tada_ltc_bill.\"final_adjustment_received\" AS \"civ_tada_ltc_bill_final_adjustment_received\", civ_tada_ltc_bill.\"final_adjustment_settled\" AS \"civ_tada_ltc_bill_final_adjustment_settled\", civ_tada_ltc_bill.\"fk_final_adjustment\" AS \"civ_tada_ltc_bill_fk_final_adjustment\", civ_tada_ltc_bill.\"fk_auditor\" AS \"civ_tada_ltc_bill_fk_auditor\", civ_tada_ltc_bill.\"fk_aao\" AS \"civ_tada_ltc_bill_fk_aao\", civ_tada_ltc_bill.\"fk_ao\" AS \"civ_tada_ltc_bill_fk_ao\", civ_tada_ltc_bill.\"fk_go\" AS \"civ_tada_ltc_bill_fk_go\", civ_tada_ltc_bill.\"auditor_date\" AS \"civ_tada_ltc_bill_auditor_date\", civ_tada_ltc_bill.\"aao_date\" AS \"civ_tada_ltc_bill_aao_date\", civ_tada_ltc_bill.\"ao_date\" AS \"civ_tada_ltc_bill_ao_date\", civ_tada_ltc_bill.\"go_date\" AS \"civ_tada_ltc_bill_go_date\", civ_tada_ltc_bill.\"approved\" AS \"civ_tada_ltc_bill_approved\", civ_tada_ltc_bill.\"record_status\" AS \"civ_tada_ltc_bill_record_status\", civ_tada_ltc_bill.\"reason\" AS \"civ_tada_ltc_bill_reason\", civ_tada_ltc_bill.\"created_at\" AS \"civ_tada_ltc_bill_created_at\", civ_tada_ltc_bill.\"last_modified_at\" AS \"civ_tada_ltc_bill_last_modified_at\", civ_tada_ltc_bill.\"last_modified_by\" AS \"civ_tada_ltc_bill_last_modified_by\", civ_tada_ltc_bill.\"passed\" AS \"civ_tada_ltc_bill_passed\", civ_tada_ltc_bill.\"fk_task_usr\" AS \"civ_tada_ltc_bill_fk_task_usr\", civ_tada_ltc_bill.\"fk_office_id\" AS \"civ_tada_ltc_bill_fk_office_id\", civ_tada_ltc_bill.\"foreign_travel\" AS \"civ_tada_ltc_bill_foreign_travel\", civ_tada_ltc_bill.\"recoveries\" AS \"civ_tada_ltc_bill_recoveries\", civ_tada_ltc_bill.\"claim_preference_type\" AS \"civ_tada_ltc_bill_claim_preference_type\", civ_tada_ltc_bill.\"claim_at_old_rates\" AS \"civ_tada_ltc_bill_claim_at_old_rates\", civ_tada_ltc_bill.\"processed_month\" AS \"civ_tada_ltc_bill_processed_month\", civ_tada_ltc_bill.\"period_from\" AS \"civ_tada_ltc_bill_period_from\", civ_tada_ltc_bill.\"period_to\" AS \"civ_tada_ltc_bill_period_to\", civ_tada_ltc_bill.\"no_of_days\" AS \"civ_tada_ltc_bill_no_of_days\", civ_tada_ltc_bill.\"type_of_ltc\" AS \"civ_tada_ltc_bill_type_of_ltc\", civ_tada_ltc_bill.\"verified_audit_checks\" AS \"civ_tada_ltc_bill_verified_audit_checks\", civ_tada_ltc_bill.\"code_hd\" AS \"civ_tada_ltc_bill_code_hd\", civ_tada_ltc_bill.\"provisional_payment\" AS \"civ_tada_ltc_bill_provisional_payment\", civ_tada_ltc_bill.\"multiple_mode_of_journey\" AS \"civ_tada_ltc_bill_multiple_mode_of_journey\", civ_tada_ltc_bill.\"composite_transfer_grant\" AS \"civ_tada_ltc_bill_composite_transfer_grant\", civ_tada_ltc_bill.\"luggage_weight\" AS \"civ_tada_ltc_bill_luggage_weight\", civ_tada_ltc_bill.\"luggage_amount\" AS \"civ_tada_ltc_bill_luggage_amount\", civ_tada_ltc_bill.\"class_of_travel\" AS \"civ_tada_ltc_bill_class_of_travel\", civ_tada_ltc_bill.\"journey_start_date\" AS \"civ_tada_ltc_bill_journey_start_date\", civ_tada_ltc_bill.\"journey_end_date\" AS \"civ_tada_ltc_bill_journey_end_date\", civ_tada_ltc_bill.\"travelling_charges\" AS \"civ_tada_ltc_bill_travelling_charges\", civ_tada_ltc_bill.\"payment_mode\" AS \"civ_tada_ltc_bill_payment_mode\", civ_tada_ltc_bill.\"fk_cdr\" AS \"civ_tada_ltc_bill_fk_cdr\", civ_tada_ltc_bill.\"project_code\" AS \"civ_tada_ltc_bill_project_code\", civ_tada_ltc_bill.\"fk_allotment_detail\" AS \"civ_tada_ltc_bill_fk_allotment_detail\", civ_tada_ltc_bill.\"month\" AS \"civ_tada_ltc_bill_month\", civ_tada_ltc_bill.\"payment_record_type\" AS \"civ_tada_ltc_bill_payment_record_type\", civ_tada_ltc_bill.\"fk_booking_unit\" AS \"civ_tada_ltc_bill_fk_booking_unit\", civ_tada_ltc_bill.\"booking_project_code\" AS \"civ_tada_ltc_bill_booking_project_code\", civ_tada_ltc_bill.\"mro_amount\" AS \"civ_tada_ltc_bill_mro_amount\", civ_tada_ltc_bill.\"mro_dak_id\" AS \"civ_tada_ltc_bill_mro_dak_id\", civ_tada_ltc_bill.\"movement_order_no\" AS \"civ_tada_ltc_bill_movement_order_no\", civ_tada_ltc_bill.\"movement_order_date\" AS \"civ_tada_ltc_bill_movement_order_date\", civ_tada_ltc_bill.\"stage\" AS \"civ_tada_ltc_bill_stage\", civ_tada_ltc_bill.\"fk_allotment_category\" AS \"civ_tada_ltc_bill_fk_allotment_category\", civ_tada_ltc_bill.\"fk_bank_pan_detail\" AS \"civ_tada_ltc_bill_fk_bank_pan_detail\", civ_tada_ltc_bill.\"dv_no\" AS \"civ_tada_ltc_bill_dv_no\", civ_tada_ltc_bill.\"dv_month\" AS \"civ_tada_ltc_bill_dv_month\", civ_tada_ltc_bill.\"dp_sheet_date\" AS \"civ_tada_ltc_bill_dp_sheet_date\", civ_tada_ltc_bill.\"dp_sheet_no\" AS \"civ_tada_ltc_bill_dp_sheet_no\", civ_tada_ltc_bill.\"cmp_date\" AS \"civ_tada_ltc_bill_cmp_date\", civ_tada_ltc_bill.\"cmp_batch\" AS \"civ_tada_ltc_bill_cmp_batch\", civ_tada_ltc_bill.\"pa_number\" AS \"civ_tada_ltc_bill_pa_number\", civ_tada_ltc_bill.\"pa_date\" AS \"civ_tada_ltc_bill_pa_date\", civ_tada_ltc_bill.\"value1\" AS \"civ_tada_ltc_bill_value1\", civ_tada_ltc_bill.\"employee_type\" AS \"civ_tada_ltc_bill_employee_type\", civ_tada_ltc_bill.\"fk_vendor\" AS \"civ_tada_ltc_bill_fk_vendor\", civ_tada_ltc_bill.\"vendor_amount\" AS \"civ_tada_ltc_bill_vendor_amount\", civ_tada_ltc_bill.\"other_amount\" AS \"civ_tada_ltc_bill_other_amount\", civ_tada_ltc_bill.\"multiple_code_head\" AS \"civ_tada_ltc_bill_multiple_code_head\", civ_tada_ltc_bill.\"fk_pa_dad_office\" AS \"civ_tada_ltc_bill_fk_pa_dad_office\", civ_tada_ltc_bill.\"pa_status\" AS \"civ_tada_ltc_bill_pa_status\", civ_tada_ltc_bill.\"fk_vendor_gstin\" AS \"civ_tada_ltc_bill_fk_vendor_gstin\", civ_tada_ltc_bill.\"ht_block_year\" AS \"civ_tada_ltc_bill_ht_block_year\", civ_tada_ltc_bill.\"cv_in_lieu_of_ltc\" AS \"civ_tada_ltc_bill_cv_in_lieu_of_ltc\", civ_tada_ltc_bill.\"no_of_members\" AS \"civ_tada_ltc_bill_no_of_members\", civ_tada_ltc_bill.\"emp_category\" AS \"civ_tada_ltc_bill_emp_category\", civ_tada_ltc_bill.\"round_trip_fare_per_person\" AS \"civ_tada_ltc_bill_round_trip_fare_per_person\", civ_tada_ltc_bill.\"total_fare\" AS \"civ_tada_ltc_bill_total_fare\", civ_tada_ltc_bill.\"leave_encash_amount\" AS \"civ_tada_ltc_bill_leave_encash_amount\", civ_tada_ltc_bill.\"total_value\" AS \"civ_tada_ltc_bill_total_value\", civ_tada_ltc_bill.\"full_cash_benefit_exp\" AS \"civ_tada_ltc_bill_full_cash_benefit_exp\", civ_tada_ltc_bill.\"share_of_leave_encash\" AS \"civ_tada_ltc_bill_share_of_leave_encash\", civ_tada_ltc_bill.\"share_of_fare_total\" AS \"civ_tada_ltc_bill_share_of_fare_total\", civ_tada_ltc_bill.\"actual_amount_spent\" AS \"civ_tada_ltc_bill_actual_amount_spent\", civ_tada_ltc_bill.\"amount_of_cash_benefit\" AS \"civ_tada_ltc_bill_amount_of_cash_benefit\", civ_tada_ltc_bill.\"encash_advance\" AS \"civ_tada_ltc_bill_encash_advance\", civ_tada_ltc_bill.\"fare_advance\" AS \"civ_tada_ltc_bill_fare_advance\", civ_tada_ltc_bill.\"encash_code_head\" AS \"civ_tada_ltc_bill_encash_code_head\", civ_tada_ltc_bill.\"encash_paid\" AS \"civ_tada_ltc_bill_encash_paid\", civ_tada_ltc_bill.\"calendar_year\" AS \"civ_tada_ltc_bill_calendar_year\", civ_tada_ltc_bill.\"it_recovery_amount\" AS \"civ_tada_ltc_bill_it_recovery_amount\", civ_tada_ltc_bill.\"it_eh_cess_amount\" AS \"civ_tada_ltc_bill_it_eh_cess_amount\", civ_tada_ltc_bill.\"encash_share_amount\" AS \"civ_tada_ltc_bill_encash_share_amount\", civ_tada_ltc_bill.\"fare_share_amount\" AS \"civ_tada_ltc_bill_fare_share_amount\", civ_tada_ltc_bill.\"spl_ltc_paid_dakid\" AS \"civ_tada_ltc_bill_spl_ltc_paid_dakid\", civ_tada_ltc_bill.\"spl_ltc_encash_paid\" AS \"civ_tada_ltc_bill_spl_ltc_encash_paid\", civ_tada_ltc_bill.\"spl_ltc_fare_paid\" AS \"civ_tada_ltc_bill_spl_ltc_fare_paid\", civ_tada_ltc_bill.\"fk_central_unit\" AS \"civ_tada_ltc_bill_fk_central_unit\", civ_tada_ltc_bill.\"fk_central_booking_unit\" AS \"civ_tada_ltc_bill_fk_central_booking_unit\", civ_tada_ltc_bill.\"fk_central_civ_employee\" AS \"civ_tada_ltc_bill_fk_central_civ_employee\", civ_tada_ltc_bill.\"fk_central_beneficiary\" AS \"civ_tada_ltc_bill_fk_central_beneficiary\", civ_tada_ltc_bill.\"fk_central_vendor\" AS \"civ_tada_ltc_bill_fk_central_vendor\", civ_tada_ltc_bill.\"stage_completed\" AS \"civ_tada_ltc_bill_stage_completed\", civ_tada_ltc_bill.\"fk_booking_central_unit\" AS \"civ_tada_ltc_bill_fk_booking_central_unit\", civ_tada_ltc_bill.\"sanction_details\" AS \"civ_tada_ltc_bill_sanction_details\"\n        FROM dak\n        JOIN civ_tada_ltc_bill ON dak.\"id\" = civ_tada_ltc_bill.\"fk_dak\"\n        WHERE dak.list_date < '2026-01-01'",
+  "source_row_count": 72108,
+  "queried_row_count": 72108,
+  "post_invoice_filter_row_count": 72108,
+  "post_date_sequence_filter_row_count": 71695,
+  "training_row_count": 71695,
+  "anomaly_count": 3585,
+  "inlier_count": 68110,
+  "raw_column_count": 199,
+  "cleaned_column_count": 40,
+  "feature_input_column_count": 27,
+  "transformed_feature_count": 54,
+  "cleaned_columns": [
+    "dak_reference_date",
+    "dak_bill_date",
+    "dak_amount",
+    "dak_disposal_date",
+    "dak_record_status",
+    "dak_rescheduled",
+    "dak_multiple_entry",
+    "dak_created_at",
+    "dak_month_year",
+    "dak_dak_year",
+    "dak_list_date",
+    "dak_gem_bill",
+    "dak_pfms_bill",
+    "dak_kpi_bill_type",
+    "civ_tada_ltc_bill_claim_date",
+    "civ_tada_ltc_bill_mode_of_journey",
+    "civ_tada_ltc_bill_amount_claimed",
+    "civ_tada_ltc_bill_amount_passed",
+    "civ_tada_ltc_bill_advance_amount",
+    "civ_tada_ltc_bill_amount_disallowed",
+    "civ_tada_ltc_bill_penal_interest",
+    "civ_tada_ltc_bill_adjustment_amount",
+    "civ_tada_ltc_bill_auditor_date",
+    "civ_tada_ltc_bill_aao_date",
+    "civ_tada_ltc_bill_ao_date",
+    "civ_tada_ltc_bill_approved",
+    "civ_tada_ltc_bill_record_status",
+    "civ_tada_ltc_bill_created_at",
+    "civ_tada_ltc_bill_passed",
+    "civ_tada_ltc_bill_journey_start_date",
+    "civ_tada_ltc_bill_journey_end_date",
+    "civ_tada_ltc_bill_month",
+    "civ_tada_ltc_bill_payment_record_type",
+    "civ_tada_ltc_bill_mro_amount",
+    "civ_tada_ltc_bill_movement_order_date",
+    "civ_tada_ltc_bill_stage",
+    "civ_tada_ltc_bill_dv_month",
+    "civ_tada_ltc_bill_dp_sheet_date",
+    "civ_tada_ltc_bill_cmp_date",
+    "civ_tada_ltc_bill_employee_type"
+  ],
+  "feature_input_columns": [
+    "dak_amount",
+    "dak_record_status",
+    "dak_rescheduled",
+    "dak_multiple_entry",
+    "dak_dak_year",
+    "dak_gem_bill",
+    "dak_pfms_bill",
+    "civ_tada_ltc_bill_mode_of_journey",
+    "civ_tada_ltc_bill_amount_claimed",
+    "civ_tada_ltc_bill_amount_passed",
+    "civ_tada_ltc_bill_advance_amount",
+    "civ_tada_ltc_bill_amount_disallowed",
+    "civ_tada_ltc_bill_penal_interest",
+    "civ_tada_ltc_bill_adjustment_amount",
+    "civ_tada_ltc_bill_approved",
+    "civ_tada_ltc_bill_record_status",
+    "civ_tada_ltc_bill_passed",
+    "civ_tada_ltc_bill_payment_record_type",
+    "civ_tada_ltc_bill_mro_amount",
+    "civ_tada_ltc_bill_stage",
+    "civ_tada_ltc_bill_employee_type",
+    "gap_days_dak_bill_date_to_dak_reference_date",
+    "gap_days_civ_tada_ltc_bill_dp_sheet_date_to_civ_tada_ltc_bill_cmp_date",
+    "gap_days_civ_tada_ltc_bill_cmp_date_to_dak_disposal_date",
+    "gap_days_dak_reference_date_to_civ_tada_ltc_bill_auditor_date",
+    "gap_days_civ_tada_ltc_bill_auditor_date_to_civ_tada_ltc_bill_aao_date",
+    "gap_days_civ_tada_ltc_bill_aao_date_to_civ_tada_ltc_bill_ao_date"
+  ],
+  "transformed_feature_names": [
+    "civ_tada_ltc_bill_adjustment_amount",
+    "civ_tada_ltc_bill_advance_amount",
+    "civ_tada_ltc_bill_amount_claimed",
+    "civ_tada_ltc_bill_amount_disallowed",
+    "civ_tada_ltc_bill_amount_passed",
+    "civ_tada_ltc_bill_mro_amount",
+    "civ_tada_ltc_bill_penal_interest",
+    "civ_tada_ltc_bill_stage",
+    "dak_amount",
+    "gap_days_civ_tada_ltc_bill_aao_date_to_civ_tada_ltc_bill_ao_date",
+    "gap_days_civ_tada_ltc_bill_auditor_date_to_civ_tada_ltc_bill_aao_date",
+    "gap_days_civ_tada_ltc_bill_cmp_date_to_dak_disposal_date",
+    "gap_days_civ_tada_ltc_bill_dp_sheet_date_to_civ_tada_ltc_bill_cmp_date",
+    "gap_days_dak_bill_date_to_dak_reference_date",
+    "gap_days_dak_reference_date_to_civ_tada_ltc_bill_auditor_date",
+    "dak_rescheduled_f",
+    "dak_rescheduled_t",
+    "dak_multiple_entry_f",
+    "dak_multiple_entry_t",
+    "dak_gem_bill_f",
+    "dak_gem_bill_t",
+    "dak_pfms_bill_f",
+    "civ_tada_ltc_bill_approved_f",
+    "civ_tada_ltc_bill_approved_t",
+    "civ_tada_ltc_bill_passed_f",
+    "dak_record_status_D",
+    "dak_record_status_P",
+    "dak_record_status_R",
+    "dak_record_status_T",
+    "dak_dak_year_2022-2023",
+    "dak_dak_year_2023-2024",
+    "dak_dak_year_2024-2025",
+    "dak_dak_year_2025-2026",
+    "civ_tada_ltc_bill_mode_of_journey_AIR",
+    "civ_tada_ltc_bill_mode_of_journey_ROAD",
+    "civ_tada_ltc_bill_mode_of_journey_SEA",
+    "civ_tada_ltc_bill_mode_of_journey_TRAIN",
+    "civ_tada_ltc_bill_mode_of_journey_VAR",
+    "civ_tada_ltc_bill_record_status_D",
+    "civ_tada_ltc_bill_record_status_I",
+    "civ_tada_ltc_bill_record_status_P",
+    "civ_tada_ltc_bill_record_status_R",
+    "civ_tada_ltc_bill_record_status_T",
+    "civ_tada_ltc_bill_record_status_V",
+    "civ_tada_ltc_bill_payment_record_type_B",
+    "civ_tada_ltc_bill_payment_record_type_E",
+    "civ_tada_ltc_bill_payment_record_type_O",
+    "civ_tada_ltc_bill_payment_record_type_P",
+    "civ_tada_ltc_bill_payment_record_type_U",
+    "civ_tada_ltc_bill_payment_record_type_V",
+    "civ_tada_ltc_bill_employee_type_CV",
+    "civ_tada_ltc_bill_employee_type_GO",
+    "civ_tada_ltc_bill_employee_type_IE",
+    "civ_tada_ltc_bill_employee_type_NGO"
+  ],
+  "invoice_row_filter_summary": {
+    "dropped_row_count": 0,
+    "tables_applied": []
+  },
+  "dropped_columns_summary": {
+    "high_null_columns": [
+      "civ_tada_ltc_bill_actual_amount_spent",
+      "civ_tada_ltc_bill_amount_of_cash_benefit",
+      "civ_tada_ltc_bill_block_year",
+      "civ_tada_ltc_bill_booking_project_code",
+      "civ_tada_ltc_bill_calendar_year",
+      "civ_tada_ltc_bill_claim_at_old_rates",
+      "civ_tada_ltc_bill_claim_preference_type",
+      "civ_tada_ltc_bill_claim_type",
+      "civ_tada_ltc_bill_class_of_travel",
+      "civ_tada_ltc_bill_composite_transfer_grant",
+      "civ_tada_ltc_bill_cv_in_lieu_of_ltc",
+      "civ_tada_ltc_bill_emp_category",
+      "civ_tada_ltc_bill_encash_advance",
+      "civ_tada_ltc_bill_encash_code_head",
+      "civ_tada_ltc_bill_encash_paid",
+      "civ_tada_ltc_bill_encash_share_amount",
+      "civ_tada_ltc_bill_fare_advance",
+      "civ_tada_ltc_bill_fare_share_amount",
+      "civ_tada_ltc_bill_final_adjustment_received",
+      "civ_tada_ltc_bill_final_adjustment_settled",
+      "civ_tada_ltc_bill_fk_allotment_category",
+      "civ_tada_ltc_bill_fk_allotment_detail",
+      "civ_tada_ltc_bill_fk_bank_pan_detail",
+      "civ_tada_ltc_bill_fk_bill_nature",
+      "civ_tada_ltc_bill_fk_booking_central_unit",
+      "civ_tada_ltc_bill_fk_booking_unit",
+      "civ_tada_ltc_bill_fk_cdr",
+      "civ_tada_ltc_bill_fk_central_beneficiary",
+      "civ_tada_ltc_bill_fk_central_booking_unit",
+      "civ_tada_ltc_bill_fk_central_vendor",
+      "civ_tada_ltc_bill_fk_final_adjustment",
+      "civ_tada_ltc_bill_fk_go",
+      "civ_tada_ltc_bill_fk_pa_dad_office",
+      "civ_tada_ltc_bill_fk_vendor",
+      "civ_tada_ltc_bill_fk_vendor_gstin",
+      "civ_tada_ltc_bill_foreign_travel",
+      "civ_tada_ltc_bill_full_cash_benefit_exp",
+      "civ_tada_ltc_bill_go_date",
+      "civ_tada_ltc_bill_ht_block_year",
+      "civ_tada_ltc_bill_it_eh_cess_amount",
+      "civ_tada_ltc_bill_it_recovery_amount",
+      "civ_tada_ltc_bill_last_modified_at",
+      "civ_tada_ltc_bill_last_modified_by",
+      "civ_tada_ltc_bill_leave_encash_amount",
+      "civ_tada_ltc_bill_luggage_amount",
+      "civ_tada_ltc_bill_luggage_weight",
+      "civ_tada_ltc_bill_mro_dak_id",
+      "civ_tada_ltc_bill_mro_received",
+      "civ_tada_ltc_bill_multiple_code_head",
+      "civ_tada_ltc_bill_multiple_mode_of_journey",
+      "civ_tada_ltc_bill_no_of_days",
+      "civ_tada_ltc_bill_no_of_members",
+      "civ_tada_ltc_bill_other_amount",
+      "civ_tada_ltc_bill_pa_date",
+      "civ_tada_ltc_bill_pa_number",
+      "civ_tada_ltc_bill_pa_status",
+      "civ_tada_ltc_bill_payment_mode",
+      "civ_tada_ltc_bill_period_from",
+      "civ_tada_ltc_bill_period_to",
+      "civ_tada_ltc_bill_posted_in_demand_register",
+      "civ_tada_ltc_bill_processed_month",
+      "civ_tada_ltc_bill_project_code",
+      "civ_tada_ltc_bill_provisional_payment",
+      "civ_tada_ltc_bill_reason",
+      "civ_tada_ltc_bill_recoveries",
+      "civ_tada_ltc_bill_round_trip_fare_per_person",
+      "civ_tada_ltc_bill_sanction_details",
+      "civ_tada_ltc_bill_share_of_fare_total",
+      "civ_tada_ltc_bill_share_of_leave_encash",
+      "civ_tada_ltc_bill_spl_ltc_encash_paid",
+      "civ_tada_ltc_bill_spl_ltc_fare_paid",
+      "civ_tada_ltc_bill_spl_ltc_paid_dakid",
+      "civ_tada_ltc_bill_stage_completed",
+      "civ_tada_ltc_bill_total_fare",
+      "civ_tada_ltc_bill_total_value",
+      "civ_tada_ltc_bill_travelling_charges",
+      "civ_tada_ltc_bill_type_of_ltc",
+      "civ_tada_ltc_bill_value1",
+      "civ_tada_ltc_bill_vendor_amount",
+      "civ_tada_ltc_bill_verified_audit_checks",
+      "dak_aao_disposal_date",
+      "dak_ao_disposal_date",
+      "dak_auditor_disposal_date",
+      "dak_codehead",
+      "dak_dad_account_no",
+      "dak_emp_no",
+      "dak_exp_cat",
+      "dak_file_path",
+      "dak_fis_code_head",
+      "dak_fis_date",
+      "dak_fis_doc_no",
+      "dak_fis_imported_at",
+      "dak_fis_xml_file_no",
+      "dak_fk_aao_disposal",
+      "dak_fk_ao_disposal",
+      "dak_fk_auditor_disposal",
+      "dak_fk_bill_type",
+      "dak_fk_central_civ_employee",
+      "dak_fk_central_vendor",
+      "dak_fk_civ_employee",
+      "dak_fk_dad_employee",
+      "dak_fk_dad_office",
+      "dak_fk_fis_imported_by",
+      "dak_fk_imprest",
+      "dak_fk_old_dak",
+      "dak_fk_outward_dak",
+      "dak_fk_usr",
+      "dak_fk_vendor",
+      "dak_gpf_pran_ppan_no",
+      "dak_major_head",
+      "dak_make_cat",
+      "dak_msme_cat",
+      "dak_pfms_sanction_date",
+      "dak_pfms_sanction_id",
+      "dak_priority",
+      "dak_regn_no",
+      "dak_remarks",
+      "dak_sender_city",
+      "dak_sender_name",
+      "dak_task_no",
+      "dak_temp_dak_id",
+      "dak_uuid"
+    ],
+    "id_like_columns": [
+      "civ_tada_ltc_bill_code_hd",
+      "civ_tada_ltc_bill_dp_sheet_no",
+      "civ_tada_ltc_bill_dv_no",
+      "civ_tada_ltc_bill_fk_aao",
+      "civ_tada_ltc_bill_fk_ao",
+      "civ_tada_ltc_bill_fk_auditor",
+      "civ_tada_ltc_bill_fk_bill_type",
+      "civ_tada_ltc_bill_fk_central_civ_employee",
+      "civ_tada_ltc_bill_fk_central_unit",
+      "civ_tada_ltc_bill_fk_civ_employee",
+      "civ_tada_ltc_bill_fk_dak",
+      "civ_tada_ltc_bill_fk_office_id",
+      "civ_tada_ltc_bill_fk_section",
+      "civ_tada_ltc_bill_fk_task_usr",
+      "civ_tada_ltc_bill_fk_unit",
+      "civ_tada_ltc_bill_id",
+      "civ_tada_ltc_bill_movement_order_no",
+      "dak_bill_no",
+      "dak_dakid_no",
+      "dak_disposal_no",
+      "dak_fk_central_unit",
+      "dak_fk_dak_entry_usr",
+      "dak_fk_dak_type",
+      "dak_fk_office_id",
+      "dak_fk_section",
+      "dak_fk_task_usr",
+      "dak_fk_unit",
+      "dak_id",
+      "dak_list_no",
+      "dak_reference_no"
+    ],
+    "text_like_columns": [
+      "dak_reason",
+      "dak_subject"
+    ],
+    "long_varchar_columns": [
+      "civ_tada_ltc_bill_cmp_batch",
+      "civ_tada_ltc_bill_journey_station_from",
+      "civ_tada_ltc_bill_journey_station_to",
+      "civ_tada_ltc_bill_movement_order_no",
+      "dak_bill_no",
+      "dak_dakid_no",
+      "dak_disposal_no",
+      "dak_mode_of_receipt",
+      "dak_reference_no",
+      "dak_security_grading"
+    ],
+    "final_dropped_columns": [
+      "civ_tada_ltc_bill_actual_amount_spent",
+      "civ_tada_ltc_bill_amount_of_cash_benefit",
+      "civ_tada_ltc_bill_block_year",
+      "civ_tada_ltc_bill_booking_project_code",
+      "civ_tada_ltc_bill_calendar_year",
+      "civ_tada_ltc_bill_claim_at_old_rates",
+      "civ_tada_ltc_bill_claim_preference_type",
+      "civ_tada_ltc_bill_claim_type",
+      "civ_tada_ltc_bill_class_of_travel",
+      "civ_tada_ltc_bill_cmp_batch",
+      "civ_tada_ltc_bill_code_hd",
+      "civ_tada_ltc_bill_composite_transfer_grant",
+      "civ_tada_ltc_bill_cv_in_lieu_of_ltc",
+      "civ_tada_ltc_bill_dp_sheet_no",
+      "civ_tada_ltc_bill_dv_no",
+      "civ_tada_ltc_bill_emp_category",
+      "civ_tada_ltc_bill_encash_advance",
+      "civ_tada_ltc_bill_encash_code_head",
+      "civ_tada_ltc_bill_encash_paid",
+      "civ_tada_ltc_bill_encash_share_amount",
+      "civ_tada_ltc_bill_fare_advance",
+      "civ_tada_ltc_bill_fare_share_amount",
+      "civ_tada_ltc_bill_final_adjustment_received",
+      "civ_tada_ltc_bill_final_adjustment_settled",
+      "civ_tada_ltc_bill_fk_aao",
+      "civ_tada_ltc_bill_fk_allotment_category",
+      "civ_tada_ltc_bill_fk_allotment_detail",
+      "civ_tada_ltc_bill_fk_ao",
+      "civ_tada_ltc_bill_fk_auditor",
+      "civ_tada_ltc_bill_fk_bank_pan_detail",
+      "civ_tada_ltc_bill_fk_bill_nature",
+      "civ_tada_ltc_bill_fk_bill_type",
+      "civ_tada_ltc_bill_fk_booking_central_unit",
+      "civ_tada_ltc_bill_fk_booking_unit",
+      "civ_tada_ltc_bill_fk_cdr",
+      "civ_tada_ltc_bill_fk_central_beneficiary",
+      "civ_tada_ltc_bill_fk_central_booking_unit",
+      "civ_tada_ltc_bill_fk_central_civ_employee",
+      "civ_tada_ltc_bill_fk_central_unit",
+      "civ_tada_ltc_bill_fk_central_vendor",
+      "civ_tada_ltc_bill_fk_civ_employee",
+      "civ_tada_ltc_bill_fk_dak",
+      "civ_tada_ltc_bill_fk_final_adjustment",
+      "civ_tada_ltc_bill_fk_go",
+      "civ_tada_ltc_bill_fk_office_id",
+      "civ_tada_ltc_bill_fk_pa_dad_office",
+      "civ_tada_ltc_bill_fk_section",
+      "civ_tada_ltc_bill_fk_task_usr",
+      "civ_tada_ltc_bill_fk_unit",
+      "civ_tada_ltc_bill_fk_vendor",
+      "civ_tada_ltc_bill_fk_vendor_gstin",
+      "civ_tada_ltc_bill_foreign_travel",
+      "civ_tada_ltc_bill_full_cash_benefit_exp",
+      "civ_tada_ltc_bill_go_date",
+      "civ_tada_ltc_bill_ht_block_year",
+      "civ_tada_ltc_bill_id",
+      "civ_tada_ltc_bill_it_eh_cess_amount",
+      "civ_tada_ltc_bill_it_recovery_amount",
+      "civ_tada_ltc_bill_journey_station_from",
+      "civ_tada_ltc_bill_journey_station_to",
+      "civ_tada_ltc_bill_last_modified_at",
+      "civ_tada_ltc_bill_last_modified_by",
+      "civ_tada_ltc_bill_leave_encash_amount",
+      "civ_tada_ltc_bill_luggage_amount",
+      "civ_tada_ltc_bill_luggage_weight",
+      "civ_tada_ltc_bill_movement_order_no",
+      "civ_tada_ltc_bill_mro_dak_id",
+      "civ_tada_ltc_bill_mro_received",
+      "civ_tada_ltc_bill_multiple_code_head",
+      "civ_tada_ltc_bill_multiple_mode_of_journey",
+      "civ_tada_ltc_bill_no_of_days",
+      "civ_tada_ltc_bill_no_of_members",
+      "civ_tada_ltc_bill_other_amount",
+      "civ_tada_ltc_bill_pa_date",
+      "civ_tada_ltc_bill_pa_number",
+      "civ_tada_ltc_bill_pa_status",
+      "civ_tada_ltc_bill_payment_mode",
+      "civ_tada_ltc_bill_period_from",
+      "civ_tada_ltc_bill_period_to",
+      "civ_tada_ltc_bill_posted_in_demand_register",
+      "civ_tada_ltc_bill_processed_month",
+      "civ_tada_ltc_bill_project_code",
+      "civ_tada_ltc_bill_provisional_payment",
+      "civ_tada_ltc_bill_reason",
+      "civ_tada_ltc_bill_recoveries",
+      "civ_tada_ltc_bill_round_trip_fare_per_person",
+      "civ_tada_ltc_bill_sanction_details",
+      "civ_tada_ltc_bill_share_of_fare_total",
+      "civ_tada_ltc_bill_share_of_leave_encash",
+      "civ_tada_ltc_bill_spl_ltc_encash_paid",
+      "civ_tada_ltc_bill_spl_ltc_fare_paid",
+      "civ_tada_ltc_bill_spl_ltc_paid_dakid",
+      "civ_tada_ltc_bill_stage_completed",
+      "civ_tada_ltc_bill_total_fare",
+      "civ_tada_ltc_bill_total_value",
+      "civ_tada_ltc_bill_travelling_charges",
+      "civ_tada_ltc_bill_type_of_ltc",
+      "civ_tada_ltc_bill_value1",
+      "civ_tada_ltc_bill_vendor_amount",
+      "civ_tada_ltc_bill_verified_audit_checks",
+      "dak_aao_disposal_date",
+      "dak_ao_disposal_date",
+      "dak_auditor_disposal_date",
+      "dak_bill_no",
+      "dak_codehead",
+      "dak_dad_account_no",
+      "dak_dakid_no",
+      "dak_disposal_no",
+      "dak_emp_no",
+      "dak_exp_cat",
+      "dak_file_path",
+      "dak_fis_code_head",
+      "dak_fis_date",
+      "dak_fis_doc_no",
+      "dak_fis_imported_at",
+      "dak_fis_xml_file_no",
+      "dak_fk_aao_disposal",
+      "dak_fk_ao_disposal",
+      "dak_fk_auditor_disposal",
+      "dak_fk_bill_type",
+      "dak_fk_central_civ_employee",
+      "dak_fk_central_unit",
+      "dak_fk_central_vendor",
+      "dak_fk_civ_employee",
+      "dak_fk_dad_employee",
+      "dak_fk_dad_office",
+      "dak_fk_dak_entry_usr",
+      "dak_fk_dak_type",
+      "dak_fk_fis_imported_by",
+      "dak_fk_imprest",
+      "dak_fk_office_id",
+      "dak_fk_old_dak",
+      "dak_fk_outward_dak",
+      "dak_fk_section",
+      "dak_fk_task_usr",
+      "dak_fk_unit",
+      "dak_fk_usr",
+      "dak_fk_vendor",
+      "dak_gpf_pran_ppan_no",
+      "dak_id",
+      "dak_list_no",
+      "dak_major_head",
+      "dak_make_cat",
+      "dak_mode_of_receipt",
+      "dak_msme_cat",
+      "dak_pfms_sanction_date",
+      "dak_pfms_sanction_id",
+      "dak_priority",
+      "dak_reason",
+      "dak_reference_no",
+      "dak_regn_no",
+      "dak_remarks",
+      "dak_security_grading",
+      "dak_sender_city",
+      "dak_sender_name",
+      "dak_subject",
+      "dak_task_no",
+      "dak_temp_dak_id",
+      "dak_uuid"
+    ]
+  },
+  "converted_date_columns": [
+    "dak_reference_date",
+    "dak_bill_date",
+    "dak_disposal_date",
+    "dak_created_at",
+    "dak_list_date",
+    "civ_tada_ltc_bill_claim_date",
+    "civ_tada_ltc_bill_auditor_date",
+    "civ_tada_ltc_bill_aao_date",
+    "civ_tada_ltc_bill_ao_date",
+    "civ_tada_ltc_bill_created_at",
+    "civ_tada_ltc_bill_journey_start_date",
+    "civ_tada_ltc_bill_journey_end_date",
+    "civ_tada_ltc_bill_movement_order_date",
+    "civ_tada_ltc_bill_dp_sheet_date",
+    "civ_tada_ltc_bill_cmp_date"
+  ],
+  "date_stage_plan": {
+    "global_stage_columns": {
+      "invoice_date": null,
+      "bill_date": "dak_bill_date",
+      "reference_date": "dak_reference_date",
+      "dp_sheet_date": "civ_tada_ltc_bill_dp_sheet_date",
+      "cmp_date": "civ_tada_ltc_bill_cmp_date"
+    },
+    "same_table_stage_columns": {
+      "dak": {
+        "go_date": null,
+        "aao_stage": null,
+        "auditor_stage": null,
+        "ao_stage": null,
+        "disposal_date": "dak_disposal_date"
+      },
+      "civ_tada_ltc_bill": {
+        "go_date": null,
+        "aao_stage": "civ_tada_ltc_bill_aao_date",
+        "auditor_stage": "civ_tada_ltc_bill_auditor_date",
+        "ao_stage": "civ_tada_ltc_bill_ao_date",
+        "disposal_date": null
+      }
+    },
+    "table_paths": {
+      "dak": [
+        {
+          "stage_name": "invoice_date",
+          "column_name": null
+        },
+        {
+          "stage_name": "bill_date",
+          "column_name": "dak_bill_date"
+        },
+        {
+          "stage_name": "reference_date",
+          "column_name": "dak_reference_date"
+        },
+        {
+          "stage_name": "auditor_stage",
+          "column_name": null
+        },
+        {
+          "stage_name": "aao_stage",
+          "column_name": null
+        },
+        {
+          "stage_name": "ao_stage",
+          "column_name": null
+        },
+        {
+          "stage_name": "go_date",
+          "column_name": null
+        },
+        {
+          "stage_name": "dp_sheet_date",
+          "column_name": "civ_tada_ltc_bill_dp_sheet_date"
+        },
+        {
+          "stage_name": "cmp_date",
+          "column_name": "civ_tada_ltc_bill_cmp_date"
+        },
+        {
+          "stage_name": "disposal_date",
+          "column_name": "dak_disposal_date"
+        }
+      ],
+      "civ_tada_ltc_bill": [
+        {
+          "stage_name": "invoice_date",
+          "column_name": null
+        },
+        {
+          "stage_name": "bill_date",
+          "column_name": "dak_bill_date"
+        },
+        {
+          "stage_name": "reference_date",
+          "column_name": "dak_reference_date"
+        },
+        {
+          "stage_name": "auditor_stage",
+          "column_name": "civ_tada_ltc_bill_auditor_date"
+        },
+        {
+          "stage_name": "aao_stage",
+          "column_name": "civ_tada_ltc_bill_aao_date"
+        },
+        {
+          "stage_name": "ao_stage",
+          "column_name": "civ_tada_ltc_bill_ao_date"
+        },
+        {
+          "stage_name": "go_date",
+          "column_name": null
+        },
+        {
+          "stage_name": "dp_sheet_date",
+          "column_name": "civ_tada_ltc_bill_dp_sheet_date"
+        },
+        {
+          "stage_name": "cmp_date",
+          "column_name": "civ_tada_ltc_bill_cmp_date"
+        },
+        {
+          "stage_name": "disposal_date",
+          "column_name": null
+        }
+      ]
+    }
+  },
+  "date_sequence_summary": {
+    "dropped_row_count": 413,
+    "checks": [
+      {
+        "table_name": "dak",
+        "previous_stage": "invoice_date",
+        "next_stage": "bill_date",
+        "previous_column": null,
+        "next_column": "dak_bill_date",
+        "rows_checked": 0,
+        "invalid_row_count": 0,
+        "status": "skipped_missing_column"
+      },
+      {
+        "table_name": "dak",
+        "previous_stage": "bill_date",
+        "next_stage": "reference_date",
+        "previous_column": "dak_bill_date",
+        "next_column": "dak_reference_date",
+        "rows_checked": 65312,
+        "invalid_row_count": 242,
+        "status": "checked"
+      },
+      {
+        "table_name": "dak",
+        "previous_stage": "reference_date",
+        "next_stage": "auditor_stage",
+        "previous_column": "dak_reference_date",
+        "next_column": null,
+        "rows_checked": 0,
+        "invalid_row_count": 0,
+        "status": "skipped_missing_column"
+      },
+      {
+        "table_name": "dak",
+        "previous_stage": "auditor_stage",
+        "next_stage": "aao_stage",
+        "previous_column": null,
+        "next_column": null,
+        "rows_checked": 0,
+        "invalid_row_count": 0,
+        "status": "skipped_missing_column"
+      },
+      {
+        "table_name": "dak",
+        "previous_stage": "aao_stage",
+        "next_stage": "ao_stage",
+        "previous_column": null,
+        "next_column": null,
+        "rows_checked": 0,
+        "invalid_row_count": 0,
+        "status": "skipped_missing_column"
+      },
+      {
+        "table_name": "dak",
+        "previous_stage": "ao_stage",
+        "next_stage": "go_date",
+        "previous_column": null,
+        "next_column": null,
+        "rows_checked": 0,
+        "invalid_row_count": 0,
+        "status": "skipped_missing_column"
+      },
+      {
+        "table_name": "dak",
+        "previous_stage": "go_date",
+        "next_stage": "dp_sheet_date",
+        "previous_column": null,
+        "next_column": "civ_tada_ltc_bill_dp_sheet_date",
+        "rows_checked": 0,
+        "invalid_row_count": 0,
+        "status": "skipped_missing_column"
+      },
+      {
+        "table_name": "dak",
+        "previous_stage": "dp_sheet_date",
+        "next_stage": "cmp_date",
+        "previous_column": "civ_tada_ltc_bill_dp_sheet_date",
+        "next_column": "civ_tada_ltc_bill_cmp_date",
+        "rows_checked": 45002,
+        "invalid_row_count": 0,
+        "status": "checked"
+      },
+      {
+        "table_name": "dak",
+        "previous_stage": "cmp_date",
+        "next_stage": "disposal_date",
+        "previous_column": "civ_tada_ltc_bill_cmp_date",
+        "next_column": "dak_disposal_date",
+        "rows_checked": 45001,
+        "invalid_row_count": 99,
+        "status": "checked"
+      },
+      {
+        "table_name": "civ_tada_ltc_bill",
+        "previous_stage": "invoice_date",
+        "next_stage": "bill_date",
+        "previous_column": null,
+        "next_column": "dak_bill_date",
+        "rows_checked": 0,
+        "invalid_row_count": 0,
+        "status": "skipped_missing_column"
+      },
+      {
+        "table_name": "civ_tada_ltc_bill",
+        "previous_stage": "bill_date",
+        "next_stage": "reference_date",
+        "previous_column": "dak_bill_date",
+        "next_column": "dak_reference_date",
+        "rows_checked": 65312,
+        "invalid_row_count": 242,
+        "status": "checked"
+      },
+      {
+        "table_name": "civ_tada_ltc_bill",
+        "previous_stage": "reference_date",
+        "next_stage": "auditor_stage",
+        "previous_column": "dak_reference_date",
+        "next_column": "civ_tada_ltc_bill_auditor_date",
+        "rows_checked": 67098,
+        "invalid_row_count": 0,
+        "status": "checked"
+      },
+      {
+        "table_name": "civ_tada_ltc_bill",
+        "previous_stage": "auditor_stage",
+        "next_stage": "aao_stage",
+        "previous_column": "civ_tada_ltc_bill_auditor_date",
+        "next_column": "civ_tada_ltc_bill_aao_date",
+        "rows_checked": 60651,
+        "invalid_row_count": 72,
+        "status": "checked"
+      },
+      {
+        "table_name": "civ_tada_ltc_bill",
+        "previous_stage": "aao_stage",
+        "next_stage": "ao_stage",
+        "previous_column": "civ_tada_ltc_bill_aao_date",
+        "next_column": "civ_tada_ltc_bill_ao_date",
+        "rows_checked": 38820,
+        "invalid_row_count": 0,
+        "status": "checked"
+      },
+      {
+        "table_name": "civ_tada_ltc_bill",
+        "previous_stage": "ao_stage",
+        "next_stage": "go_date",
+        "previous_column": "civ_tada_ltc_bill_ao_date",
+        "next_column": null,
+        "rows_checked": 0,
+        "invalid_row_count": 0,
+        "status": "skipped_missing_column"
+      },
+      {
+        "table_name": "civ_tada_ltc_bill",
+        "previous_stage": "go_date",
+        "next_stage": "dp_sheet_date",
+        "previous_column": null,
+        "next_column": "civ_tada_ltc_bill_dp_sheet_date",
+        "rows_checked": 0,
+        "invalid_row_count": 0,
+        "status": "skipped_missing_column"
+      },
+      {
+        "table_name": "civ_tada_ltc_bill",
+        "previous_stage": "dp_sheet_date",
+        "next_stage": "cmp_date",
+        "previous_column": "civ_tada_ltc_bill_dp_sheet_date",
+        "next_column": "civ_tada_ltc_bill_cmp_date",
+        "rows_checked": 45002,
+        "invalid_row_count": 0,
+        "status": "checked"
+      },
+      {
+        "table_name": "civ_tada_ltc_bill",
+        "previous_stage": "cmp_date",
+        "next_stage": "disposal_date",
+        "previous_column": "civ_tada_ltc_bill_cmp_date",
+        "next_column": null,
+        "rows_checked": 0,
+        "invalid_row_count": 0,
+        "status": "skipped_missing_column"
+      }
+    ]
+  },
+  "original_date_columns_dropped_before_training": [
+    "dak_reference_date",
+    "dak_bill_date",
+    "dak_disposal_date",
+    "dak_created_at",
+    "dak_list_date",
+    "civ_tada_ltc_bill_claim_date",
+    "civ_tada_ltc_bill_auditor_date",
+    "civ_tada_ltc_bill_aao_date",
+    "civ_tada_ltc_bill_ao_date",
+    "civ_tada_ltc_bill_created_at",
+    "civ_tada_ltc_bill_journey_start_date",
+    "civ_tada_ltc_bill_journey_end_date",
+    "civ_tada_ltc_bill_movement_order_date",
+    "civ_tada_ltc_bill_dp_sheet_date",
+    "civ_tada_ltc_bill_cmp_date"
+  ],
+  "date_gap_features": [
+    {
+      "table_name": "dak",
+      "feature_name": "gap_days_dak_bill_date_to_dak_reference_date",
+      "previous_stage": "bill_date",
+      "next_stage": "reference_date",
+      "previous_column": "dak_bill_date",
+      "next_column": "dak_reference_date"
+    },
+    {
+      "table_name": "dak",
+      "feature_name": "gap_days_civ_tada_ltc_bill_dp_sheet_date_to_civ_tada_ltc_bill_cmp_date",
+      "previous_stage": "dp_sheet_date",
+      "next_stage": "cmp_date",
+      "previous_column": "civ_tada_ltc_bill_dp_sheet_date",
+      "next_column": "civ_tada_ltc_bill_cmp_date"
+    },
+    {
+      "table_name": "dak",
+      "feature_name": "gap_days_civ_tada_ltc_bill_cmp_date_to_dak_disposal_date",
+      "previous_stage": "cmp_date",
+      "next_stage": "disposal_date",
+      "previous_column": "civ_tada_ltc_bill_cmp_date",
+      "next_column": "dak_disposal_date"
+    },
+    {
+      "table_name": "civ_tada_ltc_bill",
+      "feature_name": "gap_days_dak_reference_date_to_civ_tada_ltc_bill_auditor_date",
+      "previous_stage": "reference_date",
+      "next_stage": "auditor_stage",
+      "previous_column": "dak_reference_date",
+      "next_column": "civ_tada_ltc_bill_auditor_date"
+    },
+    {
+      "table_name": "civ_tada_ltc_bill",
+      "feature_name": "gap_days_civ_tada_ltc_bill_auditor_date_to_civ_tada_ltc_bill_aao_date",
+      "previous_stage": "auditor_stage",
+      "next_stage": "aao_stage",
+      "previous_column": "civ_tada_ltc_bill_auditor_date",
+      "next_column": "civ_tada_ltc_bill_aao_date"
+    },
+    {
+      "table_name": "civ_tada_ltc_bill",
+      "feature_name": "gap_days_civ_tada_ltc_bill_aao_date_to_civ_tada_ltc_bill_ao_date",
+      "previous_stage": "aao_stage",
+      "next_stage": "ao_stage",
+      "previous_column": "civ_tada_ltc_bill_aao_date",
+      "next_column": "civ_tada_ltc_bill_ao_date"
+    }
+  ],
+  "numeric_columns_standardized": [
+    "civ_tada_ltc_bill_adjustment_amount",
+    "civ_tada_ltc_bill_advance_amount",
+    "civ_tada_ltc_bill_amount_claimed",
+    "civ_tada_ltc_bill_amount_disallowed",
+    "civ_tada_ltc_bill_amount_passed",
+    "civ_tada_ltc_bill_mro_amount",
+    "civ_tada_ltc_bill_penal_interest",
+    "civ_tada_ltc_bill_stage",
+    "dak_amount",
+    "gap_days_civ_tada_ltc_bill_aao_date_to_civ_tada_ltc_bill_ao_date",
+    "gap_days_civ_tada_ltc_bill_auditor_date_to_civ_tada_ltc_bill_aao_date",
+    "gap_days_civ_tada_ltc_bill_cmp_date_to_dak_disposal_date",
+    "gap_days_civ_tada_ltc_bill_dp_sheet_date_to_civ_tada_ltc_bill_cmp_date",
+    "gap_days_dak_bill_date_to_dak_reference_date",
+    "gap_days_dak_reference_date_to_civ_tada_ltc_bill_auditor_date"
+  ],
+  "boolean_columns_one_hot_encoded": [
+    "dak_rescheduled",
+    "dak_multiple_entry",
+    "dak_gem_bill",
+    "dak_pfms_bill",
+    "civ_tada_ltc_bill_approved",
+    "civ_tada_ltc_bill_passed"
+  ],
+  "categorical_columns_one_hot_encoded": [
+    "dak_record_status",
+    "dak_dak_year",
+    "civ_tada_ltc_bill_mode_of_journey",
+    "civ_tada_ltc_bill_record_status",
+    "civ_tada_ltc_bill_payment_record_type",
+    "civ_tada_ltc_bill_employee_type"
+  ],
+  "unsupported_columns_dropped_before_training": [
+    "civ_tada_ltc_bill_dv_month",
+    "civ_tada_ltc_bill_month",
+    "dak_kpi_bill_type",
+    "dak_month_year"
+  ],
+  "column_operation_map": {
+    "civ_tada_ltc_bill_aao_date": [
+      "selected_from_sql",
+      "converted_to_datetime_for_checks",
+      "used_in_date_sequence_check",
+      "dropped_raw_date_before_training",
+      "used_for_date_gap_feature"
+    ],
+    "civ_tada_ltc_bill_actual_amount_spent": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_adjustment_amount": [
+      "selected_from_sql",
+      "numeric_standardized"
+    ],
+    "civ_tada_ltc_bill_advance_amount": [
+      "selected_from_sql",
+      "numeric_standardized"
+    ],
+    "civ_tada_ltc_bill_amount_claimed": [
+      "selected_from_sql",
+      "numeric_standardized"
+    ],
+    "civ_tada_ltc_bill_amount_disallowed": [
+      "selected_from_sql",
+      "numeric_standardized"
+    ],
+    "civ_tada_ltc_bill_amount_of_cash_benefit": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_amount_passed": [
+      "selected_from_sql",
+      "numeric_standardized"
+    ],
+    "civ_tada_ltc_bill_ao_date": [
+      "selected_from_sql",
+      "converted_to_datetime_for_checks",
+      "used_in_date_sequence_check",
+      "dropped_raw_date_before_training",
+      "used_for_date_gap_feature"
+    ],
+    "civ_tada_ltc_bill_approved": [
+      "selected_from_sql",
+      "boolean_one_hot_encoded"
+    ],
+    "civ_tada_ltc_bill_auditor_date": [
+      "selected_from_sql",
+      "converted_to_datetime_for_checks",
+      "used_in_date_sequence_check",
+      "dropped_raw_date_before_training",
+      "used_for_date_gap_feature"
+    ],
+    "civ_tada_ltc_bill_block_year": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_booking_project_code": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_calendar_year": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_claim_at_old_rates": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_claim_date": [
+      "selected_from_sql",
+      "converted_to_datetime_for_checks",
+      "dropped_raw_date_before_training"
+    ],
+    "civ_tada_ltc_bill_claim_preference_type": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_claim_type": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_class_of_travel": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_cmp_batch": [
+      "selected_from_sql",
+      "dropped_long_varchar"
+    ],
+    "civ_tada_ltc_bill_cmp_date": [
+      "selected_from_sql",
+      "converted_to_datetime_for_checks",
+      "used_in_date_sequence_check",
+      "dropped_raw_date_before_training",
+      "used_for_date_gap_feature"
+    ],
+    "civ_tada_ltc_bill_code_hd": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "civ_tada_ltc_bill_composite_transfer_grant": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_created_at": [
+      "selected_from_sql",
+      "converted_to_datetime_for_checks",
+      "dropped_raw_date_before_training"
+    ],
+    "civ_tada_ltc_bill_cv_in_lieu_of_ltc": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_dp_sheet_date": [
+      "selected_from_sql",
+      "converted_to_datetime_for_checks",
+      "used_in_date_sequence_check",
+      "dropped_raw_date_before_training",
+      "used_for_date_gap_feature"
+    ],
+    "civ_tada_ltc_bill_dp_sheet_no": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "civ_tada_ltc_bill_dv_month": [
+      "selected_from_sql",
+      "dropped_before_training"
+    ],
+    "civ_tada_ltc_bill_dv_no": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "civ_tada_ltc_bill_emp_category": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_employee_type": [
+      "selected_from_sql",
+      "categorical_one_hot_encoded"
+    ],
+    "civ_tada_ltc_bill_encash_advance": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_encash_code_head": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_encash_paid": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_encash_share_amount": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_fare_advance": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_fare_share_amount": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_final_adjustment_received": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_final_adjustment_settled": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_fk_aao": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "civ_tada_ltc_bill_fk_allotment_category": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_fk_allotment_detail": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_fk_ao": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "civ_tada_ltc_bill_fk_auditor": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "civ_tada_ltc_bill_fk_bank_pan_detail": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_fk_bill_nature": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_fk_bill_type": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "civ_tada_ltc_bill_fk_booking_central_unit": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_fk_booking_unit": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_fk_cdr": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_fk_central_beneficiary": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_fk_central_booking_unit": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_fk_central_civ_employee": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "civ_tada_ltc_bill_fk_central_unit": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "civ_tada_ltc_bill_fk_central_vendor": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_fk_civ_employee": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "civ_tada_ltc_bill_fk_dak": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "civ_tada_ltc_bill_fk_final_adjustment": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_fk_go": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_fk_office_id": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "civ_tada_ltc_bill_fk_pa_dad_office": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_fk_section": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "civ_tada_ltc_bill_fk_task_usr": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "civ_tada_ltc_bill_fk_unit": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "civ_tada_ltc_bill_fk_vendor": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_fk_vendor_gstin": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_foreign_travel": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_full_cash_benefit_exp": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_go_date": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_ht_block_year": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_id": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "civ_tada_ltc_bill_it_eh_cess_amount": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_it_recovery_amount": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_journey_end_date": [
+      "selected_from_sql",
+      "converted_to_datetime_for_checks",
+      "dropped_raw_date_before_training"
+    ],
+    "civ_tada_ltc_bill_journey_start_date": [
+      "selected_from_sql",
+      "converted_to_datetime_for_checks",
+      "dropped_raw_date_before_training"
+    ],
+    "civ_tada_ltc_bill_journey_station_from": [
+      "selected_from_sql",
+      "dropped_long_varchar"
+    ],
+    "civ_tada_ltc_bill_journey_station_to": [
+      "selected_from_sql",
+      "dropped_long_varchar"
+    ],
+    "civ_tada_ltc_bill_last_modified_at": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_last_modified_by": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_leave_encash_amount": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_luggage_amount": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_luggage_weight": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_mode_of_journey": [
+      "selected_from_sql",
+      "categorical_one_hot_encoded"
+    ],
+    "civ_tada_ltc_bill_month": [
+      "selected_from_sql",
+      "dropped_before_training"
+    ],
+    "civ_tada_ltc_bill_movement_order_date": [
+      "selected_from_sql",
+      "converted_to_datetime_for_checks",
+      "dropped_raw_date_before_training"
+    ],
+    "civ_tada_ltc_bill_movement_order_no": [
+      "selected_from_sql",
+      "dropped_long_varchar",
+      "identified_as_id_like"
+    ],
+    "civ_tada_ltc_bill_mro_amount": [
+      "selected_from_sql",
+      "numeric_standardized"
+    ],
+    "civ_tada_ltc_bill_mro_dak_id": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_mro_received": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_multiple_code_head": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_multiple_mode_of_journey": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_no_of_days": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_no_of_members": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_other_amount": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_pa_date": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_pa_number": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_pa_status": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_passed": [
+      "selected_from_sql",
+      "boolean_one_hot_encoded"
+    ],
+    "civ_tada_ltc_bill_payment_mode": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_payment_record_type": [
+      "selected_from_sql",
+      "categorical_one_hot_encoded"
+    ],
+    "civ_tada_ltc_bill_penal_interest": [
+      "selected_from_sql",
+      "numeric_standardized"
+    ],
+    "civ_tada_ltc_bill_period_from": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_period_to": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_posted_in_demand_register": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_processed_month": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_project_code": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_provisional_payment": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_reason": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_record_status": [
+      "selected_from_sql",
+      "categorical_one_hot_encoded"
+    ],
+    "civ_tada_ltc_bill_recoveries": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_round_trip_fare_per_person": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_sanction_details": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_share_of_fare_total": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_share_of_leave_encash": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_spl_ltc_encash_paid": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_spl_ltc_fare_paid": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_spl_ltc_paid_dakid": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_stage": [
+      "selected_from_sql",
+      "numeric_standardized"
+    ],
+    "civ_tada_ltc_bill_stage_completed": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_total_fare": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_total_value": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_travelling_charges": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_type_of_ltc": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_value1": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_vendor_amount": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "civ_tada_ltc_bill_verified_audit_checks": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_aao_disposal_date": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_amount": [
+      "selected_from_sql",
+      "numeric_standardized"
+    ],
+    "dak_ao_disposal_date": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_auditor_disposal_date": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_bill_date": [
+      "selected_from_sql",
+      "converted_to_datetime_for_checks",
+      "used_in_date_sequence_check",
+      "dropped_raw_date_before_training",
+      "used_for_date_gap_feature"
+    ],
+    "dak_bill_no": [
+      "selected_from_sql",
+      "dropped_long_varchar",
+      "identified_as_id_like"
+    ],
+    "dak_codehead": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_created_at": [
+      "selected_from_sql",
+      "converted_to_datetime_for_checks",
+      "dropped_raw_date_before_training"
+    ],
+    "dak_dad_account_no": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_dak_year": [
+      "selected_from_sql",
+      "categorical_one_hot_encoded"
+    ],
+    "dak_dakid_no": [
+      "selected_from_sql",
+      "dropped_long_varchar",
+      "identified_as_id_like"
+    ],
+    "dak_disposal_date": [
+      "selected_from_sql",
+      "converted_to_datetime_for_checks",
+      "used_in_date_sequence_check",
+      "dropped_raw_date_before_training",
+      "used_for_date_gap_feature"
+    ],
+    "dak_disposal_no": [
+      "selected_from_sql",
+      "dropped_long_varchar",
+      "identified_as_id_like"
+    ],
+    "dak_emp_no": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_exp_cat": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_file_path": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fis_code_head": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fis_date": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fis_doc_no": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fis_imported_at": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fis_xml_file_no": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fk_aao_disposal": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fk_ao_disposal": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fk_auditor_disposal": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fk_bill_type": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fk_central_civ_employee": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fk_central_unit": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "dak_fk_central_vendor": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fk_civ_employee": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fk_dad_employee": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fk_dad_office": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fk_dak_entry_usr": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "dak_fk_dak_type": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "dak_fk_fis_imported_by": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fk_imprest": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fk_office_id": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "dak_fk_old_dak": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fk_outward_dak": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fk_section": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "dak_fk_task_usr": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "dak_fk_unit": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "dak_fk_usr": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_fk_vendor": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_gem_bill": [
+      "selected_from_sql",
+      "boolean_one_hot_encoded"
+    ],
+    "dak_gpf_pran_ppan_no": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_id": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "dak_kpi_bill_type": [
+      "selected_from_sql",
+      "dropped_before_training"
+    ],
+    "dak_list_date": [
+      "selected_from_sql",
+      "converted_to_datetime_for_checks",
+      "dropped_raw_date_before_training"
+    ],
+    "dak_list_no": [
+      "selected_from_sql",
+      "identified_as_id_like"
+    ],
+    "dak_major_head": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_make_cat": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_mode_of_receipt": [
+      "selected_from_sql",
+      "dropped_long_varchar"
+    ],
+    "dak_month_year": [
+      "selected_from_sql",
+      "dropped_before_training"
+    ],
+    "dak_msme_cat": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_multiple_entry": [
+      "selected_from_sql",
+      "boolean_one_hot_encoded"
+    ],
+    "dak_pfms_bill": [
+      "selected_from_sql",
+      "boolean_one_hot_encoded"
+    ],
+    "dak_pfms_sanction_date": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_pfms_sanction_id": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_priority": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_reason": [
+      "selected_from_sql",
+      "dropped_text_like"
+    ],
+    "dak_record_status": [
+      "selected_from_sql",
+      "categorical_one_hot_encoded"
+    ],
+    "dak_reference_date": [
+      "selected_from_sql",
+      "converted_to_datetime_for_checks",
+      "used_in_date_sequence_check",
+      "dropped_raw_date_before_training",
+      "used_for_date_gap_feature"
+    ],
+    "dak_reference_no": [
+      "selected_from_sql",
+      "dropped_long_varchar",
+      "identified_as_id_like"
+    ],
+    "dak_regn_no": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_remarks": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_rescheduled": [
+      "selected_from_sql",
+      "boolean_one_hot_encoded"
+    ],
+    "dak_security_grading": [
+      "selected_from_sql",
+      "dropped_long_varchar"
+    ],
+    "dak_sender_city": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_sender_name": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_subject": [
+      "selected_from_sql",
+      "dropped_text_like"
+    ],
+    "dak_task_no": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_temp_dak_id": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "dak_uuid": [
+      "selected_from_sql",
+      "dropped_high_null"
+    ],
+    "gap_days_civ_tada_ltc_bill_aao_date_to_civ_tada_ltc_bill_ao_date": [
+      "engineered_date_gap_feature",
+      "from:civ_tada_ltc_bill_aao_date->civ_tada_ltc_bill_ao_date",
+      "numeric_standardized"
+    ],
+    "gap_days_civ_tada_ltc_bill_auditor_date_to_civ_tada_ltc_bill_aao_date": [
+      "engineered_date_gap_feature",
+      "from:civ_tada_ltc_bill_auditor_date->civ_tada_ltc_bill_aao_date",
+      "numeric_standardized"
+    ],
+    "gap_days_civ_tada_ltc_bill_cmp_date_to_dak_disposal_date": [
+      "engineered_date_gap_feature",
+      "from:civ_tada_ltc_bill_cmp_date->dak_disposal_date",
+      "numeric_standardized"
+    ],
+    "gap_days_civ_tada_ltc_bill_dp_sheet_date_to_civ_tada_ltc_bill_cmp_date": [
+      "engineered_date_gap_feature",
+      "from:civ_tada_ltc_bill_dp_sheet_date->civ_tada_ltc_bill_cmp_date",
+      "numeric_standardized"
+    ],
+    "gap_days_dak_bill_date_to_dak_reference_date": [
+      "engineered_date_gap_feature",
+      "from:dak_bill_date->dak_reference_date",
+      "numeric_standardized"
+    ],
+    "gap_days_dak_reference_date_to_civ_tada_ltc_bill_auditor_date": [
+      "engineered_date_gap_feature",
+      "from:dak_reference_date->civ_tada_ltc_bill_auditor_date",
+      "numeric_standardized"
+    ]
+  },
+  "model_path": "backend/artifacts/models/dak.civ_tada_ltc_bill_pipeline.joblib"
+}

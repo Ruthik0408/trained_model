@@ -29,6 +29,12 @@ const APPROVER_DOTS = [
 const BREAKUP_COLORS = ["#ff4d4f", "#ff9820", "#ffbc36", "#57c768", "#2b8ef9"];
 const RISK_COLORS = ["#ff4d4f", "#ff9820", "#57c768"];
 export default function ReportsPage({ latestWorkbenchRun }) {
+    const latestDatasetTable = latestWorkbenchRun?.datasetTable || "";
+    const latestRunId = latestWorkbenchRun?.runId ?? null;
+    const latestSelectedTablesKey = (latestWorkbenchRun?.selectedTables || []).join("\u001f");
+    const latestRunName = latestWorkbenchRun?.runName || "Latest workbench run";
+    const latestTotalRows = latestWorkbenchRun?.totalRows || 0;
+    const latestFinalAnomalyCount = latestWorkbenchRun?.finalAnomalyCount || 0;
     const [datasets, setDatasets] = useState([]);
     const [datasetTable, setDatasetTable] = useState("");
     const [anomalyFilter, setAnomalyFilter] = useState("all");
@@ -47,22 +53,22 @@ export default function ReportsPage({ latestWorkbenchRun }) {
     const [showAllAlerts, setShowAllAlerts] = useState(false);
     const [viewportWidth, setViewportWidth] = useState(() => typeof window === "undefined" ? 1400 : window.innerWidth);
     const hydratedLatestDataset = useMemo(() => {
-        if (!latestWorkbenchRun?.datasetTable)
+        if (!latestDatasetTable)
             return null;
         return {
-            dataset_table: latestWorkbenchRun.datasetTable,
-            run_id: latestWorkbenchRun.runId,
-            selected_tables: latestWorkbenchRun.selectedTables || [],
-            run_name: latestWorkbenchRun.runName || "Latest workbench run",
-            total_rows: latestWorkbenchRun.totalRows || 0,
-            final_anomaly_count: latestWorkbenchRun.finalAnomalyCount || 0,
+            dataset_table: latestDatasetTable,
+            run_id: latestRunId,
+            selected_tables: latestSelectedTablesKey ? latestSelectedTablesKey.split("\u001f") : [],
+            run_name: latestRunName,
+            total_rows: latestTotalRows,
+            final_anomaly_count: latestFinalAnomalyCount,
         };
-    }, [latestWorkbenchRun]);
+    }, [latestDatasetTable, latestRunId, latestSelectedTablesKey, latestRunName, latestTotalRows, latestFinalAnomalyCount]);
     useEffect(() => {
-        if (latestWorkbenchRun?.datasetTable) {
-            setDatasetTable(latestWorkbenchRun.datasetTable);
+        if (latestDatasetTable) {
+            setDatasetTable(latestDatasetTable);
         }
-    }, [latestWorkbenchRun]);
+    }, [latestDatasetTable]);
     useEffect(() => {
         if (typeof window === "undefined")
             return;

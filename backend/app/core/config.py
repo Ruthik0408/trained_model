@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 from pydantic import BaseModel
+from sqlalchemy.engine import URL, make_url
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 PROJECT_DIR = BASE_DIR.parent
@@ -64,9 +65,23 @@ def _build_app_db_url() -> str:
     # Use a dedicated app DB; override with TULIP_APP_DB_NAME if needed
     app_db_name = str(os.getenv("TULIP_APP_DB_NAME", "tulip_anomaly"))
 
-    if password:
-        return f"postgresql+psycopg2://{user}:{password}@{host}:{port}/{app_db_name}"
-    return f"postgresql+psycopg2://{user}@{host}:{port}/{app_db_name}"
+    return URL.create(
+        "postgresql+psycopg2",
+        username=user,
+        password=password or None,
+        host=host,
+        port=int(port),
+        database=app_db_name,
+    ).render_as_string(
+        hide_password=False
+    )
+
+
+def mask_database_url(url: str) -> str:
+    try:
+        return make_url(url).render_as_string(hide_password=True)
+    except Exception:
+        return "<invalid database url>"
 
 
 def _trained_model_dir() -> str:

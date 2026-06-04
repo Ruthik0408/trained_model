@@ -10,16 +10,13 @@ from app.core.database import check_app_db_connection, get_db
 from app.core.errors import WorkbenchValidationError
 from app.schemas.workbench_schema import (
     AnomalyListResponse,
-    BuiltinRuleRequest,
     DatasetFeedbackRequest,
     ReportResponse,
-    ReviewTableResponse,
     TableInfo,
     WorkbenchRunRequest,
     WorkbenchRunResponse,
 )
-from app.services.dashboard_service import anomaly_list_data, report_data, review_rows_data, review_table_data
-from app.services.workbench.default_rules import builtin_feature_rules
+from app.services.dashboard_service import anomaly_list_data, report_data, review_rows_data
 from app.services.workbench.orchestrator import preview_workbench, run_workbench
 from app.services.workbench.result_store import list_saved_datasets, update_dataset_feedback
 from app.services.workbench.source_db import list_source_tables, source_connection_status
@@ -68,56 +65,6 @@ def get_tables(request: Request):
             status_code=500,
             detail="Failed to retrieve tables. Check the request ID in server logs.",
         )
-
-
-@router.get(
-    "/connection",
-    summary="Check source connectivity",
-    responses={503: {"description": "Source database connection failed."}},
-)
-def get_connection_status(request: Request):
-    """Check whether the source database is reachable before preview or run actions."""
-    try:
-        status = source_connection_status()
-        if status.get("connected"):
-            _log_request(request, "Connection OK")
-            return status
-        logger.warning("Connection check failed: %s", status)
-        raise HTTPException(status_code=503, detail=status)
-    except HTTPException:
-        raise
-    except Exception:
-        logger.exception("Connection status check failed")
-        raise HTTPException(
-            status_code=503,
-            detail={"connected": False, "error": "Connection check failed"},
-        )
-
-
-@router.post(
-    "/default-feature-rules",
-    summary="Suggest built-in feature rules",
-    responses={
-        400: {"description": "Join/date configuration is invalid for rule generation."},
-        503: {"description": "Source database is unavailable."},
-    },
-)
-def get_default_feature_rules(payload: BuiltinRuleRequest, request: Request):
-    """Suggest built-in feature rules inferred from the selected tables and join path."""
-    try:
-        effective_payload = apply_trained_dataset_defaults(payload)
-        rules = builtin_feature_rules(effective_payload)
-        _log_request(request, f"Generated {len(rules)} feature rules")
-        return rules
-    except ConnectionError as exc:
-        logger.warning("Source DB connection error in feature rules: %s", exc)
-        raise HTTPException(status_code=503, detail="Cannot connect to source database")
-    except ValueError as exc:
-        logger.warning("Validation error in feature rules: %s", exc)
-        raise HTTPException(status_code=400, detail=str(exc))
-    except Exception:
-        logger.exception("Error generating feature rules")
-        raise HTTPException(status_code=500, detail="Failed to generate feature rules")
 
 
 @router.post(
@@ -216,40 +163,6 @@ def dataset_list_route(request: Request, db: Session = Depends(get_db)):
     except Exception:
         logger.exception("Error fetching datasets")
         raise HTTPException(status_code=500, detail="Failed to retrieve datasets")
-
-
-@router.get(
-    "/review-table",
-    response_model=ReviewTableResponse,
-    summary="Get review-table summary",
-)
-def review_table_route(
-    request: Request,
-    dataset_table: Annotated[str | None, Query(pattern=SAFE_IDENTIFIER_PATTERN)] = None,
-    anomaly_filter: str = "all",
-    limit: int | None = None,
-    offset: int = 0,
-    run_id: int | None = None,
-    db: Session = Depends(get_db),
-):
-    """Return paginated anomaly rows plus aggregate review-table totals."""
-    try:
-        result = review_table_data(
-            db,
-            dataset_table=dataset_table,
-            anomaly_filter=anomaly_filter,
-            limit=limit,
-            offset=offset,
-            run_id=run_id,
-        )
-        _log_request(
-            request,
-            f"Retrieved review table: {dataset_table or 'current'}@{anomaly_filter}",
-        )
-        return result
-    except Exception:
-        logger.exception("Error fetching review table")
-        raise HTTPException(status_code=500, detail="Failed to retrieve review table")
 
 
 @router.get("/review-rows", summary="Get review rows")

@@ -20,6 +20,9 @@ export function useAsync(asyncFunction, immediate = true, deps = []) {
     const [error, setError] = useState(null);
     const isMountedRef = useRef(true);
     const abortControllerRef = useRef(null);
+    const depsRef = useRef(deps);
+    depsRef.current = deps;
+    const dependencyKey = depsRef.current.map(formatAsyncDependency).join("\u001f");
 
     const execute = useCallback(async () => {
         // Cancel any previous request
@@ -76,7 +79,7 @@ export function useAsync(asyncFunction, immediate = true, deps = []) {
                 abortControllerRef.current.abort();
             }
         };
-    }, [execute, immediate, ...deps]);
+    }, [execute, immediate, dependencyKey]);
 
     return {
         execute,
@@ -87,6 +90,19 @@ export function useAsync(asyncFunction, immediate = true, deps = []) {
         isError: status === "error",
         isSuccess: status === "success",
     };
+}
+
+function formatAsyncDependency(value) {
+    if (value == null)
+        return String(value);
+    if (["string", "number", "boolean", "bigint"].includes(typeof value))
+        return String(value);
+    try {
+        return JSON.stringify(value);
+    }
+    catch {
+        return String(value);
+    }
 }
 /**
  * useDebounce Hook - Debounce a value with configurable delay

@@ -9,7 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.routes_workbench import router as workbench_router
-from app.core.config import settings
+from app.core.config import mask_database_url, settings
 from app.core.database import Base, engine, check_app_db_connection, ensure_workbench_run_schema
 from app.core.logging_utils import configure_logging
 from app.core.rate_limit import InMemoryRateLimiter, ValkeyRateLimiter
@@ -71,8 +71,7 @@ async def lifespan(app: FastAPI):
     logger.info(
         "Starting %s — app DB: %s — valkey=%s",
         settings.app_name,
-        # Hide password from log
-        settings.db_url.split("@")[-1] if "@" in settings.db_url else settings.db_url,
+        mask_database_url(settings.db_url),
         "connected" if valkey_available() else "local-fallback",
     )
     _initialize_app_tables()
