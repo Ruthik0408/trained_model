@@ -268,7 +268,7 @@ export default function WorkbenchPage({ onRunComplete, includeRuleAnomalyStep = 
         }
     }
     return (<div style={page}>
-      <div style={stepper}>
+      <div style={{ ...stepper, gridTemplateColumns: `repeat(${steps.length}, minmax(110px, 1fr))` }}>
         {steps.map((step) => {
             const isActive = step.id === activeStep;
             return (<button key={step.id} type="button" onClick={() => goToStep(step.id)} disabled={step.disabled} style={{
@@ -584,7 +584,6 @@ function getDateValidationError(fromDate, toDate) {
 const page = { display: "grid", gap: 18 };
 const stepper = {
     display: "grid",
-    gridTemplateColumns: "repeat(5, minmax(110px, 1fr))",
     gap: 10,
     alignItems: "stretch",
     overflowX: "auto",

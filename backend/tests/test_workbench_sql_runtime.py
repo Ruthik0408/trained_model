@@ -161,6 +161,10 @@ def test_cheque_slip_schedule3_uses_left_join_so_missing_schedule_rows_can_be_fl
             {"column_name": "fk_dak", "data_type": "bigint"},
             {"column_name": "record_status", "data_type": "character varying"},
             {"column_name": "approved", "data_type": "boolean"},
+            {"column_name": "fk_aao", "data_type": "bigint"},
+            {"column_name": "fk_ao", "data_type": "bigint"},
+            {"column_name": "fk_auditor", "data_type": "bigint"},
+            {"column_name": "fk_go", "data_type": "bigint"},
         ],
         "schedule3": [
             {"column_name": "id", "data_type": "bigint"},
@@ -183,3 +187,7 @@ def test_cheque_slip_schedule3_uses_left_join_so_missing_schedule_rows_can_be_fl
     assert 'LEFT JOIN' in sql
     assert '"schedule3" AS "schedule3"' in sql
     assert "Approved V cheque_slip count does not match schedule3 P/V count for same fk_dak" in _params.values()
+    assert 'base."cheque_slip.fk_aao" IS NULL' in sql
+    assert 'base."cheque_slip.fk_ao" IS NULL' in sql
+    assert 'base."cheque_slip.fk_auditor" IS NULL' in sql
+    assert 'base."cheque_slip.fk_go" IS NULL' not in sql

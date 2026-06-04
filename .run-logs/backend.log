@@ -729,3 +729,408 @@ INFO:     Waiting for application startup.
 {"timestamp": "2026-06-04T05:41:18.845058+00:00", "level": "INFO", "logger": "app.main", "message": "Starting Tulip 2.0 Anomaly System \u2014 app DB: postgresql+psycopg2://postgres:***@localhost:5432/tulip_anomaly \u2014 valkey=local-fallback"}
 {"timestamp": "2026-06-04T05:41:18.942717+00:00", "level": "INFO", "logger": "app.main", "message": "App DB tables verified / created successfully."}
 INFO:     Application startup complete.
+INFO:     192.168.0.109:48634 - "OPTIONS /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:48638 - "OPTIONS /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:48652 - "GET /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:48638 - "GET /api/workbench/tables HTTP/1.1" 200 OK
+WARNING:  WatchFiles detected changes in 'app/core/cache.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+{"timestamp": "2026-06-04T06:00:04.304901+00:00", "level": "INFO", "logger": "app.main", "message": "Shutting down Tulip 2.0 Anomaly System"}
+INFO:     Application shutdown complete.
+INFO:     Finished server process [69132]
+INFO:     Started server process [78717]
+INFO:     Waiting for application startup.
+{"timestamp": "2026-06-04T06:00:05.552428+00:00", "level": "WARNING", "logger": "app.core.valkey", "message": "Valkey unavailable, falling back to local memory cache: Error 111 connecting to localhost:6379. Connection refused."}
+{"timestamp": "2026-06-04T06:00:05.552495+00:00", "level": "INFO", "logger": "app.main", "message": "Starting Tulip 2.0 Anomaly System \u2014 app DB: postgresql+psycopg2://postgres:***@localhost:5432/tulip_anomaly \u2014 valkey=local-fallback"}
+{"timestamp": "2026-06-04T06:00:05.640797+00:00", "level": "INFO", "logger": "app.main", "message": "App DB tables verified / created successfully."}
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'train_models.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+{"timestamp": "2026-06-04T06:32:01.540825+00:00", "level": "INFO", "logger": "app.main", "message": "Shutting down Tulip 2.0 Anomaly System"}
+INFO:     Application shutdown complete.
+INFO:     Finished server process [78717]
+WARNING:  WatchFiles detected changes in 'train_models.py'. Reloading...
+INFO:     Started server process [92747]
+INFO:     Waiting for application startup.
+{"timestamp": "2026-06-04T06:32:02.618559+00:00", "level": "WARNING", "logger": "app.core.valkey", "message": "Valkey unavailable, falling back to local memory cache: Error 111 connecting to localhost:6379. Connection refused."}
+{"timestamp": "2026-06-04T06:32:02.618618+00:00", "level": "INFO", "logger": "app.main", "message": "Starting Tulip 2.0 Anomaly System \u2014 app DB: postgresql+psycopg2://postgres:***@localhost:5432/tulip_anomaly \u2014 valkey=local-fallback"}
+{"timestamp": "2026-06-04T06:32:02.713697+00:00", "level": "INFO", "logger": "app.main", "message": "App DB tables verified / created successfully."}
+INFO:     Application startup complete.
+INFO:     Started server process [92781]
+INFO:     Waiting for application startup.
+{"timestamp": "2026-06-04T06:32:03.848183+00:00", "level": "WARNING", "logger": "app.core.valkey", "message": "Valkey unavailable, falling back to local memory cache: Error 111 connecting to localhost:6379. Connection refused."}
+{"timestamp": "2026-06-04T06:32:03.848243+00:00", "level": "INFO", "logger": "app.main", "message": "Starting Tulip 2.0 Anomaly System \u2014 app DB: postgresql+psycopg2://postgres:***@localhost:5432/tulip_anomaly \u2014 valkey=local-fallback"}
+{"timestamp": "2026-06-04T06:32:03.934713+00:00", "level": "INFO", "logger": "app.main", "message": "App DB tables verified / created successfully."}
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'app/api/routes_workbench.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+{"timestamp": "2026-06-04T06:46:31.273609+00:00", "level": "INFO", "logger": "app.main", "message": "Shutting down Tulip 2.0 Anomaly System"}
+INFO:     Application shutdown complete.
+INFO:     Finished server process [92781]
+INFO:     Started server process [99161]
+INFO:     Waiting for application startup.
+{"timestamp": "2026-06-04T06:46:32.509924+00:00", "level": "WARNING", "logger": "app.core.valkey", "message": "Valkey unavailable, falling back to local memory cache: Error 111 connecting to localhost:6379. Connection refused."}
+{"timestamp": "2026-06-04T06:46:32.510009+00:00", "level": "INFO", "logger": "app.main", "message": "Starting Tulip 2.0 Anomaly System \u2014 app DB: postgresql+psycopg2://postgres:***@localhost:5432/tulip_anomaly \u2014 valkey=local-fallback"}
+{"timestamp": "2026-06-04T06:46:32.599284+00:00", "level": "INFO", "logger": "app.main", "message": "App DB tables verified / created successfully."}
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'app/services/workbench/orchestrator.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+{"timestamp": "2026-06-04T06:46:44.824139+00:00", "level": "INFO", "logger": "app.main", "message": "Shutting down Tulip 2.0 Anomaly System"}
+INFO:     Application shutdown complete.
+INFO:     Finished server process [99161]
+INFO:     Started server process [99329]
+INFO:     Waiting for application startup.
+{"timestamp": "2026-06-04T06:46:46.198283+00:00", "level": "WARNING", "logger": "app.core.valkey", "message": "Valkey unavailable, falling back to local memory cache: Error 111 connecting to localhost:6379. Connection refused."}
+{"timestamp": "2026-06-04T06:46:46.198354+00:00", "level": "INFO", "logger": "app.main", "message": "Starting Tulip 2.0 Anomaly System \u2014 app DB: postgresql+psycopg2://postgres:***@localhost:5432/tulip_anomaly \u2014 valkey=local-fallback"}
+{"timestamp": "2026-06-04T06:46:46.293303+00:00", "level": "INFO", "logger": "app.main", "message": "App DB tables verified / created successfully."}
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'app/services/workbench/orchestrator.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+{"timestamp": "2026-06-04T06:47:19.657556+00:00", "level": "INFO", "logger": "app.main", "message": "Shutting down Tulip 2.0 Anomaly System"}
+INFO:     Application shutdown complete.
+INFO:     Finished server process [99329]
+INFO:     Started server process [99938]
+INFO:     Waiting for application startup.
+{"timestamp": "2026-06-04T06:47:21.195733+00:00", "level": "WARNING", "logger": "app.core.valkey", "message": "Valkey unavailable, falling back to local memory cache: Error 111 connecting to localhost:6379. Connection refused."}
+{"timestamp": "2026-06-04T06:47:21.195802+00:00", "level": "INFO", "logger": "app.main", "message": "Starting Tulip 2.0 Anomaly System \u2014 app DB: postgresql+psycopg2://postgres:***@localhost:5432/tulip_anomaly \u2014 valkey=local-fallback"}
+{"timestamp": "2026-06-04T06:47:21.293139+00:00", "level": "INFO", "logger": "app.main", "message": "App DB tables verified / created successfully."}
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'app/services/workbench/source_db.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+{"timestamp": "2026-06-04T06:47:42.033460+00:00", "level": "INFO", "logger": "app.main", "message": "Shutting down Tulip 2.0 Anomaly System"}
+INFO:     Application shutdown complete.
+INFO:     Finished server process [99938]
+INFO:     Started server process [100166]
+INFO:     Waiting for application startup.
+{"timestamp": "2026-06-04T06:47:43.362758+00:00", "level": "WARNING", "logger": "app.core.valkey", "message": "Valkey unavailable, falling back to local memory cache: Error 111 connecting to localhost:6379. Connection refused."}
+{"timestamp": "2026-06-04T06:47:43.362822+00:00", "level": "INFO", "logger": "app.main", "message": "Starting Tulip 2.0 Anomaly System \u2014 app DB: postgresql+psycopg2://postgres:***@localhost:5432/tulip_anomaly \u2014 valkey=local-fallback"}
+{"timestamp": "2026-06-04T06:47:43.460064+00:00", "level": "INFO", "logger": "app.main", "message": "App DB tables verified / created successfully."}
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'app/services/workbench/result_store.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+{"timestamp": "2026-06-04T06:48:18.325848+00:00", "level": "INFO", "logger": "app.main", "message": "Shutting down Tulip 2.0 Anomaly System"}
+INFO:     Application shutdown complete.
+INFO:     Finished server process [100166]
+INFO:     Started server process [100523]
+INFO:     Waiting for application startup.
+{"timestamp": "2026-06-04T06:48:19.670923+00:00", "level": "WARNING", "logger": "app.core.valkey", "message": "Valkey unavailable, falling back to local memory cache: Error 111 connecting to localhost:6379. Connection refused."}
+{"timestamp": "2026-06-04T06:48:19.670994+00:00", "level": "INFO", "logger": "app.main", "message": "Starting Tulip 2.0 Anomaly System \u2014 app DB: postgresql+psycopg2://postgres:***@localhost:5432/tulip_anomaly \u2014 valkey=local-fallback"}
+{"timestamp": "2026-06-04T06:48:19.763201+00:00", "level": "INFO", "logger": "app.main", "message": "App DB tables verified / created successfully."}
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'app/services/workbench/sql_runtime.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+{"timestamp": "2026-06-04T06:48:53.026953+00:00", "level": "INFO", "logger": "app.main", "message": "Shutting down Tulip 2.0 Anomaly System"}
+INFO:     Application shutdown complete.
+INFO:     Finished server process [100523]
+INFO:     Started server process [100863]
+INFO:     Waiting for application startup.
+{"timestamp": "2026-06-04T06:48:54.301733+00:00", "level": "WARNING", "logger": "app.core.valkey", "message": "Valkey unavailable, falling back to local memory cache: Error 111 connecting to localhost:6379. Connection refused."}
+{"timestamp": "2026-06-04T06:48:54.301796+00:00", "level": "INFO", "logger": "app.main", "message": "Starting Tulip 2.0 Anomaly System \u2014 app DB: postgresql+psycopg2://postgres:***@localhost:5432/tulip_anomaly \u2014 valkey=local-fallback"}
+{"timestamp": "2026-06-04T06:48:54.392207+00:00", "level": "INFO", "logger": "app.main", "message": "App DB tables verified / created successfully."}
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'train_models.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+{"timestamp": "2026-06-04T06:57:14.977911+00:00", "level": "INFO", "logger": "app.main", "message": "Shutting down Tulip 2.0 Anomaly System"}
+INFO:     Application shutdown complete.
+INFO:     Finished server process [100863]
+INFO:     Started server process [105178]
+INFO:     Waiting for application startup.
+{"timestamp": "2026-06-04T06:57:16.273877+00:00", "level": "WARNING", "logger": "app.core.valkey", "message": "Valkey unavailable, falling back to local memory cache: Error 111 connecting to localhost:6379. Connection refused."}
+{"timestamp": "2026-06-04T06:57:16.273948+00:00", "level": "INFO", "logger": "app.main", "message": "Starting Tulip 2.0 Anomaly System \u2014 app DB: postgresql+psycopg2://postgres:***@localhost:5432/tulip_anomaly \u2014 valkey=local-fallback"}
+{"timestamp": "2026-06-04T06:57:16.366465+00:00", "level": "INFO", "logger": "app.main", "message": "App DB tables verified / created successfully."}
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'app/services/workbench/sql_runtime.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+{"timestamp": "2026-06-04T06:57:22.177602+00:00", "level": "INFO", "logger": "app.main", "message": "Shutting down Tulip 2.0 Anomaly System"}
+INFO:     Application shutdown complete.
+INFO:     Finished server process [105178]
+INFO:     Started server process [105318]
+INFO:     Waiting for application startup.
+{"timestamp": "2026-06-04T06:57:23.514934+00:00", "level": "WARNING", "logger": "app.core.valkey", "message": "Valkey unavailable, falling back to local memory cache: Error 111 connecting to localhost:6379. Connection refused."}
+{"timestamp": "2026-06-04T06:57:23.515008+00:00", "level": "INFO", "logger": "app.main", "message": "Starting Tulip 2.0 Anomaly System \u2014 app DB: postgresql+psycopg2://postgres:***@localhost:5432/tulip_anomaly \u2014 valkey=local-fallback"}
+{"timestamp": "2026-06-04T06:57:23.607520+00:00", "level": "INFO", "logger": "app.main", "message": "App DB tables verified / created successfully."}
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'tests/test_train_models_date_window.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+{"timestamp": "2026-06-04T06:58:05.291540+00:00", "level": "INFO", "logger": "app.main", "message": "Shutting down Tulip 2.0 Anomaly System"}
+INFO:     Application shutdown complete.
+INFO:     Finished server process [105318]
+INFO:     Started server process [105724]
+INFO:     Waiting for application startup.
+{"timestamp": "2026-06-04T06:58:06.661558+00:00", "level": "WARNING", "logger": "app.core.valkey", "message": "Valkey unavailable, falling back to local memory cache: Error 111 connecting to localhost:6379. Connection refused."}
+{"timestamp": "2026-06-04T06:58:06.661632+00:00", "level": "INFO", "logger": "app.main", "message": "Starting Tulip 2.0 Anomaly System \u2014 app DB: postgresql+psycopg2://postgres:***@localhost:5432/tulip_anomaly \u2014 valkey=local-fallback"}
+{"timestamp": "2026-06-04T06:58:06.753901+00:00", "level": "INFO", "logger": "app.main", "message": "App DB tables verified / created successfully."}
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'tests/test_workbench_sql_runtime.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+{"timestamp": "2026-06-04T06:58:23.586435+00:00", "level": "INFO", "logger": "app.main", "message": "Shutting down Tulip 2.0 Anomaly System"}
+INFO:     Application shutdown complete.
+INFO:     Finished server process [105724]
+INFO:     Started server process [105963]
+INFO:     Waiting for application startup.
+{"timestamp": "2026-06-04T06:58:24.925288+00:00", "level": "WARNING", "logger": "app.core.valkey", "message": "Valkey unavailable, falling back to local memory cache: Error 111 connecting to localhost:6379. Connection refused."}
+{"timestamp": "2026-06-04T06:58:24.925372+00:00", "level": "INFO", "logger": "app.main", "message": "Starting Tulip 2.0 Anomaly System \u2014 app DB: postgresql+psycopg2://postgres:***@localhost:5432/tulip_anomaly \u2014 valkey=local-fallback"}
+{"timestamp": "2026-06-04T06:58:25.018531+00:00", "level": "INFO", "logger": "app.main", "message": "App DB tables verified / created successfully."}
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'train_models.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+{"timestamp": "2026-06-04T06:58:38.949527+00:00", "level": "INFO", "logger": "app.main", "message": "Shutting down Tulip 2.0 Anomaly System"}
+INFO:     Application shutdown complete.
+INFO:     Finished server process [105963]
+INFO:     Started server process [106212]
+INFO:     Waiting for application startup.
+{"timestamp": "2026-06-04T06:58:40.315842+00:00", "level": "WARNING", "logger": "app.core.valkey", "message": "Valkey unavailable, falling back to local memory cache: Error 111 connecting to localhost:6379. Connection refused."}
+{"timestamp": "2026-06-04T06:58:40.315909+00:00", "level": "INFO", "logger": "app.main", "message": "Starting Tulip 2.0 Anomaly System \u2014 app DB: postgresql+psycopg2://postgres:***@localhost:5432/tulip_anomaly \u2014 valkey=local-fallback"}
+{"timestamp": "2026-06-04T06:58:40.409877+00:00", "level": "INFO", "logger": "app.main", "message": "App DB tables verified / created successfully."}
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'train_models.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+{"timestamp": "2026-06-04T07:02:06.314701+00:00", "level": "INFO", "logger": "app.main", "message": "Shutting down Tulip 2.0 Anomaly System"}
+INFO:     Application shutdown complete.
+INFO:     Finished server process [106212]
+INFO:     Started server process [108216]
+INFO:     Waiting for application startup.
+{"timestamp": "2026-06-04T07:02:07.631288+00:00", "level": "WARNING", "logger": "app.core.valkey", "message": "Valkey unavailable, falling back to local memory cache: Error 111 connecting to localhost:6379. Connection refused."}
+{"timestamp": "2026-06-04T07:02:07.631357+00:00", "level": "INFO", "logger": "app.main", "message": "Starting Tulip 2.0 Anomaly System \u2014 app DB: postgresql+psycopg2://postgres:***@localhost:5432/tulip_anomaly \u2014 valkey=local-fallback"}
+{"timestamp": "2026-06-04T07:02:07.743482+00:00", "level": "INFO", "logger": "app.main", "message": "App DB tables verified / created successfully."}
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'train_models.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+{"timestamp": "2026-06-04T07:14:07.653863+00:00", "level": "INFO", "logger": "app.main", "message": "Shutting down Tulip 2.0 Anomaly System"}
+INFO:     Application shutdown complete.
+INFO:     Finished server process [108216]
+INFO:     Started server process [113856]
+INFO:     Waiting for application startup.
+{"timestamp": "2026-06-04T07:14:09.045210+00:00", "level": "WARNING", "logger": "app.core.valkey", "message": "Valkey unavailable, falling back to local memory cache: Error 111 connecting to localhost:6379. Connection refused."}
+{"timestamp": "2026-06-04T07:14:09.045293+00:00", "level": "INFO", "logger": "app.main", "message": "Starting Tulip 2.0 Anomaly System \u2014 app DB: postgresql+psycopg2://postgres:***@localhost:5432/tulip_anomaly \u2014 valkey=local-fallback"}
+{"timestamp": "2026-06-04T07:14:09.142062+00:00", "level": "INFO", "logger": "app.main", "message": "App DB tables verified / created successfully."}
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'app/services/workbench/saved_model_inference.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+{"timestamp": "2026-06-04T07:15:08.257829+00:00", "level": "INFO", "logger": "app.main", "message": "Shutting down Tulip 2.0 Anomaly System"}
+INFO:     Application shutdown complete.
+INFO:     Finished server process [113856]
+WARNING:  WatchFiles detected changes in 'app/services/workbench/orchestrator.py'. Reloading...
+INFO:     Started server process [114566]
+INFO:     Waiting for application startup.
+{"timestamp": "2026-06-04T07:15:09.691036+00:00", "level": "WARNING", "logger": "app.core.valkey", "message": "Valkey unavailable, falling back to local memory cache: Error 111 connecting to localhost:6379. Connection refused."}
+{"timestamp": "2026-06-04T07:15:09.691103+00:00", "level": "INFO", "logger": "app.main", "message": "Starting Tulip 2.0 Anomaly System \u2014 app DB: postgresql+psycopg2://postgres:***@localhost:5432/tulip_anomaly \u2014 valkey=local-fallback"}
+{"timestamp": "2026-06-04T07:15:09.787189+00:00", "level": "INFO", "logger": "app.main", "message": "App DB tables verified / created successfully."}
+INFO:     Application startup complete.
+INFO:     Started server process [114611]
+INFO:     Waiting for application startup.
+{"timestamp": "2026-06-04T07:15:11.099179+00:00", "level": "WARNING", "logger": "app.core.valkey", "message": "Valkey unavailable, falling back to local memory cache: Error 111 connecting to localhost:6379. Connection refused."}
+{"timestamp": "2026-06-04T07:15:11.099261+00:00", "level": "INFO", "logger": "app.main", "message": "Starting Tulip 2.0 Anomaly System \u2014 app DB: postgresql+psycopg2://postgres:***@localhost:5432/tulip_anomaly \u2014 valkey=local-fallback"}
+{"timestamp": "2026-06-04T07:15:11.193889+00:00", "level": "INFO", "logger": "app.main", "message": "App DB tables verified / created successfully."}
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'tests/test_saved_model_inference.py', 'tests/test_workbench_orchestrator_amount_total.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+{"timestamp": "2026-06-04T07:15:31.734695+00:00", "level": "INFO", "logger": "app.main", "message": "Shutting down Tulip 2.0 Anomaly System"}
+INFO:     Application shutdown complete.
+INFO:     Finished server process [114611]
+INFO:     Started server process [114892]
+INFO:     Waiting for application startup.
+{"timestamp": "2026-06-04T07:15:33.166062+00:00", "level": "WARNING", "logger": "app.core.valkey", "message": "Valkey unavailable, falling back to local memory cache: Error 111 connecting to localhost:6379. Connection refused."}
+{"timestamp": "2026-06-04T07:15:33.166133+00:00", "level": "INFO", "logger": "app.main", "message": "Starting Tulip 2.0 Anomaly System \u2014 app DB: postgresql+psycopg2://postgres:***@localhost:5432/tulip_anomaly \u2014 valkey=local-fallback"}
+{"timestamp": "2026-06-04T07:15:33.264647+00:00", "level": "INFO", "logger": "app.main", "message": "App DB tables verified / created successfully."}
+INFO:     Application startup complete.
+INFO:     192.168.0.109:35726 - "OPTIONS /api/workbench/preview HTTP/1.1" 200 OK
+{"timestamp": "2026-06-04T07:20:37.215352+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Preview cache MISS: executing fresh SQL join for tables=['dak', 'bill']"}
+{"timestamp": "2026-06-04T07:20:37.290562+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Workbench SQL join query built in projection_mode=full with projected_source_columns=ALL"}
+{"timestamp": "2026-06-04T07:20:38.207355+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Preview completed for tables=['dak', 'bill'] in 0.99s with 50 preview rows"}
+INFO:     192.168.0.109:35728 - "POST /api/workbench/preview HTTP/1.1" 200 OK
+{"timestamp": "2026-06-04T07:20:53.051907+00:00", "level": "WARNING", "logger": "app.api.routes_workbench", "message": "Workbench preview structured validation error: No saved trained model is available for the selected tables."}
+INFO:     192.168.0.109:59742 - "POST /api/workbench/preview HTTP/1.1" 400 Bad Request
+{"timestamp": "2026-06-04T07:20:54.595527+00:00", "level": "WARNING", "logger": "app.api.routes_workbench", "message": "Workbench preview structured validation error: No saved trained model is available for the selected tables."}
+INFO:     192.168.0.109:59742 - "POST /api/workbench/preview HTTP/1.1" 400 Bad Request
+{"timestamp": "2026-06-04T07:21:10.000208+00:00", "level": "WARNING", "logger": "app.api.routes_workbench", "message": "Workbench preview structured validation error: No saved trained model is available for the selected tables."}
+INFO:     192.168.0.109:59730 - "POST /api/workbench/preview HTTP/1.1" 400 Bad Request
+WARNING:  WatchFiles detected changes in 'business_rules.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+{"timestamp": "2026-06-04T07:21:13.127412+00:00", "level": "INFO", "logger": "app.main", "message": "Shutting down Tulip 2.0 Anomaly System"}
+INFO:     Application shutdown complete.
+INFO:     Finished server process [114892]
+INFO:     Started server process [117854]
+INFO:     Waiting for application startup.
+{"timestamp": "2026-06-04T07:21:14.720670+00:00", "level": "WARNING", "logger": "app.core.valkey", "message": "Valkey unavailable, falling back to local memory cache: Error 111 connecting to localhost:6379. Connection refused."}
+{"timestamp": "2026-06-04T07:21:14.720803+00:00", "level": "INFO", "logger": "app.main", "message": "Starting Tulip 2.0 Anomaly System \u2014 app DB: postgresql+psycopg2://postgres:***@localhost:5432/tulip_anomaly \u2014 valkey=local-fallback"}
+{"timestamp": "2026-06-04T07:21:14.835518+00:00", "level": "INFO", "logger": "app.main", "message": "App DB tables verified / created successfully."}
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'train_models.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+{"timestamp": "2026-06-04T07:21:19.345090+00:00", "level": "INFO", "logger": "app.main", "message": "Shutting down Tulip 2.0 Anomaly System"}
+INFO:     Application shutdown complete.
+INFO:     Finished server process [117854]
+INFO:     Started server process [117976]
+INFO:     Waiting for application startup.
+{"timestamp": "2026-06-04T07:21:20.889077+00:00", "level": "WARNING", "logger": "app.core.valkey", "message": "Valkey unavailable, falling back to local memory cache: Error 111 connecting to localhost:6379. Connection refused."}
+{"timestamp": "2026-06-04T07:21:20.889149+00:00", "level": "INFO", "logger": "app.main", "message": "Starting Tulip 2.0 Anomaly System \u2014 app DB: postgresql+psycopg2://postgres:***@localhost:5432/tulip_anomaly \u2014 valkey=local-fallback"}
+{"timestamp": "2026-06-04T07:21:20.985838+00:00", "level": "INFO", "logger": "app.main", "message": "App DB tables verified / created successfully."}
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'train_models.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+{"timestamp": "2026-06-04T07:21:25.094712+00:00", "level": "INFO", "logger": "app.main", "message": "Shutting down Tulip 2.0 Anomaly System"}
+INFO:     Application shutdown complete.
+INFO:     Finished server process [117976]
+INFO:     Started server process [118098]
+INFO:     Waiting for application startup.
+{"timestamp": "2026-06-04T07:21:26.531081+00:00", "level": "WARNING", "logger": "app.core.valkey", "message": "Valkey unavailable, falling back to local memory cache: Error 111 connecting to localhost:6379. Connection refused."}
+{"timestamp": "2026-06-04T07:21:26.531166+00:00", "level": "INFO", "logger": "app.main", "message": "Starting Tulip 2.0 Anomaly System \u2014 app DB: postgresql+psycopg2://postgres:***@localhost:5432/tulip_anomaly \u2014 valkey=local-fallback"}
+{"timestamp": "2026-06-04T07:21:26.629553+00:00", "level": "INFO", "logger": "app.main", "message": "App DB tables verified / created successfully."}
+INFO:     Application startup complete.
+{"timestamp": "2026-06-04T07:21:27.744165+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Preview cache MISS: executing fresh SQL join for tables=['dak', 'cheque_slip', 'ecs']"}
+{"timestamp": "2026-06-04T07:21:27.816320+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Workbench SQL join query built in projection_mode=full with projected_source_columns=ALL"}
+{"timestamp": "2026-06-04T07:21:27.855166+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Preview completed for tables=['dak', 'cheque_slip', 'ecs'] in 0.11s with 50 preview rows"}
+INFO:     192.168.0.109:42952 - "POST /api/workbench/preview HTTP/1.1" 200 OK
+INFO:     192.168.0.109:42952 - "OPTIONS /api/workbench/run HTTP/1.1" 200 OK
+{"timestamp": "2026-06-04T07:21:29.108578+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Starting workbench run for tables: ['dak', 'cheque_slip', 'ecs'], feature_rules: 0, user_rules: 0"}
+{"timestamp": "2026-06-04T07:21:29.108871+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Run cache MISS: executing fresh SQL workbench pipeline for tables=['dak', 'cheque_slip', 'ecs']"}
+{"timestamp": "2026-06-04T07:21:29.183101+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Workbench SQL join query built in projection_mode=scoring with projected_source_columns=174"}
+{"timestamp": "2026-06-04T07:21:29.230688+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Workbench query plan collected in 0.04s using EXPLAIN (FORMAT TEXT):\nSubquery Scan on src  (cost=23521.97..138891.26 rows=17382 width=1540)\n  ->  Gather  (cost=23521.97..138717.44 rows=17382 width=1507)\n        Workers Planned: 2\n        ->  Nested Loop  (cost=22521.97..82075.10 rows=7242 width=1364)\n              Join Filter: (dak.id = ecs.fk_dak)\n              ->  Parallel Hash Join  (cost=22521.54..72835.02 rows=3711 width=1014)\n                    Hash Cond: (cheque_slip.fk_dak = dak.id)\n                    ->  Parallel Seq Scan on cheque_slip  (cost=0.00..48573.71 rows=662771 width=233)\n                    ->  Parallel Hash  (cost=22476.96..22476.96 rows=3566 width=781)\n                          ->  Parallel Bitmap Heap Scan on dak  (cost=141.54..22476.96 rows=3566 width=781)\n                                Recheck Cond: ((list_date IS NOT NULL) AND (list_date >= '2026-02-01'::date) AND (list_date < '2026-02-11 00:00:00'::timestamp without time zone))\n                                ->  Bitmap Index Scan on idx_public_dak_list_date_join  (cost=0.00..139.40 rows=8558 width=0)\n                                      Index Cond: ((list_date IS NOT NULL) AND (list_date >= '2026-02-01'::date) AND (list_date < '2026-02-11 00:00:00'::timestamp without time zone))\n              ->  Index Scan using idx_public_ecs_fk_dak_join on ecs  (cost=0.43..1.73 rows=61 width=350)\n                    Index Cond: (fk_dak = cheque_slip.fk_dak)\n        SubPlan 1\n          ->  Index Only Scan using idx_public_ecs_fk_dak_join on ecs e  (cost=0.43..5.50 rows=61 width=0)\n                Index Cond: (fk_dak = cheque_slip.fk_dak)\n        SubPlan 2\n          ->  Index Only Scan using idx_public_ecs_fk_dak_join on ecs e_1  (cost=0.43..5.50 rows=61 width=0)\n                Index Cond: (fk_dak = cheque_slip.fk_dak)\nJIT:\n  Functions: 26\n  Options: Inlining false, Optimization false, Expressions true, Deforming true"}
+{"timestamp": "2026-06-04T07:21:29.230962+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Materializing workbench join into PostgreSQL temp table tmp_ml_join_07cccc022537"}
+WARNING:  WatchFiles detected changes in 'train_models.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for connections to close. (CTRL+C to force quit)
+{"timestamp": "2026-06-04T07:21:54.147214+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Materialized 452172 rows into PostgreSQL temp table tmp_ml_join_07cccc022537 in 24.92s"}
+{"timestamp": "2026-06-04T07:21:54.924300+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Skipped 98 sparse scoring columns from temp table tmp_ml_join_07cccc022537 with present ratio below 0.50: [{'column': 'dak.fk_bill_type', 'present_ratio': 0.004}, {'column': 'dak.fk_unit', 'present_ratio': 0.0}, {'column': 'dak.fk_imprest', 'present_ratio': 0.0}, {'column': 'dak.fk_dad_employee', 'present_ratio': 0.0}, {'column': 'dak.fk_civ_employee', 'present_ratio': 0.0}, {'column': 'dak.emp_no', 'present_ratio': 0.0}, {'column': 'dak.gpf_pran_ppan_no', 'present_ratio': 0.002}, {'column': 'dak.dad_account_no', 'present_ratio': 0.0}, {'column': 'dak.fk_outward_dak', 'present_ratio': 0.0}, {'column': 'dak.reason', 'present_ratio': 0.001}, {'column': 'dak.remarks', 'present_ratio': 0.0}, {'column': 'dak.fk_dak_entry_usr', 'present_ratio': 0.019}, {'column': 'dak.fk_usr', 'present_ratio': 0.0}, {'column': 'dak.task_no', 'present_ratio': 0.002}, {'column': 'dak.rescheduled', 'present_ratio': 0.019}, {'column': 'dak.fk_old_dak', 'present_ratio': 0.0}, {'column': 'dak.temp_dak_id', 'present_ratio': 0.0}, {'column': 'dak.priority', 'present_ratio': 0.0}, {'column': 'dak.fk_vendor', 'present_ratio': 0.0}, {'column': 'dak.sender_name', 'present_ratio': 0.001}]"}
+{"timestamp": "2026-06-04T07:22:05.174772+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Loaded 84 scoring columns from temp table tmp_ml_join_07cccc022537"}
+{"timestamp": "2026-06-04T07:22:05.174914+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "SQL workbench execution completed in 36.07s; joined 452172 rows from 3 tables; applied_feature_rules=0 applied_user_rules=0 staging_table=tmp_ml_join_07cccc022537"}
+{"timestamp": "2026-06-04T07:22:05.481741+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Saved Isolation Forest inference START for tables=['dak', 'cheque_slip', 'ecs']"}
+{"timestamp": "2026-06-04T07:22:27.949734+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Saved model feature preparation completed for dataset=dak.cheque_slip.ecs: 23 selected columns; scored_rows=452107 rule_rows_skipped=4; sample=['dak_amount', 'dak_record_status', 'dak_multiple_entry', 'dak_month_year', 'dak_dak_year', 'cheque_slip_amount', 'cheque_slip_approved', 'cheque_slip_selected', 'cheque_slip_record_status', 'ecs_month', 'ecs_amount', 'ecs_to_be_paid', 'ecs_released', 'ecs_approved', 'ecs_record_status', 'ecs_cmp_payment_status', 'gap_days_dak_bill_date_to_dak_reference_date', 'gap_days_ecs_cmp_file_gen_date_to_dak_disposal_date', 'gap_days_dak_reference_date_to_cheque_slip_auditor_date', 'gap_days_cheque_slip_auditor_date_to_cheque_slip_aao_date']"}
+{"timestamp": "2026-06-04T07:22:30.169002+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Saved Isolation Forest scoring completed: eligible_rows=452107 columns=23 ml_anomalies=9480"}
+INFO:     Waiting for background tasks to complete. (CTRL+C to force quit)
+{"timestamp": "2026-06-04T09:16:35.922107+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Saved model inference skipped retraining and scored 9480 ML anomaly rows with 9480 explanation signal sets"}
+{"timestamp": "2026-06-04T09:16:39.854778+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Loaded 9484 anomaly payload rows from source tables via locators from temp table tmp_ml_join_07cccc022537 in 3.93s"}
+{"timestamp": "2026-06-04T09:16:39.866184+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Saved Isolation Forest inference FINISHED in 2542.62s; total_final_anomalies=9484 payload_rows=9484 threshold=0.5381"}
+{"timestamp": "2026-06-04T09:17:01.228425+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Fresh SQL workbench pipeline completed in 2600.35s for tables=['dak', 'cheque_slip', 'ecs']"}
+{"timestamp": "2026-06-04T09:17:01.229000+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Amount total calculation completed in 0.00s for tables=['dak', 'cheque_slip', 'ecs']"}
+{"timestamp": "2026-06-04T09:17:01.255583+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Joined has 452172 rows; saving 9484 anomaly rows to public.ML_Features"}
+{"timestamp": "2026-06-04T09:17:02.002022+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Final ML_Features dataset has 9 columns"}
+{"timestamp": "2026-06-04T09:17:02.006440+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "ML_Features dataset frame built in 0.78s with 9484 rows and 9 columns"}
+{"timestamp": "2026-06-04T09:17:02.026451+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "WorkbenchRun record persisted in 0.02s with run_id=41"}
+{"timestamp": "2026-06-04T09:17:02.026878+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Writing 9484 rows to public.ML_Features"}
+{"timestamp": "2026-06-04T09:17:03.744824+00:00", "level": "INFO", "logger": "app.core.cache", "message": "Valkey cache cleared (all entries) for namespace=table_metadata"}
+{"timestamp": "2026-06-04T09:17:03.744910+00:00", "level": "INFO", "logger": "app.core.cache", "message": "Valkey cache cleared (all entries) for namespace=query_result"}
+{"timestamp": "2026-06-04T09:17:03.744940+00:00", "level": "INFO", "logger": "app.core.cache", "message": "Valkey cache cleared (all entries) for namespace=dataset_summary"}
+{"timestamp": "2026-06-04T09:17:03.744970+00:00", "level": "INFO", "logger": "app.core.cache", "message": "Valkey cache cleared (all entries) for namespace=join_sql"}
+{"timestamp": "2026-06-04T09:17:03.745004+00:00", "level": "INFO", "logger": "app.core.cache", "message": "All caches invalidated"}
+{"timestamp": "2026-06-04T09:17:03.745032+00:00", "level": "INFO", "logger": "app.core.cache", "message": "Valkey cache cleared (all entries) for namespace=query_result"}
+{"timestamp": "2026-06-04T09:17:03.745063+00:00", "level": "INFO", "logger": "app.core.cache", "message": "Valkey cache cleared (all entries) for namespace=dataset_summary"}
+{"timestamp": "2026-06-04T09:17:03.745088+00:00", "level": "INFO", "logger": "app.core.cache", "message": "Valkey cache cleared (all entries) for namespace=latest_dataset"}
+{"timestamp": "2026-06-04T09:17:03.757251+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Successfully wrote to public.ML_Features"}
+{"timestamp": "2026-06-04T09:17:03.762709+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "ML_Features write completed in 1.74s with 9484 inserted ids"}
+{"timestamp": "2026-06-04T09:17:03.772491+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Built builtin reason lookup in 0.01s with 4 mapped rows"}
+{"timestamp": "2026-06-04T09:17:03.772582+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Appended rows into dataset table ML_Features; total rows now 135058"}
+{"timestamp": "2026-06-04T09:17:04.668607+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Stored review payload artifact in Valkey in 0.90s for run_id=41"}
+{"timestamp": "2026-06-04T09:17:04.668790+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Metrics payload prepared in 0.00s for run_id=41"}
+{"timestamp": "2026-06-04T09:17:04.675415+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Run commit/refresh completed in 0.01s for run_id=41"}
+{"timestamp": "2026-06-04T09:17:04.675668+00:00", "level": "INFO", "logger": "app.services.workbench.constants", "message": "Workbench run FINISHED in 2603.80s for run_id=41 tables=['dak', 'cheque_slip', 'ecs'] final_anomalies=9484"}
+INFO:     Waiting for application shutdown.
+{"timestamp": "2026-06-04T09:17:05.290144+00:00", "level": "INFO", "logger": "app.main", "message": "Shutting down Tulip 2.0 Anomaly System"}
+INFO:     Application shutdown complete.
+INFO:     Finished server process [118098]
+WARNING:  WatchFiles detected changes in 'train_models.py', 'app/services/workbench/sql_runtime.py', 'model_cleaning.py', 'business_rules.py', 'app/services/workbench/saved_model_inference.py'. Reloading...
+INFO:     Started server process [140938]
+INFO:     Waiting for application startup.
+{"timestamp": "2026-06-04T09:17:06.714526+00:00", "level": "WARNING", "logger": "app.core.valkey", "message": "Valkey unavailable, falling back to local memory cache: Error 111 connecting to localhost:6379. Connection refused."}
+{"timestamp": "2026-06-04T09:17:06.714595+00:00", "level": "INFO", "logger": "app.main", "message": "Starting Tulip 2.0 Anomaly System \u2014 app DB: postgresql+psycopg2://postgres:***@localhost:5432/tulip_anomaly \u2014 valkey=local-fallback"}
+{"timestamp": "2026-06-04T09:17:06.792058+00:00", "level": "INFO", "logger": "app.main", "message": "App DB tables verified / created successfully."}
+INFO:     Application startup complete.
+INFO:     Started server process [140973]
+INFO:     Waiting for application startup.
+{"timestamp": "2026-06-04T09:17:07.840787+00:00", "level": "WARNING", "logger": "app.core.valkey", "message": "Valkey unavailable, falling back to local memory cache: Error 111 connecting to localhost:6379. Connection refused."}
+{"timestamp": "2026-06-04T09:17:07.840847+00:00", "level": "INFO", "logger": "app.main", "message": "Starting Tulip 2.0 Anomaly System \u2014 app DB: postgresql+psycopg2://postgres:***@localhost:5432/tulip_anomaly \u2014 valkey=local-fallback"}
+{"timestamp": "2026-06-04T09:17:07.919860+00:00", "level": "INFO", "logger": "app.main", "message": "App DB tables verified / created successfully."}
+INFO:     Application startup complete.
+INFO:     192.168.0.109:33452 - "OPTIONS /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:33466 - "OPTIONS /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:33480 - "OPTIONS /api/workbench/review-rows?anomaly_filter=all&limit=50&offset=0 HTTP/1.1" 200 OK
+INFO:     192.168.0.109:33492 - "OPTIONS /api/workbench/datasets HTTP/1.1" 200 OK
+INFO:     192.168.0.109:33494 - "OPTIONS /api/workbench/report?dataset_table=ML_Features HTTP/1.1" 200 OK
+INFO:     192.168.0.109:33504 - "OPTIONS /api/workbench/review-rows?anomaly_filter=all HTTP/1.1" 200 OK
+INFO:     192.168.0.109:32920 - "OPTIONS /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:32926 - "OPTIONS /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:32942 - "OPTIONS /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:32946 - "OPTIONS /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:32960 - "OPTIONS /api/workbench/review-rows?anomaly_filter=all&limit=50&offset=0 HTTP/1.1" 200 OK
+INFO:     192.168.0.109:32962 - "OPTIONS /api/workbench/datasets HTTP/1.1" 200 OK
+INFO:     192.168.0.109:32920 - "OPTIONS /api/workbench/report?dataset_table=ML_Features HTTP/1.1" 200 OK
+INFO:     192.168.0.109:32946 - "OPTIONS /api/workbench/review-rows?anomaly_filter=all HTTP/1.1" 200 OK
+INFO:     192.168.0.109:32942 - "OPTIONS /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:32926 - "OPTIONS /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:32960 - "OPTIONS /api/workbench/anomalies?dataset_table=ML_Features&anomaly_type=all&review_status=all&limit=50&offset=0 HTTP/1.1" 200 OK
+INFO:     192.168.0.109:32962 - "OPTIONS /api/workbench/review-rows?anomaly_filter=all&limit=50&offset=0 HTTP/1.1" 200 OK
+INFO:     192.168.0.109:32920 - "OPTIONS /api/workbench/datasets HTTP/1.1" 200 OK
+INFO:     192.168.0.109:32946 - "OPTIONS /api/workbench/report?dataset_table=ML_Features HTTP/1.1" 200 OK
+INFO:     192.168.0.109:32960 - "OPTIONS /api/workbench/review-rows?anomaly_filter=all HTTP/1.1" 200 OK
+INFO:     192.168.0.109:32926 - "OPTIONS /api/workbench/review-rows?dataset_table=ML_Features&anomaly_filter=all&limit=50&offset=0&run_id=40 HTTP/1.1" 200 OK
+INFO:     192.168.0.109:32942 - "OPTIONS /api/workbench/datasets HTTP/1.1" 200 OK
+INFO:     192.168.0.109:32962 - "OPTIONS /api/workbench/report?dataset_table=ML_Features&run_id=40 HTTP/1.1" 200 OK
+INFO:     192.168.0.109:32920 - "OPTIONS /api/workbench/review-rows?dataset_table=ML_Features&anomaly_filter=all&run_id=40 HTTP/1.1" 200 OK
+INFO:     192.168.0.109:32960 - "OPTIONS /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:32942 - "OPTIONS /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:32962 - "OPTIONS /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:32926 - "OPTIONS /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:32946 - "OPTIONS /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:32920 - "OPTIONS /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:32962 - "OPTIONS /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:32942 - "OPTIONS /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:32960 - "OPTIONS /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:32946 - "OPTIONS /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:32926 - "OPTIONS /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:32920 - "OPTIONS /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:32962 - "OPTIONS /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:32960 - "OPTIONS /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:32946 - "OPTIONS /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:32942 - "OPTIONS /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:32926 - "OPTIONS /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:32920 - "OPTIONS /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:32942 - "OPTIONS /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:32962 - "OPTIONS /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:32946 - "OPTIONS /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:32960 - "OPTIONS /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:32926 - "OPTIONS /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:32920 - "OPTIONS /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:32960 - "GET /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:32920 - "GET /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:32960 - "GET /api/workbench/tables HTTP/1.1" 200 OK
+INFO:     192.168.0.109:32920 - "GET /api/workbench/tables HTTP/1.1" 200 OK
+WARNING:  WatchFiles detected changes in 'app/api/routes_workbench.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+{"timestamp": "2026-06-04T09:18:13.645056+00:00", "level": "INFO", "logger": "app.main", "message": "Shutting down Tulip 2.0 Anomaly System"}
+INFO:     Application shutdown complete.
+INFO:     Finished server process [140973]
+WARNING:  WatchFiles detected changes in 'tests/test_trained_datasets.py'. Reloading...
+INFO:     Started server process [142470]
+INFO:     Waiting for application startup.
+{"timestamp": "2026-06-04T09:18:14.921792+00:00", "level": "WARNING", "logger": "app.core.valkey", "message": "Valkey unavailable, falling back to local memory cache: Error 111 connecting to localhost:6379. Connection refused."}
+{"timestamp": "2026-06-04T09:18:14.921896+00:00", "level": "INFO", "logger": "app.main", "message": "Starting Tulip 2.0 Anomaly System \u2014 app DB: postgresql+psycopg2://postgres:***@localhost:5432/tulip_anomaly \u2014 valkey=local-fallback"}
+{"timestamp": "2026-06-04T09:18:15.018723+00:00", "level": "INFO", "logger": "app.main", "message": "App DB tables verified / created successfully."}
+INFO:     Application startup complete.
+INFO:     Started server process [142516]
+INFO:     Waiting for application startup.
+{"timestamp": "2026-06-04T09:18:16.199175+00:00", "level": "WARNING", "logger": "app.core.valkey", "message": "Valkey unavailable, falling back to local memory cache: Error 111 connecting to localhost:6379. Connection refused."}
+{"timestamp": "2026-06-04T09:18:16.199257+00:00", "level": "INFO", "logger": "app.main", "message": "Starting Tulip 2.0 Anomaly System \u2014 app DB: postgresql+psycopg2://postgres:***@localhost:5432/tulip_anomaly \u2014 valkey=local-fallback"}
+{"timestamp": "2026-06-04T09:18:16.293025+00:00", "level": "INFO", "logger": "app.main", "message": "App DB tables verified / created successfully."}
+INFO:     Application startup complete.

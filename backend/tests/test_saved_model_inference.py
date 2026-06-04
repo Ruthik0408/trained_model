@@ -79,3 +79,17 @@ def test_saved_model_flags_only_scores_above_threshold_margin() -> None:
         102: True,
         103: True,
     }
+
+
+def test_saved_model_scoring_allows_empty_feature_frames() -> None:
+    feature_frame = pd.DataFrame({"amount": []}, index=pd.Index([], dtype=int))
+
+    transformed, isolation_scores, ml_flag, ml_threshold = score_with_saved_model(
+        feature_frame,
+        {"pipeline": FakePipeline()},
+    )
+
+    assert ml_threshold == 0.58
+    assert transformed.shape == (0, 0)
+    assert isolation_scores.tolist() == []
+    assert ml_flag.empty

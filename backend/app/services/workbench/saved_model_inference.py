@@ -9,6 +9,11 @@ import numpy as np
 import pandas as pd
 from scipy import sparse
 from sqlalchemy import text
+from model_cleaning import (
+    apply_date_sequence_summary,
+    apply_invoice_row_filter_summary,
+    normalize_boolean_feature_columns,
+)
 
 from app.core.config import settings
 from app.core.errors import WorkbenchValidationError
@@ -103,9 +108,12 @@ def score_with_saved_model(
     try:
         preprocessor = pipeline.named_steps["preprocessor"]
         model = pipeline.named_steps["model"]
+        ml_threshold = float(-getattr(model, "offset_", np.nan))
+        if feature_frame.empty:
+            empty_flag = pd.Series(index=feature_frame.index, dtype=bool)
+            return np.empty((0, 0)), np.asarray([], dtype=float), empty_flag, ml_threshold
         transformed = preprocessor.transform(feature_frame)
         isolation_scores = -model.score_samples(transformed)
-        ml_threshold = float(-getattr(model, "offset_", np.nan))
         effective_threshold = ml_threshold + ML_SCORE_THRESHOLD_MARGIN
         ml_flag = pd.Series(
             isolation_scores >= effective_threshold,
@@ -229,79 +237,27 @@ def _normalize_saved_boolean_columns(
     artifact: dict[str, Any],
 ) -> pd.DataFrame:
     boolean_columns = [str(column) for column in artifact.get("boolean_columns") or []]
-    if not boolean_columns:
-        return df
-
-    working = df.copy()
-    for column_name in boolean_columns:
-        if column_name not in working.columns:
-            continue
-        normalized = working[column_name].astype("string").str.strip().str.lower()
-        converted = pd.Series(pd.NA, index=working.index, dtype="Float64")
-        converted.loc[normalized.isin(["true", "t", "1", "yes", "y"])] = 1.0
-        converted.loc[normalized.isin(["false", "f", "0", "no", "n"])] = 0.0
-        working[column_name] = converted
-    return working
+    return normalize_boolean_feature_columns(df, boolean_columns)
 
 
 def _drop_saved_void_invoice_rows(
     df: pd.DataFrame,
     artifact: dict[str, Any],
 ) -> pd.DataFrame:
-    summary = artifact.get("invoice_row_filter_summary") or {}
-    rows_to_drop: set[Any] = set()
-
-    for table_summary in summary.get("tables_applied") or []:
-        invoice_column = table_summary.get("invoice_column")
-        invoice_date_column = table_summary.get("invoice_date_column")
-        record_status_column = table_summary.get("record_status_column")
-        required = [invoice_column, invoice_date_column, record_status_column]
-        if not all(column in df.columns for column in required):
-            continue
-
-        group_keys = [invoice_column, invoice_date_column]
-        non_null_invoice_mask = df[group_keys].notna().all(axis=1)
-        duplicate_group_mask = (
-            df.loc[non_null_invoice_mask, group_keys]
-            .duplicated(keep=False)
-            .reindex(df.index, fill_value=False)
-        )
-        void_status_mask = (
-            df[record_status_column]
-            .astype("string")
-            .str.strip()
-            .str.lower()
-            .eq("v")
-            .fillna(False)
-        )
-        rows_to_drop.update(df.index[non_null_invoice_mask & duplicate_group_mask & void_status_mask])
-
-    if rows_to_drop:
-        return df.drop(index=sorted(rows_to_drop), errors="ignore")
-    return df
+    return apply_invoice_row_filter_summary(
+        df,
+        artifact.get("invoice_row_filter_summary") or {},
+    )
 
 
 def _drop_saved_invalid_date_sequence_rows(
     df: pd.DataFrame,
     artifact: dict[str, Any],
 ) -> pd.DataFrame:
-    summary = artifact.get("date_sequence_summary") or {}
-    rows_to_drop: set[Any] = set()
-
-    for check in summary.get("checks") or []:
-        previous_column = check.get("previous_column")
-        next_column = check.get("next_column")
-        if not previous_column or not next_column:
-            continue
-        if previous_column not in df.columns or next_column not in df.columns:
-            continue
-        comparable = df[previous_column].notna() & df[next_column].notna()
-        invalid = comparable & (df[next_column] < df[previous_column])
-        rows_to_drop.update(df.index[invalid])
-
-    if rows_to_drop:
-        return df.drop(index=sorted(rows_to_drop), errors="ignore")
-    return df
+    return apply_date_sequence_summary(
+        df,
+        artifact.get("date_sequence_summary") or {},
+    )
 
 
 def _add_saved_date_gap_features(

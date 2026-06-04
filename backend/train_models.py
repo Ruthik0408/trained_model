@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import subprocess
+import tempfile
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
@@ -14,12 +17,20 @@ from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
-import os
-import subprocess
-import tempfile
-from pathlib import Path
-
-import pandas as pd
+from business_rules import (
+    cheque_slip_approval_owner_columns,
+    cheque_slip_approval_owner_training_condition_sql,
+    cheque_slip_schedule3_count_mismatch_rule,
+    cheque_slip_schedule3_not_approved_rule,
+    cheque_slip_schedule3_shared_sql_fragments,
+)
+from model_cleaning import (
+    build_date_sequence_summary,
+    build_invoice_row_filter_summary,
+    normalize_boolean_feature_columns,
+    apply_date_sequence_summary,
+    apply_invoice_row_filter_summary,
+)
 
 
 def load_env_file(env_path: Path) -> None:
@@ -130,10 +141,12 @@ def get_connection_check_df() -> pd.DataFrame:
 
 BASE_TABLE = "dak"
 DEFAULT_LIST_DATE_CUTOFF = "2026-01-01"
-DEFAULT_MAX_TRAINING_ROWS = 200_000
+DEFAULT_MAX_TRAINING_ROWS = 300000
 DEFAULT_DATASET_LIST_DATE_FROM: dict[str, str] = {
     "dak": "2024-01-01",
     "dak.echs_medical_bill": "2025-01-01",
+    "dak.cheque_slip.schedule3": "2025-01-01",
+    "dak.cheque_slip.ecs": "2025-01-01",
 }
 
 NUMERIC_DATA_TYPES = {
@@ -172,7 +185,7 @@ SAME_TABLE_DATE_SEQUENCE_STAGES = {
     "aao_stage",
     "ao_stage",
     "go_date",
-    "disposal_date",
+
 }
 
 GLOBAL_SEQUENCE_STAGE_ORDER = [
@@ -181,6 +194,7 @@ GLOBAL_SEQUENCE_STAGE_ORDER = [
     "reference_date",
     "dp_sheet_date",
     "cmp_date",
+    "disposal_date",
 ]
 
 TABLE_SEQUENCE_STAGE_ORDER = [
@@ -533,53 +547,73 @@ def build_select_sql(
         {where_sql}
     """
 
+    cheque_slip_columns = (
+        set(schema_map["cheque_slip"]["column_name"].tolist())
+        if "cheque_slip" in schema_map
+        else set()
+    )
+    cheque_slip_owner_columns = cheque_slip_approval_owner_columns(cheque_slip_columns)
+    has_cheque_slip_owner_rule = (
+        "cheque_slip" in join_tables
+        and "approved" in cheque_slip_columns
+        and bool(cheque_slip_owner_columns)
+    )
+    cheque_slip_owner_rule_sql = (
+        cheque_slip_approval_owner_training_condition_sql(
+            cheque_slip_owner_columns,
+            approved_expr='base."cheque_slip_approved"',
+            column_expr_template='base."cheque_slip_{column_name}"',
+        )
+        if has_cheque_slip_owner_rule
+        else ""
+    )
+
     if dataset_name == "dak.cheque_slip.schedule3":
         filtered_order_sql = joined_base_order_clause(base_table, join_tables, schema_map)
+        schedule3_fragments = cheque_slip_schedule3_shared_sql_fragments(
+            schedule3_table_ref="schedule3",
+            cheque_slip_table_ref="cheque_slip",
+            fk_dak_join_expr='base."cheque_slip_fk_dak"',
+        )
+        rule_clauses = [
+            cheque_slip_schedule3_not_approved_rule(
+                record_status_expr='base."cheque_slip_record_status"',
+                approved_expr='base."cheque_slip_approved"',
+                fk_dak_expr='base."cheque_slip_fk_dak"',
+            ).condition_sql,
+            cheque_slip_schedule3_count_mismatch_rule(
+                record_status_expr='base."cheque_slip_record_status"',
+                approved_expr='base."cheque_slip_approved"',
+                fk_dak_expr='base."cheque_slip_fk_dak"',
+            ).condition_sql,
+        ]
+        if cheque_slip_owner_rule_sql:
+            rule_clauses.append(cheque_slip_owner_rule_sql)
         return f"""
             WITH joined_base AS (
                 {base_sql}
             ),
-            schedule3_by_dak AS (
-                SELECT
-                    fk_dak,
-                    COUNT(*) AS schedule3_total_count,
-                    COUNT(*) FILTER (WHERE UPPER(BTRIM(CAST(record_status AS text))) IN ('P', 'V')) AS schedule3_pv_count
-                FROM schedule3
-                WHERE fk_dak IS NOT NULL
-                GROUP BY fk_dak
-            ),
-            cheque_slip_approved_by_dak AS (
-                SELECT
-                    fk_dak,
-                    COUNT(*) FILTER (
-                        WHERE UPPER(BTRIM(CAST(record_status AS text))) = 'V'
-                          AND approved = true
-                    ) AS cheque_slip_v_approved_count
-                FROM cheque_slip
-                WHERE fk_dak IS NOT NULL
-                GROUP BY fk_dak
+            {",".join(schedule3_fragments.ctes)}
+            SELECT base.*
+            FROM joined_base base
+            {"".join(schedule3_fragments.outer_joins)}
+            WHERE NOT (
+                {" OR ".join(rule_clauses)}
+            )
+            {filtered_order_sql}
+            {limit_sql}
+        """
+
+    if has_cheque_slip_owner_rule:
+        filtered_order_sql = joined_base_order_clause(base_table, join_tables, schema_map)
+        return f"""
+            WITH joined_base AS (
+                {base_sql}
             )
             SELECT base.*
             FROM joined_base base
-            LEFT JOIN schedule3_by_dak
-                ON schedule3_by_dak.fk_dak = base."cheque_slip_fk_dak"
-            LEFT JOIN cheque_slip_approved_by_dak
-                ON cheque_slip_approved_by_dak.fk_dak = base."cheque_slip_fk_dak"
             WHERE NOT (
-                (
-                    UPPER(BTRIM(CAST(base."cheque_slip_record_status" AS text))) = 'V'
-                    AND base."cheque_slip_approved" = false
-                    AND base."cheque_slip_fk_dak" IS NOT NULL
-                    AND COALESCE(schedule3_by_dak.schedule3_total_count, 0) > 0
-                )
-                OR
-                (
-                    UPPER(BTRIM(CAST(base."cheque_slip_record_status" AS text))) = 'V'
-                    AND base."cheque_slip_approved" = true
-                    AND base."cheque_slip_fk_dak" IS NOT NULL
-                    AND COALESCE(cheque_slip_approved_by_dak.cheque_slip_v_approved_count, 0)
-                        <> COALESCE(schedule3_by_dak.schedule3_pv_count, 0)
-                )
+                {cheque_slip_owner_rule_sql}
             )
             {filtered_order_sql}
             {limit_sql}
@@ -618,6 +652,32 @@ def build_count_sql(
         list_date_from=list_date_from,
         list_date_cutoff=list_date_cutoff,
     )
+
+    cheque_slip_columns = (
+        set(schema_map["cheque_slip"]["column_name"].tolist())
+        if "cheque_slip" in schema_map
+        else set()
+    )
+    cheque_slip_owner_columns = cheque_slip_approval_owner_columns(cheque_slip_columns)
+    if (
+        "cheque_slip" in join_tables
+        and "approved" in cheque_slip_columns
+        and cheque_slip_owner_columns
+    ):
+        filter_sql = "\n            AND ".join(
+            f'cheque_slip."{column_name}" IS NULL'
+            for column_name in cheque_slip_owner_columns
+        )
+        return f"""
+            SELECT COUNT(*) AS row_count
+            FROM {base_table}
+            {join_sql}
+            {where_sql}
+            {"AND" if where_sql else "WHERE"} NOT (
+                cheque_slip."approved" = true
+                AND {filter_sql}
+            )
+        """
 
     return f"""
         SELECT COUNT(*) AS row_count
@@ -664,181 +724,8 @@ def drop_voided_invoice_rows(
     df: pd.DataFrame,
     schema_df: pd.DataFrame,
 ) -> tuple[pd.DataFrame, dict[str, object]]:
-    filtered_df = df.copy()
-    dropped_row_indexes: set[int] = set()
-    table_summaries: list[dict[str, object]] = []
-
-    for table_name in schema_df["source_table"].drop_duplicates().tolist():
-        invoice_column = None
-        for alias in ("invoice_number", "invoice_no"):
-            candidate = f"{table_name}_{alias}"
-            if candidate in filtered_df.columns:
-                invoice_column = candidate
-                break
-
-        invoice_date_column = f"{table_name}_invoice_date"
-        record_status_column = f"{table_name}_record_status"
-        required_columns = [invoice_column, invoice_date_column, record_status_column]
-        if not invoice_column or not all(column in filtered_df.columns for column in required_columns):
-            continue
-
-        group_keys = [invoice_column, invoice_date_column]
-        non_null_invoice_mask = filtered_df[group_keys].notna().all(axis=1)
-        duplicate_group_mask = (
-            filtered_df.loc[non_null_invoice_mask, group_keys]
-            .duplicated(keep=False)
-            .reindex(filtered_df.index, fill_value=False)
-        )
-        void_status_mask = (
-            filtered_df[record_status_column]
-            .astype("string")
-            .str.strip()
-            .str.lower()
-            .eq("v")
-            .fillna(False)
-        )
-
-        rows_to_drop_mask = non_null_invoice_mask & duplicate_group_mask & void_status_mask
-        dropped_count = int(rows_to_drop_mask.sum())
-        if dropped_count == 0:
-            continue
-
-        dropped_row_indexes.update(filtered_df.index[rows_to_drop_mask].tolist())
-        table_summaries.append(
-            {
-                "table_name": table_name,
-                "invoice_column": invoice_column,
-                "invoice_date_column": invoice_date_column,
-                "record_status_column": record_status_column,
-                "dropped_row_count": dropped_count,
-            }
-        )
-
-    if dropped_row_indexes:
-        filtered_df = filtered_df.drop(index=sorted(dropped_row_indexes))
-
-    return filtered_df, {
-        "dropped_row_count": len(dropped_row_indexes),
-        "tables_applied": table_summaries,
-    }
-
-
-def _normalized_bool(series: pd.Series) -> pd.Series:
-    normalized = series.astype("string").str.strip().str.lower()
-    result = pd.Series(pd.NA, index=series.index, dtype="boolean")
-    result.loc[normalized.isin(["true", "t", "1", "yes", "y"])] = True
-    result.loc[normalized.isin(["false", "f", "0", "no", "n"])] = False
-    return result
-
-
-def normalize_boolean_feature_columns(
-    df: pd.DataFrame,
-    boolean_columns: list[str],
-) -> pd.DataFrame:
-    if not boolean_columns:
-        return df
-    normalized_df = df.copy()
-    for column_name in boolean_columns:
-        if column_name not in normalized_df.columns:
-            continue
-        normalized_df[column_name] = _normalized_bool(normalized_df[column_name]).astype("Float64")
-    return normalized_df
-
-
-def _normalized_status(series: pd.Series) -> pd.Series:
-    return series.astype("string").str.strip().str.upper()
-
-
-def drop_cheque_slip_schedule3_rule_rows(
-    df: pd.DataFrame,
-    dataset_name: str,
-) -> tuple[pd.DataFrame, dict[str, object]]:
-    required_columns = {
-        "dak_id",
-        "cheque_slip_id",
-        "cheque_slip_fk_dak",
-        "cheque_slip_record_status",
-        "cheque_slip_approved",
-        "schedule3_id",
-        "schedule3_record_status",
-    }
-    summary: dict[str, object] = {
-        "dropped_row_count": 0,
-        "rules_applied": [],
-    }
-    if dataset_name != "dak.cheque_slip.schedule3":
-        return df, summary
-    if not required_columns.issubset(df.columns):
-        missing_columns = sorted(required_columns - set(df.columns))
-        raise ValueError(
-            "Cannot apply cheque_slip/schedule3 training rule filter because required columns are missing: "
-            + ", ".join(missing_columns)
-        )
-
-    working_df = df.copy()
-    fk_key = working_df["cheque_slip_fk_dak"]
-    cheque_status = _normalized_status(working_df["cheque_slip_record_status"])
-    cheque_approved = _normalized_bool(working_df["cheque_slip_approved"])
-    schedule_status = _normalized_status(working_df["schedule3_record_status"])
-    has_schedule = working_df["schedule3_id"].notna()
-
-    stats = pd.DataFrame(
-        {
-            "fk_dak": fk_key,
-            "cheque_slip_id": working_df["cheque_slip_id"],
-            "schedule3_id": working_df["schedule3_id"],
-            "approved_v_cheque_id": working_df["cheque_slip_id"].where(
-                cheque_status.eq("V") & cheque_approved.eq(True)
-            ),
-            "schedule3_pv_id": working_df["schedule3_id"].where(
-                has_schedule & schedule_status.isin(["P", "V"])
-            ),
-        }
-    )
-    grouped = stats.dropna(subset=["fk_dak"]).groupby("fk_dak", dropna=True)
-    approved_cheque_counts = grouped["approved_v_cheque_id"].nunique(dropna=True)
-    schedule3_pv_counts = grouped["schedule3_pv_id"].nunique(dropna=True)
-
-    rule1_mask = (
-        cheque_status.eq("V")
-        & cheque_approved.eq(False)
-        & fk_key.notna()
-        & has_schedule.groupby(fk_key).transform("any").fillna(False)
-    )
-
-    approved_counts_by_row = fk_key.map(approved_cheque_counts).fillna(0).astype(int)
-    schedule_counts_by_row = fk_key.map(schedule3_pv_counts).fillna(0).astype(int)
-    rule2_mask = (
-        cheque_status.eq("V")
-        & cheque_approved.eq(True)
-        & fk_key.notna()
-        & approved_counts_by_row.ne(schedule_counts_by_row)
-    )
-
-    dropped_row_indexes: set[int] = set()
-    rule_summaries: list[dict[str, object]] = []
-    for rule_name, rule_mask in (
-        ("RULE_1_NOT_APPROVED_BUT_EXISTS_IN_SCHEDULE3", rule1_mask),
-        ("RULE_2_APPROVED_CHEQUE_COUNT_NOT_MATCHING_SCHEDULE3", rule2_mask),
-    ):
-        rule_indexes = set(working_df.index[rule_mask.fillna(False)].tolist())
-        if not rule_indexes:
-            continue
-        dropped_row_indexes.update(rule_indexes)
-        rule_summaries.append(
-            {
-                "rule_name": rule_name,
-                "dropped_row_count": len(rule_indexes),
-                "fk_dak_count": int(fk_key.loc[sorted(rule_indexes)].nunique(dropna=True)),
-            }
-        )
-
-    if dropped_row_indexes:
-        working_df = working_df.drop(index=sorted(dropped_row_indexes))
-
-    summary["dropped_row_count"] = len(dropped_row_indexes)
-    summary["rules_applied"] = rule_summaries
-    return working_df, summary
+    summary = build_invoice_row_filter_summary(df, schema_df)
+    return apply_invoice_row_filter_summary(df, summary), summary
 
 
 def filter_columns(
@@ -972,58 +859,8 @@ def drop_invalid_date_sequence_rows(
     df: pd.DataFrame,
     date_stage_plan: dict[str, object],
 ) -> tuple[pd.DataFrame, dict[str, object]]:
-    filtered_df = df.copy()
-    dropped_row_indexes: set[int] = set()
-    check_summaries: list[dict[str, object]] = []
-
-    table_paths: dict[str, list[dict[str, str | None]]] = date_stage_plan["table_paths"]
-    for table_name, path_entries in table_paths.items():
-        for previous_stage, next_stage in zip(path_entries, path_entries[1:]):
-            previous_column = previous_stage["column_name"]
-            next_column = next_stage["column_name"]
-            if not previous_column or not next_column:
-                check_summaries.append(
-                    {
-                        "table_name": table_name,
-                        "previous_stage": previous_stage["stage_name"],
-                        "next_stage": next_stage["stage_name"],
-                        "previous_column": previous_column,
-                        "next_column": next_column,
-                        "rows_checked": 0,
-                        "invalid_row_count": 0,
-                        "status": "skipped_missing_column",
-                    }
-                )
-                continue
-
-            comparable_mask = filtered_df[previous_column].notna() & filtered_df[next_column].notna()
-            invalid_mask = comparable_mask & (filtered_df[next_column] < filtered_df[previous_column])
-            invalid_count = int(invalid_mask.sum())
-            rows_checked = int(comparable_mask.sum())
-
-            if invalid_count:
-                dropped_row_indexes.update(filtered_df.index[invalid_mask].tolist())
-
-            check_summaries.append(
-                {
-                    "table_name": table_name,
-                    "previous_stage": previous_stage["stage_name"],
-                    "next_stage": next_stage["stage_name"],
-                    "previous_column": previous_column,
-                    "next_column": next_column,
-                    "rows_checked": rows_checked,
-                    "invalid_row_count": invalid_count,
-                    "status": "checked",
-                }
-            )
-
-    if dropped_row_indexes:
-        filtered_df = filtered_df.drop(index=sorted(dropped_row_indexes))
-
-    return filtered_df, {
-        "dropped_row_count": len(dropped_row_indexes),
-        "checks": check_summaries,
-    }
+    summary = build_date_sequence_summary(df, date_stage_plan)
+    return apply_date_sequence_summary(df, summary), summary
 
 
 def engineer_date_gap_features(

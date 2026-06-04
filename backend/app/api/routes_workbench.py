@@ -1,4 +1,4 @@
-
+"""HTTP entrypoints for the workbench and review flows."""
 import logging
 from typing import Annotated
 
@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import OperationalError
 
+from business_rules import RULE_REGISTRY_INDEX
 from app.core.database import check_app_db_connection, get_db
 from app.core.errors import WorkbenchValidationError
 from app.schemas.workbench_schema import (
@@ -28,8 +29,22 @@ SAFE_IDENTIFIER_PATTERN = r"^[A-Za-z_][A-Za-z0-9_]*$"
 
 
 def _log_request(request: Request, message: str) -> None:
+    """Write a request-scoped debug log line using the middleware request id."""
     request_id = getattr(request.state, "request_id", "unknown")
     logger.debug("[%s] %s", request_id, message)
+
+
+@router.get(
+    "/rules",
+    summary="List deterministic business rules",
+)
+def get_rule_catalog(request: Request):
+    """Return the shared deterministic rule catalog for debugging and review."""
+    _log_request(request, f"Retrieved {len(RULE_REGISTRY_INDEX)} deterministic rules")
+    return {
+        "count": len(RULE_REGISTRY_INDEX),
+        "rules": RULE_REGISTRY_INDEX,
+    }
 
 
 @router.get(

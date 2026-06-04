@@ -1,3 +1,4 @@
+"""End-to-end preview and run orchestration for the anomaly workbench."""
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import time
@@ -63,6 +64,7 @@ from app.services.workbench.utils import _select_series_column
 
 @dataclass(frozen=True)
 class WorkbenchExecutionState:
+    """Carries the SQL execution outputs needed by later scoring and persistence steps."""
     joined: pd.DataFrame
     source_row_counts: dict[str, Any]
     join_debug: dict[str, Any]
@@ -79,6 +81,7 @@ class WorkbenchExecutionState:
 
 @dataclass(frozen=True)
 class RuleFlagState:
+    """Carries rule-trigger flags and optional reason/evidence series for a joined frame."""
     user_rule_flag: pd.Series
     default_rule_flag: pd.Series
     combined_rule_flag: pd.Series
@@ -89,6 +92,7 @@ class RuleFlagState:
 
 @dataclass(frozen=True)
 class IsolationForestState:
+    """Carries model outputs and filtered anomaly rows after scoring completes."""
     feature_frame: pd.DataFrame
     feature_selection: FeatureSelectionResult
     pipeline: Pipeline
@@ -102,6 +106,7 @@ class IsolationForestState:
 
 
 def preview_workbench(payload: WorkbenchRunRequest) -> dict:
+    """Build or reuse a preview join result and return a UI-friendly sample payload."""
     preview_started_at = time.monotonic()
     cached_artifact = get_preview_artifact(payload)
     if cached_artifact is not None:
@@ -167,6 +172,7 @@ def preview_workbench(payload: WorkbenchRunRequest) -> dict:
 
 
 def run_workbench(db: Session, payload: WorkbenchRunRequest) -> dict:
+    """Execute the full anomaly run, persist outputs, and return the run summary."""
     run_started_at = time.monotonic()
     logger.info(
         "Starting workbench run for tables: %s, feature_rules: %s, user_rules: %s",
@@ -346,6 +352,7 @@ def run_workbench(db: Session, payload: WorkbenchRunRequest) -> dict:
 
 
 def _execute_workbench(payload: WorkbenchRunRequest, source_conn) -> WorkbenchExecutionState:
+    """Execute the SQL workbench query inside the source transaction and normalize outputs."""
     execute_started_at = time.monotonic()
     (
         joined,
@@ -391,6 +398,7 @@ def _execute_workbench(payload: WorkbenchRunRequest, source_conn) -> WorkbenchEx
 def _execution_artifact_from_state(
     execution: WorkbenchExecutionState,
 ) -> dict[str, Any]:
+    """Serialize execution state into a Valkey-safe artifact payload."""
     return {
         "joined": serialize_dataframe(execution.joined),
         "source_row_counts": execution.source_row_counts,
@@ -408,6 +416,7 @@ def _execution_state_from_artifact(
     payload: WorkbenchRunRequest,
     artifact: dict[str, Any],
 ) -> WorkbenchExecutionState:
+    """Rehydrate cached execution state so a run can skip the expensive SQL phase."""
     return WorkbenchExecutionState(
         joined=deserialize_dataframe(artifact["joined"]),
         source_row_counts={
@@ -432,6 +441,7 @@ def _persist_empty_run(
     payload: WorkbenchRunRequest,
     execution: WorkbenchExecutionState,
 ) -> dict:
+    """Persist a completed run record when the SQL stage produced zero rows."""
     run = WorkbenchRun(
         run_name=payload.run_name,
         source_tables_json=payload.selected_tables,
@@ -455,6 +465,7 @@ def _persist_empty_run(
 
 
 def _extract_rule_flags(joined: pd.DataFrame) -> RuleFlagState:
+    """Split SQL-produced rule columns away from the joined frame and normalize them."""
     user_rule_flag = _pop_rule_flag(joined, "__ml_sql_rule_flag")
     default_rule_flag = _pop_rule_flag(joined, "sql_rule_flag")
 
@@ -492,6 +503,7 @@ def _extract_rule_flags(joined: pd.DataFrame) -> RuleFlagState:
 
 
 def _pop_rule_flag(joined: pd.DataFrame, column_name: str) -> pd.Series:
+    """Remove one boolean-like rule flag column from the joined frame."""
     if column_name not in joined.columns:
         return pd.Series(False, index=joined.index, dtype=bool)
 
@@ -501,6 +513,7 @@ def _pop_rule_flag(joined: pd.DataFrame, column_name: str) -> pd.Series:
 
 
 def _coerce_numeric_row_ids(index_values: list[Any]) -> list[int]:
+    """Filter anomaly row ids down to numeric identifiers expected by the persisted dataset."""
     row_ids: list[int] = []
 
     for row_id in index_values:
@@ -518,6 +531,7 @@ def _run_isolation_forest(
     source_conn,
     rule_flags: RuleFlagState,
 ) -> IsolationForestState:
+    """Load the saved model, score candidate rows, and build explanation signals."""
     if_started_at = time.monotonic()
     logger.info("Saved Isolation Forest inference START for tables=%s", payload.selected_tables)
 
@@ -541,37 +555,45 @@ def _run_isolation_forest(
         execution.staging_table,
         artifact,
     )
-    logger.info(
-        "Saved model feature preparation completed for dataset=%s: %d selected columns; sample=%s",
-        artifact.get("dataset_name"),
-        len(feature_selection.selected_columns),
-        feature_selection.selected_columns[:20],
-    )
-
-    transformed, isolation_scores, ml_flag, ml_threshold = score_with_saved_model(
-        feature_frame,
-        artifact,
-    )
-    pipeline = artifact["pipeline"]
-    logger.info(
-        "Saved Isolation Forest scoring completed: rows=%d columns=%d ml_anomalies=%d",
-        len(feature_frame.index),
-        len(feature_frame.columns),
-        int(ml_flag.sum()),
-    )
-
     combined_rule_flag = rule_flags.combined_rule_flag.reindex(
         feature_frame.index,
         fill_value=False,
+    ).astype(bool)
+    eligible_feature_frame = feature_frame.loc[~combined_rule_flag]
+    logger.info(
+        "Saved model feature preparation completed for dataset=%s: %d selected columns; scored_rows=%d rule_rows_skipped=%d; sample=%s",
+        artifact.get("dataset_name"),
+        len(feature_selection.selected_columns),
+        len(eligible_feature_frame.index),
+        int(combined_rule_flag.sum()),
+        feature_selection.selected_columns[:20],
+    )
+
+    transformed, eligible_scores, eligible_ml_flag, ml_threshold = score_with_saved_model(
+        eligible_feature_frame,
+        artifact,
+    )
+    pipeline = artifact["pipeline"]
+    isolation_scores = np.full(len(feature_frame.index), np.nan, dtype=float)
+    if len(eligible_scores):
+        isolation_scores[feature_frame.index.get_indexer(eligible_feature_frame.index)] = eligible_scores
+    ml_flag = pd.Series(False, index=feature_frame.index, dtype=bool)
+    if not eligible_ml_flag.empty:
+        ml_flag.loc[eligible_ml_flag.index] = eligible_ml_flag.astype(bool)
+    logger.info(
+        "Saved Isolation Forest scoring completed: eligible_rows=%d columns=%d ml_anomalies=%d",
+        len(eligible_feature_frame.index),
+        len(eligible_feature_frame.columns),
+        int(ml_flag.sum()),
     )
 
     final_flag = combined_rule_flag | ml_flag
 
-    ml_feature_index = feature_frame.index[ml_flag]
+    ml_feature_index = eligible_feature_frame.index[eligible_ml_flag]
 
     explanation_signals = build_feature_explanation_signals(
         pipeline,
-        feature_frame,
+        eligible_feature_frame,
         transformed,
         ml_feature_index,
         transformed_feature_labels=[
@@ -623,6 +645,7 @@ def _run_isolation_forest(
 def _isolation_forest_artifact_from_state(
     model_state: IsolationForestState,
 ) -> dict[str, Any]:
+    """Serialize model outputs so repeated runs can reuse scoring artifacts."""
     return {
         "feature_frame": serialize_dataframe(model_state.feature_frame),
         "feature_selection": {
@@ -650,6 +673,7 @@ def _isolation_forest_artifact_from_state(
 def _isolation_forest_state_from_artifact(
     artifact: dict[str, Any],
 ) -> IsolationForestState:
+    """Rehydrate cached model outputs back into the in-process scoring state."""
     feature_selection = artifact.get("feature_selection") or {}
     feature_frame = deserialize_dataframe(artifact["feature_frame"])
     return IsolationForestState(
@@ -686,6 +710,7 @@ def _calculate_amount_total(
     payload: WorkbenchRunRequest,
     filtered_joined: pd.DataFrame,
 ) -> float:
+    """Sum the configured amount field across the filtered anomaly rows."""
     if not payload.amount_field or filtered_joined.empty:
         return 0.0
 
@@ -716,6 +741,7 @@ def _create_run_record(
     rule_flags: RuleFlagState,
     model_state: IsolationForestState,
 ) -> WorkbenchRun:
+    """Create and flush the app-database metadata row for a completed workbench run."""
     reviewable_rule_count = int(
         rule_flags.combined_rule_flag.reindex(
             model_state.final_flag.index,
@@ -758,6 +784,7 @@ def _base_metrics(
     payload: WorkbenchRunRequest,
     execution: WorkbenchExecutionState,
 ) -> dict[str, Any]:
+    """Build the base metrics payload shared by empty and non-empty run records."""
     return {
         "batch_id": execution.batch_id,
         "selected_tables": payload.selected_tables,
@@ -781,6 +808,7 @@ def _build_builtin_reason_lookup(
     model_state: IsolationForestState,
     dataset_storage: dict[str, Any],
 ) -> dict[str, str]:
+    """Map inserted dataset record ids to the generated built-in reason text."""
     if rule_flags.default_reason_series is None:
         return {}
 
@@ -820,6 +848,7 @@ def _build_persisted_metrics(
     dataset_storage: dict[str, Any],
     builtin_reason_by_record_id: dict[str, str],
 ) -> dict[str, Any]:
+    """Assemble the final metrics JSON stored with the app-database run record."""
     return {
         **_base_metrics(payload, execution),
         "contamination": payload.contamination,
@@ -841,6 +870,7 @@ def _build_persisted_metrics(
 
 
 def _build_run_response(run: WorkbenchRun, amount_total: float) -> dict[str, Any]:
+    """Convert the ORM run record into the API response payload."""
     return {
         "run_id": run.run_id,
         "run_name": run.run_name,

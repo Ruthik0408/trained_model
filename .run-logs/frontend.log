@@ -4,3 +4,4 @@
   ➜  Local:   http://localhost:5173/
   ➜  Network: http://192.168.0.109:5173/
 10:57:52 AM [vite] (client) hmr update /src/components/PredictionRow.jsx
+11:28:53 AM [vite] (client) hmr update /src/pages/WorkbenchPage.jsx

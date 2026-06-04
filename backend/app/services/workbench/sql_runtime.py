@@ -1,3 +1,4 @@
+"""SQL planning and execution helpers for the workbench join and scoring pipeline."""
 from datetime import date, datetime
 import time
 from typing import Any
@@ -6,6 +7,17 @@ from uuid import uuid4
 import pandas as pd
 from sqlalchemy import bindparam, text
 from sqlalchemy.exc import SQLAlchemyError
+from business_rules import (
+    cmp_scroll_payment_reference_rule,
+    date_sequence_rule,
+    duplicate_void_invoice_rule_bundle,
+    cheque_slip_approval_owner_columns,
+    cheque_slip_approval_owner_runtime_rule,
+    cheque_slip_ecs_mode_rule,
+    cheque_slip_schedule3_count_mismatch_rule,
+    cheque_slip_schedule3_not_approved_rule,
+    cheque_slip_schedule3_shared_sql_fragments,
+)
 
 from app.core.cache import TTLCache
 from app.core.config import settings
@@ -67,6 +79,7 @@ _join_sql_cache = TTLCache(ttl_seconds=_JOIN_SQL_CACHE_TTL_SECONDS, namespace="j
 
 
 def _dataset_table_name(_selected_tables: list[str]) -> str:
+    """Return the persisted result table name for the current workbench run."""
     return RESULT_TABLE
 
 
@@ -76,6 +89,7 @@ def _join_sql_cache_key(
     row_limit: int | None,
     projection_mode: str,
 ) -> tuple[Any, ...]:
+    """Build the stable cache key for a generated join SQL statement."""
     return (
         tuple(str(table_name) for table_name in payload.selected_tables),
         tuple(
@@ -101,6 +115,7 @@ def _get_cached_join_sql(
     row_limit: int | None,
     projection_mode: str,
 ) -> tuple[str, list[dict[str, Any]], list[str], dict[str, Any]] | None:
+    """Return cached join SQL and metadata when the payload shape already exists."""
     cache_key = _join_sql_cache_key(
         payload,
         row_limit=row_limit,
@@ -132,6 +147,7 @@ def _store_cached_join_sql(
     warnings: list[str],
     params: dict[str, Any],
 ) -> None:
+    """Persist generated join SQL and debug metadata into the shared TTL cache."""
     cache_key = _join_sql_cache_key(
         payload,
         row_limit=row_limit,
@@ -1086,12 +1102,13 @@ def _build_date_sequence_anomaly_conditions(
             continue
 
         comparisons.append(
-            (
-                "(" + " OR ".join(predicate_parts) + ")",
-                f"Date sequence violated across processing stages: {left_label} after {right_label}",
+            date_sequence_rule(
+                predicate_sql="(" + " OR ".join(predicate_parts) + ")",
+                left_label=left_label,
+                right_label=right_label,
             )
         )
-    return comparisons
+    return [(rule.condition_sql, rule.reason) for rule in comparisons]
 
 def _build_sql_anomaly_expressions(
     joined_tables: list[str],
@@ -1118,131 +1135,63 @@ def _build_sql_anomaly_expressions(
 
     # CMP scroll payment_reference_no must exist in ECS
     if has_table("cmp_scroll") and has_table("ecs"):
-        conditions.append((
-            f"""
-            (
-                base."cmp_scroll.payment_reference_no" IS NOT NULL
-                AND base."cmp_scroll.cda_name" = 'CDA- Main Office Jabalpur'
-                AND NOT EXISTS (
-                    SELECT 1
-                    FROM {_source_table_only_ref("ecs")} e
-                    WHERE e.payment_reference_no = base."cmp_scroll.payment_reference_no"
-                )
-            )
-            """,
-            "CMP scroll has payment_reference_no but not found in ECS",
-        ))
+        rule = cmp_scroll_payment_reference_rule(
+            payment_reference_expr='base."cmp_scroll.payment_reference_no"',
+            cda_name_expr='base."cmp_scroll.cda_name"',
+            ecs_table_ref=_source_table_only_ref("ecs"),
+        )
+        conditions.append((rule.condition_sql, rule.reason))
 
     # cheque_slip ECS mode = 1 but ECS record exists
     if has_table("cheque_slip") and has_table("ecs"):
-        conditions.append((
-            f"""
-            (
-                base."cheque_slip.fk_ecs_payment_mode" = 1
-                AND base."cheque_slip.fk_dak" IS NOT NULL
-                AND EXISTS (
-                    SELECT 1
-                    FROM {_source_table_only_ref("ecs")} e
-                    WHERE e.fk_dak = base."cheque_slip.fk_dak"
-                )
-            )
-            """,
-            "Cheque slip ECS mode=1 but ECS record exists",
-        ))
+        rule = cheque_slip_ecs_mode_rule(
+            ecs_mode_expr='base."cheque_slip.fk_ecs_payment_mode"',
+            fk_dak_expr='base."cheque_slip.fk_dak"',
+            ecs_table_ref=_source_table_only_ref("ecs"),
+        )
+        conditions.append((rule.condition_sql, rule.reason))
 
     # Cheque slip + schedule3 rules
     if has_table("cheque_slip") and has_table("schedule3"):
-        ctes.append(
-            f"""
-            schedule3_by_dak AS (
-                SELECT
-                    fk_dak,
-                    COUNT(*) AS schedule3_total_count,
-                    COUNT(*) FILTER (WHERE UPPER(BTRIM(CAST(record_status AS text))) IN ('P', 'V')) AS schedule3_pv_count
-                FROM {_source_table_only_ref("schedule3")}
-                WHERE fk_dak IS NOT NULL
-                GROUP BY fk_dak
-            )
-            """
+        schedule3_fragments = cheque_slip_schedule3_shared_sql_fragments(
+            schedule3_table_ref=_source_table_only_ref("schedule3"),
+            cheque_slip_table_ref=_source_table_only_ref("cheque_slip"),
+            fk_dak_join_expr='base."cheque_slip.fk_dak"',
         )
-        ctes.append(
-            f"""
-            cheque_slip_approved_by_dak AS (
-                SELECT
-                    fk_dak,
-                    COUNT(*) FILTER (
-                        WHERE UPPER(BTRIM(CAST(record_status AS text))) = 'V'
-                          AND approved = true
-                    ) AS cheque_slip_v_approved_count
-                FROM {_source_table_only_ref("cheque_slip")}
-                WHERE fk_dak IS NOT NULL
-                GROUP BY fk_dak
-            )
-            """
-        )
-        outer_joins.append(
-            """
-            LEFT JOIN schedule3_by_dak
-                ON schedule3_by_dak.fk_dak = base."cheque_slip.fk_dak"
-            """
-        )
-        outer_joins.append(
-            """
-            LEFT JOIN cheque_slip_approved_by_dak
-                ON cheque_slip_approved_by_dak.fk_dak = base."cheque_slip.fk_dak"
-            """
-        )
+        ctes.extend(schedule3_fragments.ctes)
+        outer_joins.extend(schedule3_fragments.outer_joins)
 
         # cheque_slip V + approved false should not have schedule3 for same fk_dak
+        not_approved_rule = cheque_slip_schedule3_not_approved_rule(
+            record_status_expr='base."cheque_slip.record_status"',
+            approved_expr='base."cheque_slip.approved"',
+            fk_dak_expr='base."cheque_slip.fk_dak"',
+        )
         conditions.append((
-            """
-            (
-                UPPER(BTRIM(CAST(base."cheque_slip.record_status" AS text))) = 'V'
-                AND base."cheque_slip.approved" = false
-                AND base."cheque_slip.fk_dak" IS NOT NULL
-                AND COALESCE(schedule3_by_dak.schedule3_total_count, 0) > 0
-            )
-            """,
-            "Cheque slip record_status V and approved false but schedule3 exists for same fk_dak",
+            not_approved_rule.condition_sql,
+            not_approved_rule.reason,
         ))
 
         # approved V cheque_slip count should match schedule3 P/V count for same fk_dak
+        count_mismatch_rule = cheque_slip_schedule3_count_mismatch_rule(
+            record_status_expr='base."cheque_slip.record_status"',
+            approved_expr='base."cheque_slip.approved"',
+            fk_dak_expr='base."cheque_slip.fk_dak"',
+        )
         conditions.append((
-            """
-            (
-                UPPER(BTRIM(CAST(base."cheque_slip.record_status" AS text))) = 'V'
-                AND base."cheque_slip.approved" = true
-                AND base."cheque_slip.fk_dak" IS NOT NULL
-                AND COALESCE(cheque_slip_approved_by_dak.cheque_slip_v_approved_count, 0)
-                    <> COALESCE(schedule3_by_dak.schedule3_pv_count, 0)
-            )
-            """,
-            "Approved V cheque_slip count does not match schedule3 P/V count for same fk_dak",
+            count_mismatch_rule.condition_sql,
+            count_mismatch_rule.reason,
         ))
 
     # approved cheque slip must have at least one approval officer/user
     if has_table("cheque_slip"):
         cheque_cols = table_cols("cheque_slip")
-
-        officer_columns = [
-            col for col in ("fk_aao", "fk_ao", "fk_go", "fk_auditor")
-            if col in cheque_cols
-        ]
-
-        if officer_columns:
-            all_officers_null = "\n                AND ".join(
-                f'base."cheque_slip.{col}" IS NULL'
-                for col in officer_columns
-            )
-
+        officer_columns = cheque_slip_approval_owner_columns(cheque_cols)
+        rule_definition = cheque_slip_approval_owner_runtime_rule(officer_columns)
+        if rule_definition is not None:
             conditions.append((
-                f"""
-                (
-                    base."cheque_slip.approved" = true
-                    AND {all_officers_null}
-                )
-                """,
-                f"Approved cheque slip but all approval columns are null: {', '.join(officer_columns)}",
+                rule_definition.condition_sql,
+                rule_definition.reason,
             ))
 
     # Rows removed before training as duplicate voided invoices should be shown as rule anomalies at test time.
@@ -1265,69 +1214,23 @@ def _build_sql_anomaly_expressions(
         cte_invoice_date_expr = _safe_sql_date_expr(_quote("invoice_date"))
         cte_status_expr = _quote("record_status")
         cte_fk_dak_expr = _quote("fk_dak") if "fk_dak" in column_names else None
-        cte_similar_fk_dak_select = (
-            f"string_agg(DISTINCT CAST({cte_fk_dak_expr} AS text), ', ' ORDER BY CAST({cte_fk_dak_expr} AS text))"
-            if cte_fk_dak_expr
-            else "NULL::text"
+        bundle = duplicate_void_invoice_rule_bundle(
+            table_name=table_name,
+            invoice_column=invoice_column,
+            source_table_ref=_source_table_only_ref(table_name),
+            duplicate_cte_name=duplicate_cte_name,
+            base_invoice_key_expr=base_invoice_key,
+            base_invoice_date_expr=base_invoice_date_expr,
+            base_status_expr=base_status_expr,
+            cte_invoice_expr=cte_invoice_key,
+            cte_invoice_date_expr=cte_invoice_date_expr,
+            cte_status_expr=cte_status_expr,
+            cte_fk_dak_expr=cte_fk_dak_expr,
         )
-        ctes.append(
-            f"""
-            {duplicate_cte_name} AS (
-                SELECT
-                    {cte_invoice_key} AS invoice_key,
-                    {cte_invoice_date_expr} AS invoice_date_key,
-                    COUNT(*) AS duplicate_count,
-                    {cte_similar_fk_dak_select} AS similar_fk_daks
-                FROM {_source_table_only_ref(table_name)}
-                WHERE {cte_invoice_key} IS NOT NULL
-                  AND {cte_invoice_date_expr} IS NOT NULL
-                  AND UPPER(BTRIM(CAST({cte_status_expr} AS text))) = 'V'
-                GROUP BY
-                    {cte_invoice_key},
-                    {cte_invoice_date_expr}
-                HAVING COUNT(*) >= 2
-            )
-            """
-        )
-        outer_joins.append(
-            f"""
-            LEFT JOIN {duplicate_cte_name}
-                ON {duplicate_cte_name}.invoice_key = {base_invoice_key}
-               AND {duplicate_cte_name}.invoice_date_key = {base_invoice_date_expr}
-            """
-        )
-
-        condition_sql = f"""
-            (
-                {base_invoice_key} IS NOT NULL
-                AND {base_invoice_date_expr} IS NOT NULL
-                AND UPPER(BTRIM(CAST({base_status_expr} AS text))) = 'V'
-                AND COALESCE({duplicate_cte_name}.duplicate_count, 0) >= 2
-            )
-            """
-        conditions.append((
-            condition_sql,
-            (
-                f"{table_name} has duplicate {invoice_column} and invoice_date "
-                "with record_status V"
-            ),
-        ))
-        evidence_expressions.append(
-            f"""
-            CASE WHEN ({condition_sql}) THEN
-                jsonb_build_object(
-                    'kind', 'duplicate_invoice_fk_daks',
-                    'table', '{table_name}',
-                    'invoice_column', '{invoice_column}',
-                    'invoice_number', CAST({base_invoice_key} AS text),
-                    'invoice_date', CAST({base_invoice_date_expr} AS text),
-                    'record_status', 'V',
-                    'duplicate_count', {duplicate_cte_name}.duplicate_count,
-                    'similar_fk_daks', {duplicate_cte_name}.similar_fk_daks
-                )::text
-            ELSE NULL END
-            """
-        )
+        ctes.extend(bundle.ctes)
+        outer_joins.extend(bundle.outer_joins)
+        conditions.append((bundle.rule.condition_sql, bundle.rule.reason))
+        evidence_expressions.extend(bundle.evidence_expressions)
 
     # Date sequence rule
     date_sequence_conditions = _build_date_sequence_anomaly_conditions(
@@ -1505,6 +1408,7 @@ def _get_or_build_join_sql(
     row_limit: int | None,
     projection_mode: str,
 ) -> tuple[str, list[dict[str, Any]], list[str], dict[str, Any]]:
+    """Reuse cached join SQL when possible, otherwise build and cache a fresh version."""
     cached = _get_cached_join_sql(
         payload,
         row_limit=row_limit,
@@ -1535,6 +1439,7 @@ def _enrich_sql_join_debug(
     join_debug: list[dict[str, Any]],
     source_row_counts: dict[str, int],
 ) -> list[dict[str, Any]]:
+    """Attach row-count and key-sample diagnostics to the join debug payload."""
     if not ENABLE_EXPENSIVE_JOIN_DEBUG:
         return [
             {
@@ -1592,6 +1497,7 @@ def _execute_sql_joined_frame(
     *,
     for_preview: bool = False,
 ) -> tuple[pd.DataFrame, dict[str, int], list[dict[str, Any]], list[str], str]:
+    """Execute the raw joined SQL and return a DataFrame for preview or downstream scoring."""
     row_limit = PREVIEW_ROW_LIMIT if for_preview else None
     source_columns = _source_columns_map(payload.selected_tables)
     sql, join_debug, warnings, params = _get_or_build_join_sql(
@@ -1627,6 +1533,7 @@ def _execute_sql_workbench_frame(
     payload: WorkbenchRunRequest,
     conn,
 ) -> tuple[pd.DataFrame, dict[str, int], list[dict[str, Any]], list[str], str, list[str], int, list[str], int, str]:
+    """Build scoring SQL, materialize the temp table, and return the scoring-ready frame."""
     source_columns = _source_columns_map(payload.selected_tables)
     joined_sql, join_debug, warnings, joined_params = _get_or_build_join_sql(
         payload,
@@ -1681,12 +1588,15 @@ def _execute_sql_workbench_frame(
     )
 
 def _workbench_temp_table_name() -> str:
+    """Generate a unique transaction-scoped temp-table name for one workbench run."""
     return f"tmp_ml_join_{uuid4().hex[:12]}"
 
 def _workbench_temp_table_ref(temp_table: str) -> str:
+    """Quote the generated temp-table name before embedding it in SQL."""
     return _quote(temp_table)
 
 def _materialize_workbench_temp_table(conn, workbench_sql: str, params: dict[str, Any]) -> tuple[str, int]:
+    """Create the transaction-scoped PostgreSQL temp table used for model scoring."""
     temp_table = _workbench_temp_table_name()
     temp_ref = _workbench_temp_table_ref(temp_table)
     started_at = time.monotonic()
@@ -1719,6 +1629,7 @@ def _materialize_workbench_temp_table(conn, workbench_sql: str, params: dict[str
     return temp_table, row_count
 
 def _temp_table_columns(conn, temp_table: str) -> list[str]:
+    """Read the visible column list from the materialized temp table."""
     result = conn.execute(text(f"SELECT * FROM {_workbench_temp_table_ref(temp_table)} LIMIT 0"))
     return [str(column) for column in result.keys()]
 
@@ -1728,6 +1639,7 @@ def _read_temp_scoring_frame(
     temp_table: str,
     payload: WorkbenchRunRequest,
 ) -> pd.DataFrame:
+    """Load the scoring frame from the temp table after dropping sparse feature columns."""
     del payload
 
     available_columns = _temp_table_columns(conn, temp_table)
@@ -1805,6 +1717,7 @@ def _temp_table_column_presence_ratios(
     temp_table: str,
     candidate_columns: list[str],
 ) -> tuple[int, dict[str, float]]:
+    """Compute non-null presence ratios for candidate scoring columns in the temp table."""
     if not candidate_columns:
         return 0, {}
 
@@ -1838,6 +1751,7 @@ def _temp_table_column_presence_ratios(
     return total_rows, ratios
 
 def _log_workbench_query_plan(conn, workbench_sql: str, params: dict[str, Any]) -> None:
+    """Log the PostgreSQL query plan for the generated workbench SQL when enabled."""
     explain_mode = "ANALYZE, BUFFERS, FORMAT TEXT" if settings.workbench_explain_analyze else "FORMAT TEXT"
     started_at = time.monotonic()
     try:
@@ -1862,6 +1776,7 @@ def _read_temp_anomaly_payload_frame(
     row_ids: list[int],
     payload: WorkbenchRunRequest,
 ) -> pd.DataFrame:
+    """Rehydrate final anomaly rows from source tables using temp-table locator columns."""
     if not row_ids:
         return pd.DataFrame()
     started_at = time.monotonic()
@@ -1943,6 +1858,7 @@ def _table_payload_by_locator(
     columns: list[dict[str, Any]],
     locators: list[str],
 ) -> dict[str, dict[str, Any]]:
+    """Fetch full source-row payloads keyed by the saved PostgreSQL row locator."""
     unique_locators = sorted({str(locator).strip() for locator in locators if str(locator).strip()})
     if not unique_locators:
         return {}
@@ -1983,6 +1899,7 @@ def _table_payload_by_locator(
     return result
 
 def _resolve_column(df: pd.DataFrame, column_name: str) -> str:
+    """Resolve an exact or table-qualified DataFrame column reference safely."""
     exact_matches = [column for column in df.columns if column == column_name]
     if len(exact_matches) == 1:
         return column_name

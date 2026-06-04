@@ -1,3 +1,6 @@
+from types import SimpleNamespace
+
+from app.api.routes_workbench import get_rule_catalog
 from app.schemas.workbench_schema import WorkbenchRunRequest
 from app.core.errors import WorkbenchValidationError
 from app.services.workbench.trained_datasets import (
@@ -133,3 +136,12 @@ def test_trained_dataset_defaults_reject_dak_info_join_mix() -> None:
         assert exc.error_code == "VALIDATION_ERROR"
     else:
         raise AssertionError("Expected dak plus standalone dak_info to be rejected.")
+
+
+def test_rule_catalog_route_returns_shared_registry() -> None:
+    request = SimpleNamespace(state=SimpleNamespace(request_id="test-request"))
+
+    payload = get_rule_catalog(request)
+
+    assert payload["count"] >= 1
+    assert any(rule["rule_name"] == "approved_cheque_requires_owner" for rule in payload["rules"])

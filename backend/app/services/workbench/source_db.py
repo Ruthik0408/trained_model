@@ -1,3 +1,4 @@
+"""Database access helpers for source tables and persisted result tables."""
 from collections import Counter
 import re
 from contextlib import contextmanager
@@ -20,6 +21,7 @@ _SAFE_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 def list_source_tables() -> list[dict]:
+    """Return source schema tables grouped with their visible columns and types."""
     cached_result = TABLE_METADATA_CACHE.get("source_tables")
     if cached_result is not None:
         logger.debug("Returning cached source tables list")
@@ -54,6 +56,7 @@ def list_source_tables() -> list[dict]:
 
 
 def source_connection_status() -> dict:
+    """Probe the source PostgreSQL database and return a UI-friendly health payload."""
     try:
         with _source_connect() as conn:
             conn.execute(text("SELECT 1"))
@@ -82,6 +85,7 @@ def source_connection_status() -> dict:
 
 @lru_cache(maxsize=1)
 def _source_engine():
+    """Create and cache the SQLAlchemy engine used for source/result PostgreSQL access."""
     url = URL.create(
         drivername="postgresql+psycopg2",
         username=settings.source_db_user,
@@ -103,6 +107,7 @@ def _source_engine():
 
 
 def _dispose_source_engine() -> None:
+    """Dispose the cached source engine after connectivity errors or pool issues."""
     try:
         engine = _source_engine()
         engine.dispose()
@@ -113,6 +118,7 @@ def _dispose_source_engine() -> None:
 
 
 def _friendly_source_db_error(exc: Exception) -> str:
+    """Translate raw database exceptions into clearer operator-facing error text."""
     message = str(exc).strip()
     lowered = message.lower()
 
@@ -142,6 +148,7 @@ def _friendly_source_db_error(exc: Exception) -> str:
 
 @contextmanager
 def _source_connect():
+    """Yield a plain source DB connection and normalize connection failures."""
     try:
         with _source_engine().connect() as conn:
             yield conn
@@ -152,6 +159,7 @@ def _source_connect():
 
 @contextmanager
 def _source_begin():
+    """Yield a transactional source DB connection for writes or temp-table work."""
     try:
         with _source_engine().begin() as conn:
             yield conn
@@ -161,10 +169,12 @@ def _source_begin():
 
 
 def _quote(name: str) -> str:
+    """Quote a SQL identifier using PostgreSQL double-quote escaping."""
     return '"' + str(name).replace('"', '""') + '"'
 
 
 def _index_name(*parts: str) -> str:
+    """Build a deterministic PostgreSQL index name that respects name-length limits."""
     base = "idx_" + "_".join(_slug_token(part) for part in parts)
 
     if len(base) <= 55:
@@ -175,6 +185,7 @@ def _index_name(*parts: str) -> str:
 
 
 def _storage_column_name(column_name: Any, used_names: set[str]) -> str:
+    """Normalize one DataFrame column name into a collision-safe SQL column name."""
     raw_name = str(column_name).strip()
 
     safe_base = re.sub(r"[^A-Za-z0-9_]+", "_", raw_name)
@@ -206,6 +217,7 @@ def _storage_column_name(column_name: Any, used_names: set[str]) -> str:
 
 
 def _normalize_storage_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """Rename DataFrame columns into result-table-safe storage identifiers when needed."""
     used_names: set[str] = set()
     renamed = [_storage_column_name(column, used_names) for column in df.columns]
 
@@ -217,6 +229,7 @@ def _normalize_storage_columns(df: pd.DataFrame) -> pd.DataFrame:
     return normalized
 
 def _source_table_ref(table_name: str) -> str:
+    """Return a fully qualified source table reference after identifier validation."""
     _validate_identifier(table_name, "source table")
     return f"{_quote(settings.source_db_schema)}.{_quote(table_name)}"
 
@@ -224,6 +237,7 @@ def _source_table_ref(table_name: str) -> str:
 def _source_columns_map(
     selected_tables: list[str] | None = None,
 ) -> dict[str, list[dict]]:
+    """Build a quick lookup of source column metadata keyed by table name."""
     tables = list_source_tables()
     out: dict[str, list[dict]] = {}
 
@@ -239,6 +253,7 @@ def _source_columns_map(
 
 
 def _approx_table_row_count(conn, table_name: str) -> int:
+    """Read PostgreSQL planner statistics for an approximate source table row count."""
     sql = text(
         """
         SELECT COALESCE(c.reltuples, 0)::bigint
@@ -264,6 +279,7 @@ def _validate_selected_tables(
     selected_tables: list[str],
     source_columns: dict[str, list[dict]],
 ) -> None:
+    """Reject empty, missing, or duplicated source table selections."""
     if not selected_tables:
         raise ValueError("At least one source table must be selected.")
 
@@ -294,6 +310,7 @@ def _resolve_source_column_name(
     table_name: str,
     column_name: str,
 ) -> str:
+    """Resolve a table-qualified or shorthand column reference into the actual source column."""
     if not column_name:
         raise ValueError(f"Join column missing for table: {table_name}")
 
@@ -334,6 +351,7 @@ def _source_column_meta(
     table_name: str,
     column_name: str,
 ) -> dict[str, Any]:
+    """Return full metadata for a validated source column reference."""
     plain_column = _resolve_source_column_name(source_columns, table_name, column_name)
 
     for item in source_columns[table_name]:
@@ -344,17 +362,20 @@ def _source_column_meta(
 
 
 def _validate_identifier(value: str, label: str) -> None:
+    """Block unsafe SQL identifiers before they reach string-built SQL."""
     value = str(value)
     if not _SAFE_IDENTIFIER_RE.match(value):
         raise ValueError(f"Unsafe SQL identifier for {label}: {value!r}")
 
 
 def _result_table_ref(table_name: str) -> str:
+    """Return a fully qualified result-table reference after validation."""
     _validate_identifier(table_name, "result table")
     return f"{_quote(RESULT_SCHEMA)}.{_quote(table_name)}"
 
 
 def _previous_dataset_row_count(dataset_table: str) -> int:
+    """Return the current row count of the persisted anomaly dataset table."""
     _validate_identifier(dataset_table, "dataset_table")
 
     if not _result_table_exists(dataset_table):
@@ -369,6 +390,7 @@ def _previous_dataset_row_count(dataset_table: str) -> int:
 
 
 def _next_dataset_run_id(dataset_table: str) -> int:
+    """Compute the next dataset-local run id stored in the result table."""
     _validate_identifier(dataset_table, "dataset_table")
 
     if not _result_table_exists(dataset_table):
@@ -391,6 +413,7 @@ def _next_dataset_run_id(dataset_table: str) -> int:
 
 
 def _result_table_exists(dataset_table: str) -> bool:
+    """Check whether the configured result table exists in PostgreSQL."""
     if not dataset_table:
         return False
 
@@ -435,6 +458,7 @@ def _result_table_exists(dataset_table: str) -> bool:
 
 
 def _clear_result_table_exists_cache(dataset_table: str | None = None) -> None:
+    """Invalidate one or all cached result-table existence lookups."""
     if dataset_table:
         TABLE_METADATA_CACHE.invalidate(f"result_table_exists:{dataset_table}")
         return
@@ -442,6 +466,7 @@ def _clear_result_table_exists_cache(dataset_table: str | None = None) -> None:
 
 
 def _result_table_columns(dataset_table: str) -> frozenset[str]:
+    """Return the visible columns of the persisted result table."""
     if not dataset_table:
         return frozenset()
 
@@ -477,6 +502,7 @@ def _result_table_columns(dataset_table: str) -> frozenset[str]:
 
 
 def _clear_result_table_columns_cache(dataset_table: str | None = None) -> None:
+    """Invalidate one or all cached result-table column lookups."""
     if dataset_table:
         TABLE_METADATA_CACHE.invalidate(f"result_table_columns:{dataset_table}")
         return

@@ -1,3 +1,4 @@
+"""Transform scored anomalies into persisted dataset rows and feedback updates."""
 import json
 import re
 from dataclasses import dataclass
@@ -49,10 +50,12 @@ from app.services.workbench.utils import (
 
 
 def _feature_name_for_tables(selected_tables: list[str]) -> str:
+    """Collapse the selected source tables into the canonical dataset label."""
     return ".".join(str(table) for table in selected_tables if str(table).strip())
 
 
 def _presentable_reason_text(value: Any) -> str | None:
+    """Normalize internal rule or outlier reason text into a UI-friendly label."""
     if value is None or pd.isna(value):
         return None
 
@@ -73,6 +76,7 @@ def _review_payload_for_row(
     feature_aliases: set[str],
     selected_tables: list[str],
 ) -> dict[str, Any]:
+    """Extract business columns for one anomaly row into the review payload artifact."""
     payload: dict[str, Any] = {}
 
     for column, value in row.items():
@@ -86,6 +90,7 @@ def _review_payload_for_row(
     return payload
 
 def _canonical_payload_column_name(column_name: str, selected_tables: list[str]) -> str:
+    """Rewrite stored column aliases back into `table.column` style payload keys."""
     if "." in column_name:
         return column_name
     for table_name in sorted((str(table) for table in selected_tables), key=len, reverse=True):
@@ -99,6 +104,7 @@ def _result_fk_dak_for_row(
     row: pd.Series,
     selected_tables: list[str],
 ) -> int | None:
+    """Resolve the best available `fk_dak` identifier for one persisted anomaly row."""
     if "dak" in selected_tables:
         numeric = _safe_numeric_scalar(row.get("dak.id"), default=None)
         return int(numeric) if numeric is not None else None
@@ -118,6 +124,7 @@ def _review_payload_cache_entries(
     inserted_ids: list[int],
     selected_tables: list[str],
 ) -> dict[str, dict[str, Any]]:
+    """Build the run-level review payload artifact keyed by inserted dataset record id."""
     payloads = [
         _review_payload_for_row(row, feature_aliases, selected_tables)
         for _, row in rows.iterrows()
@@ -130,6 +137,7 @@ def _review_payload_cache_entries(
 
 @dataclass(frozen=True)
 class DatasetBuildInputs:
+    """Inputs required to turn scored model outputs into a persisted anomaly dataset frame."""
     joined: pd.DataFrame
     feature_frame: pd.DataFrame
     payload: WorkbenchRunRequest
@@ -149,6 +157,7 @@ class DatasetBuildInputs:
 
 
 def list_saved_datasets(db: Session) -> list[dict[str, Any]]:
+    """Return the latest persisted run for each dataset table exposed to the UI."""
     runs = db.query(WorkbenchRun).order_by(WorkbenchRun.run_id.desc()).all()
 
     latest_by_table: dict[str, WorkbenchRun] = {}
@@ -183,6 +192,7 @@ def list_saved_datasets(db: Session) -> list[dict[str, Any]]:
 
 
 def update_dataset_feedback(db: Session, payload) -> dict[str, Any]:
+    """Persist reviewer feedback for one anomaly row and invalidate downstream caches."""
     del db
 
     feedback = str(payload.feedback).strip().lower()
@@ -210,6 +220,7 @@ def _feature_values_payload(
     signals: list[dict[str, Any]] | None = None,
     rule_evidence: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    """Pack ML explanation signals and rule evidence into one persisted JSON payload."""
     return {
         "__ml_explanation_signals": signals or [],
         "__rule_evidence": rule_evidence or [],
@@ -217,6 +228,7 @@ def _feature_values_payload(
 
 
 def _rule_evidence_payload(value: Any) -> list[dict[str, Any]]:
+    """Parse newline-delimited rule evidence JSON into a normalized list."""
     if value is None:
         return []
     try:
@@ -248,6 +260,7 @@ def _rule_evidence_payload(value: Any) -> list[dict[str, Any]]:
 
 
 def _coerce_insert_value(value: Any) -> Any:
+    """Convert NumPy scalars into plain Python values before SQLAlchemy inserts them."""
     if isinstance(value, np.generic):
         return value.item()
 
@@ -255,6 +268,7 @@ def _coerce_insert_value(value: Any) -> Any:
 
 
 def _feedback_to_score(feedback: str) -> float:
+    """Translate the review label into the numeric score stored in PostgreSQL."""
     normalized = str(feedback or "").strip().lower()
     normalized_scores = {
         str(label).strip().lower(): float(score)
@@ -268,6 +282,7 @@ def _feedback_to_score(feedback: str) -> float:
 
 
 def _score_to_feedback(value: Any) -> str | None:
+    """Translate a stored numeric feedback score back into the UI label."""
     numeric = _safe_numeric_scalar(value, default=float("nan"))
 
     if numeric is None or pd.isna(numeric):
@@ -285,6 +300,7 @@ def _aligned_series(
     index: pd.Index,
     default: Any = None,
 ) -> pd.Series:
+    """Reindex an optional series onto the feature frame index with a default fill value."""
     if series is None:
         return pd.Series(default, index=index)
 
@@ -292,6 +308,7 @@ def _aligned_series(
 
 
 def _build_dataset_frame(inputs: DatasetBuildInputs) -> pd.DataFrame:
+    """Build the persisted anomaly-row DataFrame from the scoring and rule outputs."""
     base_index = inputs.feature_frame.index
 
     anomaly_mask = inputs.final_flag.reindex(base_index, fill_value=False).astype(bool)
@@ -431,6 +448,7 @@ def _write_dataset_to_result(
     df: pd.DataFrame,
     dataset_table: str,
 ) -> dict[str, Any]:
+    """Append anomaly rows into the existing PostgreSQL result table."""
     df = _normalize_storage_columns(df)
     engine = _source_engine()
 
@@ -521,6 +539,7 @@ def _write_dataset_to_result(
     }
 
 def _normalize_result_table_feature_names(conn, dataset_table: str) -> None:
+    """Clean malformed selected-table labels left from earlier result-table writes."""
     if SELECTED_TABLES_COLUMN not in _result_table_columns(dataset_table):
         return
     selected_column = _quote(SELECTED_TABLES_COLUMN)
@@ -547,6 +566,7 @@ def _normalize_result_table_feature_names(conn, dataset_table: str) -> None:
     )
 
 def _update_dataset_row(dataset_table: str, record_id: int, assignments: dict[str, Any]) -> None:
+    """Apply an in-place update to one persisted anomaly row in the result table."""
     if not _result_table_exists(dataset_table):
         raise ValueError(f"Dataset table {dataset_table} does not exist in {RESULT_SCHEMA}.")
     set_parts = [f"{_quote(column)} = :{column}" for column in assignments]

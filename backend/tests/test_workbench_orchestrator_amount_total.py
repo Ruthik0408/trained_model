@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -202,3 +203,67 @@ def test_run_isolation_forest_reports_staging_cache_inconsistency() -> None:
     assert exc_info.value.error_code == "WORKBENCH_STAGING_TABLE_UNAVAILABLE"
     assert "temporary scoring table context" in exc_info.value.suggestion
     assert "Run the workbench again" not in exc_info.value.suggestion
+
+
+def test_run_isolation_forest_scores_only_non_rule_rows(monkeypatch) -> None:
+    payload = WorkbenchRunRequest(selected_tables=["dak"])
+    execution = WorkbenchExecutionState(
+        joined=pd.DataFrame({"value": [1, 2]}, index=[10, 20]),
+        source_row_counts={},
+        join_debug={},
+        warnings=[],
+        executed_sql="SELECT 1",
+        user_reasons=[],
+        applied_feature_rule_count=0,
+        applied_user_rule_count=0,
+        staging_table="tmp_join",
+        batch_id="test_batch",
+        dataset_table="ML_Features",
+        dataset_run_id=1,
+    )
+    rule_flags = RuleFlagState(
+        user_rule_flag=pd.Series([False, False], index=[10, 20]),
+        default_rule_flag=pd.Series([True, False], index=[10, 20]),
+        combined_rule_flag=pd.Series([True, False], index=[10, 20]),
+        user_reason_series=None,
+        default_reason_series=pd.Series(["rule hit", None], index=[10, 20]),
+    )
+    full_feature_frame = pd.DataFrame({"feature": [100.0, 200.0]}, index=[10, 20])
+    scored_inputs: list[pd.DataFrame] = []
+
+    monkeypatch.setattr(orchestrator, "load_saved_model_artifact", lambda _payload: {"pipeline": object(), "transformed_feature_names": []})
+    monkeypatch.setattr(
+        orchestrator,
+        "build_saved_model_feature_frame",
+        lambda _conn, _table, _artifact: (
+            full_feature_frame,
+            SimpleNamespace(
+                feature_frame=full_feature_frame,
+                selected_columns=["feature"],
+                dropped_all_missing_columns=[],
+                dropped_constant_columns=[],
+            ),
+        ),
+    )
+
+    def fake_score(feature_frame, _artifact):
+        scored_inputs.append(feature_frame.copy())
+        return np.asarray([[1.0]]), np.asarray([0.91]), pd.Series([True], index=feature_frame.index, dtype=bool), 0.5
+
+    monkeypatch.setattr(orchestrator, "score_with_saved_model", fake_score)
+    monkeypatch.setattr(orchestrator, "build_feature_explanation_signals", lambda *_args, **_kwargs: {20: [{"signal": "ml"}]})
+    monkeypatch.setattr(
+        orchestrator,
+        "_read_temp_anomaly_payload_frame",
+        lambda _conn, _temp_table, row_ids, _payload: pd.DataFrame({"value": row_ids}, index=row_ids),
+    )
+
+    model_state = _run_isolation_forest(payload, execution, SimpleNamespace(), rule_flags)
+
+    assert len(scored_inputs) == 1
+    assert scored_inputs[0].index.tolist() == [20]
+    assert model_state.ml_flag.to_dict() == {10: False, 20: True}
+    assert model_state.final_flag.to_dict() == {10: True, 20: True}
+    assert np.isnan(model_state.isolation_scores[0])
+    assert float(model_state.isolation_scores[1]) == 0.91
+    assert model_state.filtered_joined.index.tolist() == [10, 20]

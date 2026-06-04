@@ -194,6 +194,8 @@ def invalidate_all_caches() -> None:
     TABLE_METADATA_CACHE.invalidate()
     QUERY_RESULT_CACHE.invalidate()
     DATASET_SUMMARY_CACHE.invalidate()
+    from app.services.workbench.sql_runtime import _join_sql_cache
+    _join_sql_cache.invalidate()
     logger.info("All caches invalidated")
 
 
