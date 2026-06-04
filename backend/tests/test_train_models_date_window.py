@@ -19,6 +19,7 @@ from backend.train_models import (
     validate_date_window,
     validate_max_training_rows,
 )
+from app.services.workbench.model_cleaning import business_day_gap_series
 
 
 def test_list_date_where_clause_supports_from_and_cutoff() -> None:
@@ -196,3 +197,12 @@ def test_boolean_features_are_converted_directly_instead_of_one_hot_encoded() ->
     assert "schedule3_approved" in feature_names
     assert "schedule3_approved_f" not in feature_names
     assert "schedule3_approved_t" not in feature_names
+
+
+def test_business_day_gap_series_excludes_weekends() -> None:
+    previous = pd.Series(["2025-01-03", "2025-01-06"])  # Friday, Monday
+    next_value = pd.Series(["2025-01-06", "2025-01-07"])  # Monday, Tuesday
+
+    gap = business_day_gap_series(previous, next_value)
+
+    assert gap.astype("Float64").tolist() == [1.0, 1.0]

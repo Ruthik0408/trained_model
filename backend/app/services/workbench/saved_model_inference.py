@@ -8,19 +8,14 @@ import joblib
 import numpy as np
 import pandas as pd
 from scipy import sparse
-from sqlalchemy import text
-from model_cleaning import (
-    apply_date_sequence_summary,
-    apply_invoice_row_filter_summary,
-    normalize_boolean_feature_columns,
+from app.services.workbench.anomaly_data_policy import (
+    SavedModelPreprocessingPolicy,
+    apply_saved_model_preprocessing_policy,
 )
 
 from app.core.config import settings
 from app.core.errors import WorkbenchValidationError
 from app.schemas.workbench_schema import WorkbenchRunRequest
-from app.services.workbench.constants import TEMP_ROW_ID_COLUMN
-from app.services.workbench.sql_runtime import _temp_table_columns, _workbench_temp_table_ref
-from app.services.workbench.source_db import _quote
 from app.services.workbench.trained_datasets import resolve_dataset_name
 
 KNOWN_MODEL_TABLE_PREFIXES = (
@@ -68,11 +63,10 @@ def load_saved_model_artifact(payload: WorkbenchRunRequest) -> dict[str, Any]:
 
 
 def build_saved_model_feature_frame(
-    conn,
-    temp_table: str,
+    joined_df: pd.DataFrame,
     artifact: dict[str, Any],
 ) -> tuple[pd.DataFrame, FeatureSelectionResult]:
-    raw_df = _read_model_raw_frame(conn, temp_table, artifact)
+    raw_df = _read_model_raw_frame(joined_df, artifact)
     cleaned_df = _apply_saved_training_cleaning(raw_df, artifact)
     feature_input_columns = [str(column) for column in artifact.get("feature_input_columns") or []]
 
@@ -149,14 +143,13 @@ def _as_2d_numpy(values: Any) -> np.ndarray:
     return array
 
 
-def _read_model_raw_frame(conn, temp_table: str, artifact: dict[str, Any]) -> pd.DataFrame:
-    available_columns = set(_temp_table_columns(conn, temp_table))
+def _read_model_raw_frame(joined_df: pd.DataFrame, artifact: dict[str, Any]) -> pd.DataFrame:
+    available_columns = set(str(column) for column in joined_df.columns)
     model_raw_columns = _model_raw_columns_for_artifact(artifact)
     raw_joined_columns = _raw_joined_columns_for_artifact(model_raw_columns, artifact)
-    select_columns = [TEMP_ROW_ID_COLUMN]
-    select_columns.extend(column for column in raw_joined_columns if column in available_columns)
+    select_columns = [column for column in raw_joined_columns if column in available_columns]
 
-    if len(select_columns) == 1:
+    if not select_columns:
         raise WorkbenchValidationError(
             "The selected data does not contain any columns expected by the saved model.",
             details={
@@ -166,22 +159,13 @@ def _read_model_raw_frame(conn, temp_table: str, artifact: dict[str, Any]) -> pd
             },
         )
 
-    sql = text(
-        f"""
-        SELECT {", ".join(_quote(column) for column in select_columns)}
-        FROM {_workbench_temp_table_ref(temp_table)}
-        ORDER BY {_quote(TEMP_ROW_ID_COLUMN)}
-        """
-    )
-    df = pd.read_sql_query(sql, conn)
+    df = joined_df.loc[:, select_columns].copy()
     df = df.rename(
         columns={
             joined_column: raw_column
             for raw_column, joined_column in zip(model_raw_columns, raw_joined_columns)
         }
     )
-    if TEMP_ROW_ID_COLUMN in df.columns:
-        df = df.set_index(TEMP_ROW_ID_COLUMN, drop=True)
 
     for column in model_raw_columns:
         if column not in df.columns:
@@ -214,78 +198,8 @@ def _apply_saved_training_cleaning(
     raw_df: pd.DataFrame,
     artifact: dict[str, Any],
 ) -> pd.DataFrame:
-    working = raw_df.copy()
-    cleaned_columns = [str(column) for column in artifact.get("cleaned_columns") or []]
-    if cleaned_columns:
-        working = working.reindex(columns=cleaned_columns)
-
-    for column in artifact.get("date_sequence_checked_columns") or []:
-        column_name = str(column)
-        if column_name in working.columns and _looks_like_date_column(column_name):
-            working[column_name] = pd.to_datetime(working[column_name], errors="coerce")
-
-    working = _drop_saved_void_invoice_rows(working, artifact)
-    working = _drop_saved_invalid_date_sequence_rows(working, artifact)
-    working = _add_saved_date_gap_features(working, artifact)
-    working = _normalize_saved_boolean_columns(working, artifact)
-    working = working.where(pd.notna(working), np.nan)
-    return working
-
-
-def _normalize_saved_boolean_columns(
-    df: pd.DataFrame,
-    artifact: dict[str, Any],
-) -> pd.DataFrame:
-    boolean_columns = [str(column) for column in artifact.get("boolean_columns") or []]
-    return normalize_boolean_feature_columns(df, boolean_columns)
-
-
-def _drop_saved_void_invoice_rows(
-    df: pd.DataFrame,
-    artifact: dict[str, Any],
-) -> pd.DataFrame:
-    return apply_invoice_row_filter_summary(
-        df,
-        artifact.get("invoice_row_filter_summary") or {},
-    )
-
-
-def _drop_saved_invalid_date_sequence_rows(
-    df: pd.DataFrame,
-    artifact: dict[str, Any],
-) -> pd.DataFrame:
-    return apply_date_sequence_summary(
-        df,
-        artifact.get("date_sequence_summary") or {},
-    )
-
-
-def _add_saved_date_gap_features(
-    df: pd.DataFrame,
-    artifact: dict[str, Any],
-) -> pd.DataFrame:
-    working = df.copy()
-    original_date_columns = set()
-
-    for gap in artifact.get("date_gap_features") or []:
-        feature_name = str(gap.get("feature_name") or "")
-        previous_column = str(gap.get("previous_column") or "")
-        next_column = str(gap.get("next_column") or "")
-        if not feature_name or previous_column not in working.columns or next_column not in working.columns:
-            continue
-        previous = pd.to_datetime(working[previous_column], errors="coerce")
-        next_value = pd.to_datetime(working[next_column], errors="coerce")
-        working[feature_name] = (next_value - previous).dt.total_seconds() / 86400.0
-        original_date_columns.update([previous_column, next_column])
-
-    configured_dropped_dates = {
-        str(column)
-        for column in artifact.get("sequence_filtered_columns") or []
-        if str(column) not in (artifact.get("feature_input_columns") or [])
-        and _looks_like_date_column(str(column))
-    }
-    working = working.drop(columns=sorted(original_date_columns | configured_dropped_dates), errors="ignore")
-    return working
+    policy = SavedModelPreprocessingPolicy.from_artifact(artifact)
+    return apply_saved_model_preprocessing_policy(raw_df, policy)
 
 
 def _model_column_to_joined_column(column_name: str) -> str:
@@ -300,12 +214,3 @@ def _model_column_to_joined_column(column_name: str) -> str:
     if not separator:
         return text
     return f"{table_name}.{plain_column}"
-
-
-def _joined_column_to_model_column(column_name: str) -> str:
-    return str(column_name).replace(".", "_", 1)
-
-
-def _looks_like_date_column(column_name: str) -> bool:
-    lowered = column_name.lower()
-    return "date" in lowered or "time" in lowered

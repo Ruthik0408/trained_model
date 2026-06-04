@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { getWorkbenchAnomalies } from "../api/anomalyApi";
+import { displayValue } from "../utils";
 
 const PAGE_SIZE = 50;
 
@@ -193,13 +194,6 @@ function Th({ children }) {
 
 function Td({ children }) {
   return <td style={td}>{children}</td>;
-}
-
-function displayValue(value) {
-  if (value === null || value === undefined || value === "") {
-    return "NA";
-  }
-  return String(value);
 }
 
 const page = {

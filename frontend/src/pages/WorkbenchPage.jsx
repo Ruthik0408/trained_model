@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import Card from "../components/Card";
-import { clearApiCache, getWorkbenchTables, previewWorkbench, runWorkbench, } from "../api/anomalyApi";
+import { clearApiCache, getWorkbenchTables, runWorkbench, } from "../api/anomalyApi";
 const INITIAL_TABLE_LOAD_RETRIES = 6;
 const INITIAL_TABLE_LOAD_DELAY_MS = 1000;
 const DEFAULT_USER_RULE = (index) => ({
@@ -20,12 +20,10 @@ export default function WorkbenchPage({ onRunComplete, includeRuleAnomalyStep = 
     const [fromDate, setFromDate] = useState("");
     const [toDate, setToDate] = useState("");
     const [loading, setLoading] = useState(true);
-    const [previewing, setPreviewing] = useState(false);
     const [running, setRunning] = useState(false);
     const [autoFeatureLoading, setAutoFeatureLoading] = useState(false);
     const [autoFeatureError, setAutoFeatureError] = useState("");
     const [result, setResult] = useState(null);
-    const [previewResult, setPreviewResult] = useState(null);
     const [runError, setRunError] = useState("");
     const [runWarning, setRunWarning] = useState("");
     const [tableSearch, setTableSearch] = useState("");
@@ -77,7 +75,6 @@ export default function WorkbenchPage({ onRunComplete, includeRuleAnomalyStep = 
     useEffect(() => {
         setRunError("");
         setRunWarning("");
-        setPreviewResult(null);
         setResult(null);
     }, [selectedTables, fromDate, toDate]);
     const filteredTables = useMemo(() => {
@@ -98,7 +95,7 @@ export default function WorkbenchPage({ onRunComplete, includeRuleAnomalyStep = 
     const hasExplicitDateRange = Boolean(fromDate && toDate);
     const isDateStepComplete = hasExplicitDateRange && isDateSelectionValid(fromDate, toDate);
     const canEditRules = selectedTables.length > 0 && isDateStepComplete;
-    const canRun = canEditRules && !previewing && !running && !autoFeatureLoading;
+    const canRun = canEditRules && !running && !autoFeatureLoading;
     const dateValidationError = getDateValidationError(fromDate, toDate);
     useEffect(() => {
         setFeatureRules([]);
@@ -114,7 +111,7 @@ export default function WorkbenchPage({ onRunComplete, includeRuleAnomalyStep = 
         if (includeRuleAnomalyStep) {
             baseSteps.push({ id: 3, label: "Rule Anomalies", complete: true, disabled: !canEditRules });
         }
-        baseSteps.push({ id: finalStepId, label: "Preview And Run", complete: Boolean(result), disabled: !canEditRules });
+        baseSteps.push({ id: finalStepId, label: "Run Anomaly", complete: Boolean(result), disabled: !canEditRules });
         return baseSteps;
     }, [canEditRules, finalStepId, includeRuleAnomalyStep, isDateStepComplete, result, selectedTables.length]);
     useEffect(() => {
@@ -208,29 +205,6 @@ export default function WorkbenchPage({ onRunComplete, includeRuleAnomalyStep = 
             from_date: normalizedFromDate,
             to_date: normalizedToDate,
         };
-    }
-    async function executePreview() {
-        setPreviewing(true);
-        setRunError("");
-        setRunWarning("");
-        try {
-            const response = await previewWorkbench(buildWorkbenchPayload());
-            setPreviewResult(response.data || null);
-            setResult(null);
-        }
-        catch (error) {
-            const formatted = formatWorkbenchError(extractWorkbenchError(error));
-            if (formatted.isFatal) {
-                setPreviewResult(null);
-                setRunError(formatted.message);
-            }
-            else {
-                setRunWarning(formatted.message);
-            }
-        }
-        finally {
-            setPreviewing(false);
-        }
     }
     async function executeRun() {
         setRunning(true);
@@ -385,23 +359,20 @@ export default function WorkbenchPage({ onRunComplete, includeRuleAnomalyStep = 
       </div>) : null}
 
       {activeStep === finalStepId ? (<div style={wizardPanel}>
-        <Card title={`${finalStepId}. Preview And Run`}>
+        <Card title={`${finalStepId}. Run Anomaly`}>
           {runWarning ? <div style={warningBox}>{runWarning}</div> : null}
           {runError ? <div style={errorBox}>{runError}</div> : null}
           {autoFeatureError ? <div style={errorBox}>{autoFeatureError}</div> : null}
 
           <div style={finalActionBox}>
             <div style={finalActionTitle}>Finish Setup</div>
-            <div style={finalActionText}>Preview the trained model setup first, then score the selected Postgres rows with the saved trained model.</div>
+            <div style={finalActionText}>Run anomaly detection directly on the selected data.</div>
             <div style={statusRow}>
               <div style={statusChip}>Saved model inference: ready</div>
             </div>
             <div style={actionBar}>
-              <button type="button" onClick={executePreview} disabled={!canRun} style={previewResult && !previewing ? successButton : primaryButton}>
-                {previewing ? "Previewing..." : "Preview Model Setup"}
-              </button>
-              <button type="button" onClick={executeRun} disabled={!canRun} style={result && !running ? successButton : secondaryButton}>
-                {running ? "Running..." : result ? "Run Completed" : "Find Anomalies With Saved Model"}
+              <button type="button" onClick={executeRun} disabled={!canRun} style={result && !running ? successButton : primaryButton}>
+                {running ? "Running..." : result ? "Run Completed" : "Find Anomalies"}
               </button>
             </div>
           </div>

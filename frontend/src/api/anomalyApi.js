@@ -57,7 +57,6 @@ function getConfigWithSignal(signal) {
 // API functions with cache support and better error handling
 // All functions support optional AbortSignal for request cancellation
 export const getWorkbenchTables = (signal) => api.get(API_ENDPOINTS.TABLES, getConfigWithSignal(signal));
-export const previewWorkbench = (payload, signal) => api.post(API_ENDPOINTS.PREVIEW, payload, getConfigWithSignal(signal));
 export const runWorkbench = (payload, signal) => api.post(API_ENDPOINTS.RUN, payload, getConfigWithSignal(signal));
 
 export const getWorkbenchDatasets = (signal) => {

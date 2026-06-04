@@ -4,7 +4,6 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from app.core.errors import WorkbenchValidationError
 from app.schemas.workbench_schema import WorkbenchRunRequest
 import app.services.workbench.orchestrator as orchestrator
 from app.services.workbench.orchestrator import (
@@ -125,7 +124,6 @@ def test_run_workbench_does_not_create_run_when_dataset_build_fails(monkeypatch)
         user_reasons=[],
         applied_feature_rule_count=0,
         applied_user_rule_count=0,
-        staging_table=None,
         batch_id="test_batch",
         dataset_table="ML_Features",
         dataset_run_id=1,
@@ -173,38 +171,6 @@ def test_run_workbench_does_not_create_run_when_dataset_build_fails(monkeypatch)
     assert created_run is False
 
 
-def test_run_isolation_forest_reports_staging_cache_inconsistency() -> None:
-    payload = WorkbenchRunRequest(selected_tables=["dak"])
-    execution = WorkbenchExecutionState(
-        joined=pd.DataFrame({"value": [1]}),
-        source_row_counts={},
-        join_debug={},
-        warnings=[],
-        executed_sql="SELECT 1",
-        user_reasons=[],
-        applied_feature_rule_count=0,
-        applied_user_rule_count=0,
-        staging_table=None,
-        batch_id="test_batch",
-        dataset_table="ML_Features",
-        dataset_run_id=1,
-    )
-    rule_flags = RuleFlagState(
-        user_rule_flag=pd.Series([False]),
-        default_rule_flag=pd.Series([False]),
-        combined_rule_flag=pd.Series([False]),
-        user_reason_series=None,
-        default_reason_series=None,
-    )
-
-    with pytest.raises(WorkbenchValidationError) as exc_info:
-        _run_isolation_forest(payload, execution, SimpleNamespace(), rule_flags)
-
-    assert exc_info.value.error_code == "WORKBENCH_STAGING_TABLE_UNAVAILABLE"
-    assert "temporary scoring table context" in exc_info.value.suggestion
-    assert "Run the workbench again" not in exc_info.value.suggestion
-
-
 def test_run_isolation_forest_scores_only_non_rule_rows(monkeypatch) -> None:
     payload = WorkbenchRunRequest(selected_tables=["dak"])
     execution = WorkbenchExecutionState(
@@ -216,7 +182,6 @@ def test_run_isolation_forest_scores_only_non_rule_rows(monkeypatch) -> None:
         user_reasons=[],
         applied_feature_rule_count=0,
         applied_user_rule_count=0,
-        staging_table="tmp_join",
         batch_id="test_batch",
         dataset_table="ML_Features",
         dataset_run_id=1,
@@ -235,7 +200,7 @@ def test_run_isolation_forest_scores_only_non_rule_rows(monkeypatch) -> None:
     monkeypatch.setattr(
         orchestrator,
         "build_saved_model_feature_frame",
-        lambda _conn, _table, _artifact: (
+        lambda _joined, _artifact: (
             full_feature_frame,
             SimpleNamespace(
                 feature_frame=full_feature_frame,
@@ -252,13 +217,8 @@ def test_run_isolation_forest_scores_only_non_rule_rows(monkeypatch) -> None:
 
     monkeypatch.setattr(orchestrator, "score_with_saved_model", fake_score)
     monkeypatch.setattr(orchestrator, "build_feature_explanation_signals", lambda *_args, **_kwargs: {20: [{"signal": "ml"}]})
-    monkeypatch.setattr(
-        orchestrator,
-        "_read_temp_anomaly_payload_frame",
-        lambda _conn, _temp_table, row_ids, _payload: pd.DataFrame({"value": row_ids}, index=row_ids),
-    )
 
-    model_state = _run_isolation_forest(payload, execution, SimpleNamespace(), rule_flags)
+    model_state = _run_isolation_forest(payload, execution, rule_flags)
 
     assert len(scored_inputs) == 1
     assert scored_inputs[0].index.tolist() == [20]

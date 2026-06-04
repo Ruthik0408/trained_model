@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { displayValue } from "../utils";
 const DEFAULT_FIELDS = [
     ["review_key"],
     ["invoice_number"],
@@ -966,12 +967,6 @@ function formatNumber(value) {
 function formatInteger(value) {
     const numeric = Number(value);
     return Number.isFinite(numeric) ? String(Math.trunc(numeric)) : "NA";
-}
-function displayValue(value) {
-    if (value === null || value === undefined || value === "") {
-        return "NA";
-    }
-    return String(value);
 }
 function formatReason(value) {
     return value

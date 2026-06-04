@@ -2,6 +2,10 @@ import pandas as pd
 import numpy as np
 from scipy import sparse
 
+from app.services.workbench.anomaly_data_policy import (
+    SavedModelPreprocessingPolicy,
+    build_saved_model_preprocessing_policy,
+)
 from app.services.workbench.saved_model_inference import (
     _apply_saved_training_cleaning,
     _as_2d_numpy,
@@ -55,6 +59,78 @@ def test_saved_training_cleaning_drops_void_duplicate_invoice_rows() -> None:
 
     assert cleaned.index.tolist() == [10, 12]
     assert cleaned["invoice_no"].tolist() == ["A-1", "B-1"]
+
+
+def test_saved_model_preprocessing_policy_round_trips_artifact_fields() -> None:
+    policy = build_saved_model_preprocessing_policy(
+        cleaned_columns=["invoice_no", "invoice_date", "record_status", "amount"],
+        date_sequence_checked_columns=["invoice_date", "approval_date"],
+        sequence_filtered_columns=["amount", "gap_days_invoice_to_approval"],
+        feature_input_columns=["amount", "gap_days_invoice_to_approval"],
+        boolean_columns=["approved_flag"],
+        invoice_row_filter_summary={
+            "tables_applied": [
+                {
+                    "invoice_column": "invoice_no",
+                    "invoice_date_column": "invoice_date",
+                    "record_status_column": "record_status",
+                }
+            ]
+        },
+        date_sequence_summary={
+            "checks": [
+                {
+                    "previous_column": "invoice_date",
+                    "next_column": "approval_date",
+                }
+            ]
+        },
+        date_gap_features=[
+            {
+                "feature_name": "gap_days_invoice_to_approval",
+                "previous_column": "invoice_date",
+                "next_column": "approval_date",
+            }
+        ],
+    )
+
+    artifact = policy.to_artifact_fields()
+    restored = SavedModelPreprocessingPolicy.from_artifact(artifact)
+
+    assert artifact["training_row_drop_policies"] == [
+        "duplicate_void_invoice_rows",
+        "date_sequence_violation_rows",
+    ]
+    assert "boolean_normalization" in artifact["shared_feature_transform_policies"]
+    assert "date_sequence_violation_rows" in artifact["runtime_rule_flag_policies"]
+    assert restored == policy
+
+
+def test_saved_training_cleaning_builds_business_day_gap_features() -> None:
+    raw_df = pd.DataFrame(
+        {
+            "invoice_date": ["2025-01-03"],  # Friday
+            "approval_date": ["2025-01-06"],  # Monday
+        },
+        index=[10],
+    )
+    artifact = {
+        "cleaned_columns": ["invoice_date", "approval_date"],
+        "date_sequence_checked_columns": ["invoice_date", "approval_date"],
+        "sequence_filtered_columns": ["gap_days_invoice_to_approval"],
+        "feature_input_columns": ["gap_days_invoice_to_approval"],
+        "date_gap_features": [
+            {
+                "feature_name": "gap_days_invoice_to_approval",
+                "previous_column": "invoice_date",
+                "next_column": "approval_date",
+            }
+        ],
+    }
+
+    cleaned = _apply_saved_training_cleaning(raw_df, artifact)
+
+    assert cleaned["gap_days_invoice_to_approval"].astype("Float64").tolist() == [1.0]
 
 
 def test_as_2d_numpy_converts_sparse_matrix_to_dense_2d_array() -> None:

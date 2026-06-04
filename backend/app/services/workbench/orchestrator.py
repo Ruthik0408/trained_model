@@ -1,4 +1,4 @@
-"""End-to-end preview and run orchestration for the anomaly workbench."""
+"""End-to-end run orchestration for the anomaly workbench."""
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import time
@@ -14,7 +14,6 @@ from app.core.models import WorkbenchRun
 from app.schemas.workbench_schema import WorkbenchRunRequest
 from app.services.reason_service import build_feature_explanation_signals
 from app.services.workbench.constants import (
-    PREVIEW_ROW_LIMIT,
     RESULT_TABLE,
     SQL_RULE_EVIDENCE_COLUMN,
     logger,
@@ -27,10 +26,8 @@ from app.services.workbench.result_store import (
 )
 from app.services.workbench.source_db import _next_dataset_run_id, _source_begin
 from app.services.workbench.sql_runtime import (
-    _execute_sql_joined_frame,
     _execute_sql_workbench_frame,
     _feature_rule_aliases,
-    _read_temp_anomaly_payload_frame,
     _resolve_column,
     _safe_date_literal,
 )
@@ -47,7 +44,6 @@ from app.services.workbench.valkey_artifacts import (
     deserialize_pipeline,
     deserialize_series,
     get_isolation_forest_artifact,
-    get_preview_artifact,
     get_run_execution_artifact,
     normalize_explanation_signals,
     serialize_dataframe,
@@ -56,7 +52,6 @@ from app.services.workbench.valkey_artifacts import (
     serialize_series,
     set_review_payload_artifact,
     set_isolation_forest_artifact,
-    set_preview_artifact,
     set_run_execution_artifact,
 )
 from app.services.workbench.utils import _select_series_column
@@ -73,7 +68,6 @@ class WorkbenchExecutionState:
     user_reasons: list[str]
     applied_feature_rule_count: int
     applied_user_rule_count: int
-    staging_table: str | None
     batch_id: str
     dataset_table: str
     dataset_run_id: int
@@ -103,73 +97,6 @@ class IsolationForestState:
     final_flag: pd.Series
     explanation_signals: dict[Any, list[dict[str, Any]]]
     filtered_joined: pd.DataFrame
-
-
-def preview_workbench(payload: WorkbenchRunRequest) -> dict:
-    """Build or reuse a preview join result and return a UI-friendly sample payload."""
-    preview_started_at = time.monotonic()
-    cached_artifact = get_preview_artifact(payload)
-    if cached_artifact is not None:
-        joined = deserialize_dataframe(cached_artifact["joined"])
-        source_row_counts = {
-            str(key): int(value)
-            for key, value in (cached_artifact.get("source_row_counts") or {}).items()
-        }
-        join_debug = [dict(item) for item in cached_artifact.get("join_debug") or []]
-        warnings = list(cached_artifact.get("warnings") or [])
-        executed_sql = str(cached_artifact.get("executed_sql") or "")
-        logger.info(
-            "Preview cache HIT: reused Valkey preview artifact for tables=%s",
-            payload.selected_tables,
-        )
-    else:
-        logger.info(
-            "Preview cache MISS: executing fresh SQL join for tables=%s",
-            payload.selected_tables,
-        )
-        joined, source_row_counts, join_debug, warnings, executed_sql = _execute_sql_joined_frame(
-            payload,
-            for_preview=True,
-        )
-        set_preview_artifact(
-            payload,
-            {
-                "joined": serialize_dataframe(joined),
-                "source_row_counts": source_row_counts,
-                "join_debug": [dict(item) for item in join_debug],
-                "warnings": list(warnings),
-                "executed_sql": executed_sql,
-            },
-        )
-
-    preview_rows = (
-        joined.head(PREVIEW_ROW_LIMIT)
-        .replace({np.nan: None})
-        .to_dict(orient="records")
-    )
-
-    logger.info(
-        "Preview completed for tables=%s in %.2fs with %d preview rows",
-        payload.selected_tables,
-        time.monotonic() - preview_started_at,
-        len(preview_rows),
-    )
-    return {
-        "mode": "preview",
-        "total_rows_previewed": int(len(joined)),
-        "preview_limit": PREVIEW_ROW_LIMIT,
-        "selected_tables": payload.selected_tables,
-        "columns": [str(column) for column in joined.columns],
-        "rows": preview_rows,
-        "metrics": {
-            "source_row_counts_estimate": source_row_counts,
-            "join_debug": join_debug,
-            "executed_join_sql": executed_sql,
-            "dataset_table": RESULT_TABLE,
-            "warnings": warnings,
-        },
-    }
-
 
 def run_workbench(db: Session, payload: WorkbenchRunRequest) -> dict:
     """Execute the full anomaly run, persist outputs, and return the run summary."""
@@ -206,9 +133,6 @@ def run_workbench(db: Session, payload: WorkbenchRunRequest) -> dict:
             "Run cache MISS: executing fresh SQL workbench pipeline for tables=%s",
             payload.selected_tables,
         )
-        # Keep all temp-table reads inside this single source transaction.
-        # The workbench staging table is created with ON COMMIT DROP, so it is
-        # only valid until this _source_begin() context exits.
         with _source_begin() as source_conn:
             execution = _execute_workbench(payload, source_conn)
 
@@ -216,7 +140,7 @@ def run_workbench(db: Session, payload: WorkbenchRunRequest) -> dict:
                 return _persist_empty_run(db, payload, execution)
 
             rule_flags = _extract_rule_flags(execution.joined)
-            model_state = _run_isolation_forest(payload, execution, source_conn, rule_flags)
+            model_state = _run_isolation_forest(payload, execution, rule_flags)
 
         set_run_execution_artifact(payload, _execution_artifact_from_state(execution))
         set_isolation_forest_artifact(payload, _isolation_forest_artifact_from_state(model_state))
@@ -364,19 +288,17 @@ def _execute_workbench(payload: WorkbenchRunRequest, source_conn) -> WorkbenchEx
         applied_feature_rule_count,
         sql_pushdown_warnings,
         applied_user_rule_count,
-        staging_table,
     ) = _execute_sql_workbench_frame(payload, source_conn)
 
     warnings = [*join_warnings, *sql_pushdown_warnings]
 
     logger.info(
-        "SQL workbench execution completed in %.2fs; joined %d rows from %d tables; applied_feature_rules=%d applied_user_rules=%d staging_table=%s",
+        "SQL workbench execution completed in %.2fs; joined %d rows from %d tables; applied_feature_rules=%d applied_user_rules=%d",
         time.monotonic() - execute_started_at,
         len(joined),
         len(payload.selected_tables),
         int(applied_feature_rule_count),
         int(applied_user_rule_count),
-        staging_table,
     )
 
     return WorkbenchExecutionState(
@@ -388,7 +310,6 @@ def _execute_workbench(payload: WorkbenchRunRequest, source_conn) -> WorkbenchEx
         user_reasons=user_reasons,
         applied_feature_rule_count=int(applied_feature_rule_count),
         applied_user_rule_count=int(applied_user_rule_count),
-        staging_table=staging_table,
         batch_id=f"workbench_{datetime.now(tz=timezone.utc).strftime('%Y%m%d_%H%M%S')}",
         dataset_table=RESULT_TABLE,
         dataset_run_id=_next_dataset_run_id(RESULT_TABLE),
@@ -429,7 +350,6 @@ def _execution_state_from_artifact(
         user_reasons=[str(item) for item in artifact.get("user_reasons") or []],
         applied_feature_rule_count=int(artifact.get("applied_feature_rule_count") or 0),
         applied_user_rule_count=int(artifact.get("applied_user_rule_count") or 0),
-        staging_table=None,
         batch_id=f"workbench_{datetime.now(tz=timezone.utc).strftime('%Y%m%d_%H%M%S')}",
         dataset_table=str(artifact.get("dataset_table") or RESULT_TABLE),
         dataset_run_id=_next_dataset_run_id(RESULT_TABLE),
@@ -512,47 +432,18 @@ def _pop_rule_flag(joined: pd.DataFrame, column_name: str) -> pd.Series:
     )
 
 
-def _coerce_numeric_row_ids(index_values: list[Any]) -> list[int]:
-    """Filter anomaly row ids down to numeric identifiers expected by the persisted dataset."""
-    row_ids: list[int] = []
-
-    for row_id in index_values:
-        try:
-            row_ids.append(int(row_id))
-        except (TypeError, ValueError):
-            logger.warning("Skipping non-numeric anomaly row id: %s", row_id)
-
-    return row_ids
-
-
 def _run_isolation_forest(
     payload: WorkbenchRunRequest,
     execution: WorkbenchExecutionState,
-    source_conn,
     rule_flags: RuleFlagState,
 ) -> IsolationForestState:
     """Load the saved model, score candidate rows, and build explanation signals."""
     if_started_at = time.monotonic()
     logger.info("Saved Isolation Forest inference START for tables=%s", payload.selected_tables)
 
-    if not execution.staging_table:
-        raise WorkbenchValidationError(
-            "Saved model inference cannot score rows without a live staged Postgres result.",
-            suggestion=(
-                "The workbench execution cache is missing the temporary scoring table context. "
-                "Clear the cached workbench artifacts or execute a fresh SQL workbench run."
-            ),
-            details={
-                "stage": "saved_model_inference",
-                "cache_state": "execution_without_live_staging_table",
-            },
-            error_code="WORKBENCH_STAGING_TABLE_UNAVAILABLE",
-        )
-
     artifact = load_saved_model_artifact(payload)
     feature_frame, feature_selection = build_saved_model_feature_frame(
-        source_conn,
-        execution.staging_table,
+        execution.joined,
         artifact,
     )
     combined_rule_flag = rule_flags.combined_rule_flag.reindex(
@@ -607,18 +498,7 @@ def _run_isolation_forest(
         len(explanation_signals),
     )
 
-    anomaly_index_values = final_flag[final_flag].index.tolist()
-    anomaly_row_ids = _coerce_numeric_row_ids(anomaly_index_values)
-
-    if anomaly_row_ids:
-        filtered_joined = _read_temp_anomaly_payload_frame(
-            source_conn,
-            execution.staging_table,
-            anomaly_row_ids,
-            payload,
-        )
-    else:
-        filtered_joined = execution.joined.iloc[0:0].copy()
+    filtered_joined = execution.joined.reindex(final_flag[final_flag].index).copy()
 
     logger.info(
         "Saved Isolation Forest inference FINISHED in %.2fs; total_final_anomalies=%d payload_rows=%d threshold=%.4f",

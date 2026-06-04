@@ -28,7 +28,6 @@ export const STORAGE_KEYS = {
 // API Endpoints
 export const API_ENDPOINTS = {
   TABLES: "/api/workbench/tables",
-  PREVIEW: "/api/workbench/preview",
   RUN: "/api/workbench/run",
   DATASETS: "/api/workbench/datasets",
   REVIEW_ROWS: "/api/workbench/review-rows",

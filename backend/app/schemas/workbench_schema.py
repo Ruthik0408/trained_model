@@ -32,6 +32,12 @@ def _validate_safe_column_reference(value: str, field_name: str) -> str:
         )
     return text_value
 
+
+def _validate_column_reference(value: str | None, field_name: str) -> str | None:
+    if value is None:
+        return None
+    return _validate_safe_column_reference(value, field_name)
+
 class JoinConfig(BaseModel):
     """Describes how two source tables should be joined for a workbench run."""
 
@@ -89,9 +95,7 @@ class UserRuleInput(BaseModel):
     @field_validator("first_column", "second_column")
     @classmethod
     def validate_column_references(cls, value: str | None, info: ValidationInfo) -> str | None:
-        if value is None:
-            return None
-        return _validate_safe_column_reference(value, info.field_name)
+        return _validate_column_reference(value, info.field_name)
 
 class FeatureRuleInput(BaseModel):
     """Defines a derived feature used by the Isolation Forest pipeline."""
@@ -126,12 +130,10 @@ class FeatureRuleInput(BaseModel):
     @field_validator("first_column", "second_column")
     @classmethod
     def validate_column_references(cls, value: str | None, info: ValidationInfo) -> str | None:
-        if value is None:
-            return None
-        return _validate_safe_column_reference(value, info.field_name)
+        return _validate_column_reference(value, info.field_name)
 
 class WorkbenchRunRequest(BaseModel):
-    """Payload for previewing or executing an anomaly workbench run.
+    """Payload for executing an anomaly workbench run.
 
     Edge cases:
     - `selected_tables` must contain between 1 and 3 tables.

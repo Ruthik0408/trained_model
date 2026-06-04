@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { getWorkbenchDatasets, getWorkbenchReport, getWorkbenchReviewRows, } from "../api/anomalyApi";
+import { hydrateLatestDataset } from "../utils";
 const FILTER_OPTIONS = [
     { label: "All", value: "all" },
     { label: "Rule", value: "rule" },
@@ -30,11 +31,6 @@ const BREAKUP_COLORS = ["#ff4d4f", "#ff9820", "#ffbc36", "#57c768", "#2b8ef9"];
 const RISK_COLORS = ["#ff4d4f", "#ff9820", "#57c768"];
 export default function ReportsPage({ latestWorkbenchRun }) {
     const latestDatasetTable = latestWorkbenchRun?.datasetTable || "";
-    const latestRunId = latestWorkbenchRun?.runId ?? null;
-    const latestSelectedTablesKey = (latestWorkbenchRun?.selectedTables || []).join("\u001f");
-    const latestRunName = latestWorkbenchRun?.runName || "Latest workbench run";
-    const latestTotalRows = latestWorkbenchRun?.totalRows || 0;
-    const latestFinalAnomalyCount = latestWorkbenchRun?.finalAnomalyCount || 0;
     const [datasets, setDatasets] = useState([]);
     const [datasetTable, setDatasetTable] = useState("");
     const [anomalyFilter, setAnomalyFilter] = useState("all");
@@ -52,18 +48,10 @@ export default function ReportsPage({ latestWorkbenchRun }) {
     const [showProfileMenu, setShowProfileMenu] = useState(false);
     const [showAllAlerts, setShowAllAlerts] = useState(false);
     const [viewportWidth, setViewportWidth] = useState(() => typeof window === "undefined" ? 1400 : window.innerWidth);
-    const hydratedLatestDataset = useMemo(() => {
-        if (!latestDatasetTable)
-            return null;
-        return {
-            dataset_table: latestDatasetTable,
-            run_id: latestRunId,
-            selected_tables: latestSelectedTablesKey ? latestSelectedTablesKey.split("\u001f") : [],
-            run_name: latestRunName,
-            total_rows: latestTotalRows,
-            final_anomaly_count: latestFinalAnomalyCount,
-        };
-    }, [latestDatasetTable, latestRunId, latestSelectedTablesKey, latestRunName, latestTotalRows, latestFinalAnomalyCount]);
+    const hydratedLatestDataset = useMemo(
+        () => hydrateLatestDataset(latestWorkbenchRun),
+        [latestWorkbenchRun],
+    );
     useEffect(() => {
         if (latestDatasetTable) {
             setDatasetTable(latestDatasetTable);

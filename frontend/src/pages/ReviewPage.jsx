@@ -2,14 +2,10 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import Card from "../components/Card";
 import PredictionRow from "../components/PredictionRow";
 import { getWorkbenchDatasets, getWorkbenchReviewRows, submitWorkbenchFeedback, } from "../api/anomalyApi";
+import { hydrateLatestDataset } from "../utils";
 export default function ReviewPage({ latestWorkbenchRun }) {
     const PAGE_SIZE = 50;
     const latestDatasetTable = latestWorkbenchRun?.datasetTable || "";
-    const latestRunId = latestWorkbenchRun?.runId ?? null;
-    const latestSelectedTablesKey = (latestWorkbenchRun?.selectedTables || []).join("\u001f");
-    const latestRunName = latestWorkbenchRun?.runName || "Latest workbench run";
-    const latestTotalRows = latestWorkbenchRun?.totalRows || 0;
-    const latestFinalAnomalyCount = latestWorkbenchRun?.finalAnomalyCount || 0;
     const [datasets, setDatasets] = useState([]);
     const [datasetTable, setDatasetTable] = useState("");
     const [anomalyFilter, setAnomalyFilter] = useState("all");
@@ -25,18 +21,10 @@ export default function ReviewPage({ latestWorkbenchRun }) {
     const slideTrackRef = useRef(null);
     const slideScrollFrameRef = useRef(null);
     const activeSlideIndexRef = useRef(activeSlideIndex);
-    const hydratedLatestDataset = useMemo(() => {
-        if (!latestDatasetTable)
-            return null;
-        return {
-            dataset_table: latestDatasetTable,
-            run_id: latestRunId,
-            selected_tables: latestSelectedTablesKey ? latestSelectedTablesKey.split("\u001f") : [],
-            run_name: latestRunName,
-            total_rows: latestTotalRows,
-            final_anomaly_count: latestFinalAnomalyCount,
-        };
-    }, [latestDatasetTable, latestRunId, latestSelectedTablesKey, latestRunName, latestTotalRows, latestFinalAnomalyCount]);
+    const hydratedLatestDataset = useMemo(
+        () => hydrateLatestDataset(latestWorkbenchRun),
+        [latestWorkbenchRun],
+    );
     const hydratedRunIdKey = hydratedLatestDataset?.run_id != null ? String(hydratedLatestDataset.run_id) : null;
     useEffect(() => {
         if (latestDatasetTable) {

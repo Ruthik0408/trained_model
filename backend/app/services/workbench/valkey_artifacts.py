@@ -13,7 +13,6 @@ from sklearn.pipeline import Pipeline
 from app.core.valkey import get_json as valkey_get_json
 from app.core.valkey import set_json as valkey_set_json
 
-_PREVIEW_CACHE_TTL_SECONDS = 900.0
 _RUN_CACHE_TTL_SECONDS = 1800.0
 _ISOLATION_CACHE_TTL_SECONDS = 1800.0
 _REVIEW_PAYLOAD_CACHE_TTL_SECONDS = 604800.0
@@ -42,24 +41,12 @@ def _cache_signature(payload: Any) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-def preview_cache_key(payload: Any) -> str:
-    return f"preview_join:{_cache_signature(payload)}"
-
-
 def run_execution_cache_key(payload: Any) -> str:
     return f"run_execution:{_cache_signature(payload)}"
 
 
 def isolation_forest_cache_key(payload: Any) -> str:
     return f"isolation_forest:{_cache_signature(payload)}"
-
-
-def get_preview_artifact(payload: Any) -> dict[str, Any] | None:
-    return _get_artifact(preview_cache_key(payload))
-
-
-def set_preview_artifact(payload: Any, artifact: dict[str, Any]) -> None:
-    _set_artifact(preview_cache_key(payload), artifact, _PREVIEW_CACHE_TTL_SECONDS)
 
 
 def get_run_execution_artifact(payload: Any) -> dict[str, Any] | None:

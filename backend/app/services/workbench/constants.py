@@ -2,7 +2,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-PREVIEW_ROW_LIMIT = 50
 ENABLE_EXPENSIVE_JOIN_DEBUG = False
 
 
@@ -49,7 +48,6 @@ SYSTEM_COLUMNS = {
     FEATURE_VALUES_COLUMN,
     SQL_RULE_EVIDENCE_COLUMN,
 }
-TEMP_ROW_ID_COLUMN = "__ml_row_number"
 SQL_RULE_FLAG_COLUMN = "sql_rule_flag"
 SQL_RULE_REASONS_COLUMN = "sql_rule_reasons"
 USER_RULE_FLAG_COLUMN = "__ml_sql_rule_flag"

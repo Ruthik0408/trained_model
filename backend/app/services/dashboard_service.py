@@ -1014,12 +1014,6 @@ def _payload_amount(payload: dict[str, Any]) -> float:
                 return numeric
     return 0.0
 
-def _payload_text(payload: dict[str, Any], aliases: list[str], default: str = "") -> str:
-    value = _payload_value(payload, aliases)
-    if value in (None, ""):
-        return default
-    return str(value).strip()
-
 def _payload_value(payload: dict[str, Any], aliases: list[str]) -> Any:
     for alias in aliases:
         direct = payload.get(alias)

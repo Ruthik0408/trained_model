@@ -17,19 +17,27 @@ from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
-from business_rules import (
+from app.services.workbench.business_rules import (
     cheque_slip_approval_owner_columns,
     cheque_slip_approval_owner_training_condition_sql,
-    cheque_slip_schedule3_count_mismatch_rule,
-    cheque_slip_schedule3_not_approved_rule,
-    cheque_slip_schedule3_shared_sql_fragments,
 )
-from model_cleaning import (
+from app.services.workbench.anomaly_data_policy import (
+    build_column_operation_map,
+    build_saved_model_preprocessing_policy,
+)
+from app.services.workbench.date_stage_config import (
+    DATE_SEQUENCE_STAGE_ALIAS_MAP,
+    GLOBAL_SEQUENCE_STAGE_ORDER,
+    SAME_TABLE_DATE_SEQUENCE_STAGES,
+    TABLE_SEQUENCE_STAGE_ORDER,
+)
+from app.services.workbench.model_cleaning import (
+    apply_date_sequence_summary,
+    apply_invoice_row_filter_summary,
+    business_day_gap_series,
     build_date_sequence_summary,
     build_invoice_row_filter_summary,
     normalize_boolean_feature_columns,
-    apply_date_sequence_summary,
-    apply_invoice_row_filter_summary,
 )
 
 
@@ -126,19 +134,6 @@ def query_postgres(sql: str) -> pd.DataFrame:
     return df
 
 
-def get_connection_check_df() -> pd.DataFrame:
-    return query_postgres(
-        """
-        SELECT
-            current_database() AS database_name,
-            current_schema() AS schema_name,
-            current_user AS database_user,
-            now() AS connected_at
-        """
-    )
-
-
-
 BASE_TABLE = "dak"
 DEFAULT_LIST_DATE_CUTOFF = "2026-01-01"
 DEFAULT_MAX_TRAINING_ROWS = 300000
@@ -167,49 +162,6 @@ DATE_DATA_TYPES = {
     "time with time zone",
 }
 TEXT_DATA_TYPES = {"text"}
-
-DATE_SEQUENCE_STAGE_ALIASES = [
-    ("invoice_date", ["invoice_date"]),
-    ("bill_date", ["bill_date"]),
-    ("reference_date", ["reference_date"]),
-    ("auditor_stage", ["auditor_date", "aud_date", "auditor_disposal_date"]),
-    ("aao_stage", ["aao_date", "aao_disposal_date"]),
-    ("ao_stage", ["ao_date", "ao_disposal_date"]),
-    ("go_date", ["go_date"]),
-    ("dp_sheet_date", ["dp_sheet_date"]),
-    ("cmp_date", ["cmp_date", "cmp_batch_date", "cmp_file_gen_date"]),
-    ("disposal_date", ["disposal_date"]),
-]
-SAME_TABLE_DATE_SEQUENCE_STAGES = {
-    "auditor_stage",
-    "aao_stage",
-    "ao_stage",
-    "go_date",
-
-}
-
-GLOBAL_SEQUENCE_STAGE_ORDER = [
-    "invoice_date",
-    "bill_date",
-    "reference_date",
-    "dp_sheet_date",
-    "cmp_date",
-    "disposal_date",
-]
-
-TABLE_SEQUENCE_STAGE_ORDER = [
-    "invoice_date",
-    "bill_date",
-    "reference_date",
-    "auditor_stage",
-    "aao_stage",
-    "ao_stage",
-    "go_date",
-    "dp_sheet_date",
-    "cmp_date",
-    "disposal_date",
-]
-
 
 @dataclass(frozen=True)
 class JoinSpec:
@@ -570,22 +522,24 @@ def build_select_sql(
 
     if dataset_name == "dak.cheque_slip.schedule3":
         filtered_order_sql = joined_base_order_clause(base_table, join_tables, schema_map)
-        schedule3_fragments = cheque_slip_schedule3_shared_sql_fragments(
-            schedule3_table_ref="schedule3",
-            cheque_slip_table_ref="cheque_slip",
-            fk_dak_join_expr='base."cheque_slip_fk_dak"',
-        )
         rule_clauses = [
-            cheque_slip_schedule3_not_approved_rule(
-                record_status_expr='base."cheque_slip_record_status"',
-                approved_expr='base."cheque_slip_approved"',
-                fk_dak_expr='base."cheque_slip_fk_dak"',
-            ).condition_sql,
-            cheque_slip_schedule3_count_mismatch_rule(
-                record_status_expr='base."cheque_slip_record_status"',
-                approved_expr='base."cheque_slip_approved"',
-                fk_dak_expr='base."cheque_slip_fk_dak"',
-            ).condition_sql,
+            """
+                (
+                    UPPER(BTRIM(CAST(base."cheque_slip_record_status" AS text))) = 'V'
+                    AND base."cheque_slip_approved" = false
+                    AND base."cheque_slip_fk_dak" IS NOT NULL
+                    AND COALESCE(schedule3_by_dak.schedule3_total_count, 0) > 0
+                )
+            """,
+            """
+                (
+                    UPPER(BTRIM(CAST(base."cheque_slip_record_status" AS text))) = 'V'
+                    AND base."cheque_slip_approved" = true
+                    AND base."cheque_slip_fk_dak" IS NOT NULL
+                    AND COALESCE(cheque_slip_approved_by_dak.cheque_slip_v_approved_count, 0)
+                        <> COALESCE(schedule3_by_dak.schedule3_pv_count, 0)
+                )
+            """,
         ]
         if cheque_slip_owner_rule_sql:
             rule_clauses.append(cheque_slip_owner_rule_sql)
@@ -593,10 +547,32 @@ def build_select_sql(
             WITH joined_base AS (
                 {base_sql}
             ),
-            {",".join(schedule3_fragments.ctes)}
+            schedule3_by_dak AS (
+                SELECT
+                    fk_dak,
+                    COUNT(*) AS schedule3_total_count,
+                    COUNT(*) FILTER (WHERE UPPER(BTRIM(CAST(record_status AS text))) IN ('P', 'V')) AS schedule3_pv_count
+                FROM schedule3
+                WHERE fk_dak IS NOT NULL
+                GROUP BY fk_dak
+            ),
+            cheque_slip_approved_by_dak AS (
+                SELECT
+                    fk_dak,
+                    COUNT(*) FILTER (
+                        WHERE UPPER(BTRIM(CAST(record_status AS text))) = 'V'
+                          AND approved = true
+                    ) AS cheque_slip_v_approved_count
+                FROM cheque_slip
+                WHERE fk_dak IS NOT NULL
+                GROUP BY fk_dak
+            )
             SELECT base.*
             FROM joined_base base
-            {"".join(schedule3_fragments.outer_joins)}
+            LEFT JOIN schedule3_by_dak
+                ON schedule3_by_dak.fk_dak = base."cheque_slip_fk_dak"
+            LEFT JOIN cheque_slip_approved_by_dak
+                ON cheque_slip_approved_by_dak.fk_dak = base."cheque_slip_fk_dak"
             WHERE NOT (
                 {" OR ".join(rule_clauses)}
             )
@@ -696,16 +672,6 @@ def merged_schema_for_tables(
         [schema_map[table_name] for table_name in [base_table, *join_tables]],
         ignore_index=True,
     )
-
-
-def append_column_operation(
-    operation_map: dict[str, list[str]],
-    column_name: str,
-    operation: str,
-) -> None:
-    operation_map.setdefault(column_name, [])
-    if operation not in operation_map[column_name]:
-        operation_map[column_name].append(operation)
 
 
 def first_matching_column(
@@ -810,12 +776,10 @@ def resolve_date_stage_plan(
     available_columns: list[str],
     tables_in_dataset: list[str],
 ) -> dict[str, object]:
-    alias_map = {stage_name: aliases for stage_name, aliases in DATE_SEQUENCE_STAGE_ALIASES}
-
     global_stage_columns: dict[str, str | None] = {}
     for stage_name in GLOBAL_SEQUENCE_STAGE_ORDER:
         global_stage_columns[stage_name] = None
-        aliases = alias_map[stage_name]
+        aliases = DATE_SEQUENCE_STAGE_ALIAS_MAP[stage_name]
         for table_name in tables_in_dataset:
             candidate = first_matching_column(available_columns, table_name, aliases)
             if candidate:
@@ -826,7 +790,7 @@ def resolve_date_stage_plan(
     for table_name in tables_in_dataset:
         same_table_stage_columns[table_name] = {}
         for stage_name in SAME_TABLE_DATE_SEQUENCE_STAGES:
-            aliases = alias_map[stage_name]
+            aliases = DATE_SEQUENCE_STAGE_ALIAS_MAP[stage_name]
             same_table_stage_columns[table_name][stage_name] = first_matching_column(
                 available_columns,
                 table_name,
@@ -892,12 +856,9 @@ def engineer_date_gap_features(
             if feature_name in created_feature_names:
                 continue
 
-            gap_days = (
-                working_df[next_column] - working_df[previous_column]
-            ).dt.total_seconds() / 86_400.0
-            working_df[feature_name] = gap_days.where(
-                working_df[previous_column].notna() & working_df[next_column].notna(),
-                pd.NA,
+            working_df[feature_name] = business_day_gap_series(
+                working_df[previous_column],
+                working_df[next_column],
             )
             created_feature_names.add(feature_name)
             created_gap_features.append(
@@ -1037,90 +998,6 @@ def get_transformed_feature_names(
     return feature_names
 
 
-def build_column_operation_map(
-    raw_columns: list[str],
-    invoice_row_filter_summary: dict[str, object],
-    dropped_summary: dict[str, list[str]],
-    converted_date_columns: list[str],
-    date_sequence_summary: dict[str, object],
-    original_date_columns_dropped: list[str],
-    created_gap_features: list[dict[str, str]],
-    numeric_columns: list[str],
-    boolean_columns: list[str],
-    categorical_columns: list[str],
-    unsupported_columns: list[str],
-) -> dict[str, list[str]]:
-    operation_map = {column_name: ["selected_from_sql"] for column_name in raw_columns}
-
-    for table_summary in invoice_row_filter_summary["tables_applied"]:
-        append_column_operation(
-            operation_map,
-            table_summary["invoice_column"],
-            "used_for_void_invoice_row_filter",
-        )
-        append_column_operation(
-            operation_map,
-            table_summary["invoice_date_column"],
-            "used_for_void_invoice_row_filter",
-        )
-        append_column_operation(
-            operation_map,
-            table_summary["record_status_column"],
-            "used_for_void_invoice_row_filter",
-        )
-
-    for column_name in dropped_summary["high_null_columns"]:
-        append_column_operation(operation_map, column_name, "dropped_high_null")
-    for column_name in dropped_summary["text_like_columns"]:
-        append_column_operation(operation_map, column_name, "dropped_text_like")
-    for column_name in dropped_summary["long_varchar_columns"]:
-        append_column_operation(operation_map, column_name, "dropped_long_varchar")
-    for column_name in dropped_summary["id_like_columns"]:
-        append_column_operation(operation_map, column_name, "identified_as_id_like")
-
-    for column_name in converted_date_columns:
-        append_column_operation(operation_map, column_name, "converted_to_datetime_for_checks")
-
-    for check_summary in date_sequence_summary["checks"]:
-        previous_column = check_summary["previous_column"]
-        next_column = check_summary["next_column"]
-        if previous_column:
-            append_column_operation(operation_map, previous_column, "used_in_date_sequence_check")
-        if next_column:
-            append_column_operation(operation_map, next_column, "used_in_date_sequence_check")
-
-    for column_name in original_date_columns_dropped:
-        append_column_operation(operation_map, column_name, "dropped_raw_date_before_training")
-
-    for gap_feature in created_gap_features:
-        feature_name = gap_feature["feature_name"]
-        operation_map[feature_name] = [
-            "engineered_date_gap_feature",
-            f"from:{gap_feature['previous_column']}->{gap_feature['next_column']}",
-        ]
-        append_column_operation(
-            operation_map,
-            gap_feature["previous_column"],
-            "used_for_date_gap_feature",
-        )
-        append_column_operation(
-            operation_map,
-            gap_feature["next_column"],
-            "used_for_date_gap_feature",
-        )
-
-    for column_name in numeric_columns:
-        append_column_operation(operation_map, column_name, "numeric_standardized")
-    for column_name in boolean_columns:
-        append_column_operation(operation_map, column_name, "boolean_converted_to_numeric")
-    for column_name in categorical_columns:
-        append_column_operation(operation_map, column_name, "categorical_one_hot_encoded")
-    for column_name in unsupported_columns:
-        append_column_operation(operation_map, column_name, "dropped_before_training")
-
-    return dict(sorted(operation_map.items()))
-
-
 def save_json(path: Path, payload: dict) -> None:
     path.write_text(json.dumps(payload, indent=2, default=str))
 
@@ -1226,6 +1103,16 @@ def train_dataset(
         categorical_columns=categorical_columns,
         unsupported_columns=unsupported_columns,
     )
+    preprocessing_policy = build_saved_model_preprocessing_policy(
+        cleaned_columns=cleaned_df.columns.tolist(),
+        date_sequence_checked_columns=dated_df.columns.tolist(),
+        sequence_filtered_columns=sequence_filtered_df.columns.tolist(),
+        feature_input_columns=feature_df.columns.tolist(),
+        boolean_columns=boolean_columns,
+        invoice_row_filter_summary=invoice_row_filter_summary,
+        date_sequence_summary=date_sequence_summary,
+        date_gap_features=created_gap_features,
+    )
 
     model_path = models_dir / f"{dataset_name}_pipeline.joblib"
     joblib.dump(
@@ -1241,10 +1128,7 @@ def train_dataset(
             "raw_columns": raw_joined_columns,
             "model_raw_columns": raw_df.columns.tolist(),
             "raw_joined_columns": raw_joined_columns,
-            "cleaned_columns": cleaned_df.columns.tolist(),
-            "date_sequence_checked_columns": dated_df.columns.tolist(),
-            "sequence_filtered_columns": sequence_filtered_df.columns.tolist(),
-            "feature_input_columns": feature_df.columns.tolist(),
+            **preprocessing_policy.to_artifact_fields(),
             "transformed_feature_names": transformed_feature_names,
             "numeric_columns": numeric_columns,
             "boolean_columns": boolean_columns,
@@ -1255,10 +1139,7 @@ def train_dataset(
             "post_date_sequence_filter_row_count": int(len(sequence_filtered_df.index)),
             "anomaly_count": anomaly_count,
             "inlier_count": inlier_count,
-            "invoice_row_filter_summary": invoice_row_filter_summary,
             "date_stage_plan": date_stage_plan,
-            "date_sequence_summary": date_sequence_summary,
-            "date_gap_features": created_gap_features,
             "column_operation_map": column_operation_map,
         },
         model_path,
@@ -1286,18 +1167,16 @@ def train_dataset(
         "cleaned_columns": cleaned_df.columns.tolist(),
         "feature_input_columns": feature_df.columns.tolist(),
         "transformed_feature_names": transformed_feature_names,
-        "invoice_row_filter_summary": invoice_row_filter_summary,
         "dropped_columns_summary": dropped_summary,
         "converted_date_columns": converted_date_columns,
         "date_stage_plan": date_stage_plan,
-        "date_sequence_summary": date_sequence_summary,
         "original_date_columns_dropped_before_training": original_date_columns_dropped,
-        "date_gap_features": created_gap_features,
         "numeric_columns_standardized": numeric_columns,
         "boolean_columns_converted_to_numeric": boolean_columns,
         "categorical_columns_one_hot_encoded": categorical_columns,
         "unsupported_columns_dropped_before_training": unsupported_columns,
         "column_operation_map": column_operation_map,
+        **preprocessing_policy.to_artifact_fields(),
         "model_path": str(model_path),
     }
 

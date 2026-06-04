@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import OperationalError
 
-from business_rules import RULE_REGISTRY_INDEX
+from app.services.workbench.business_rules import RULE_REGISTRY_INDEX
 from app.core.database import check_app_db_connection, get_db
 from app.core.errors import WorkbenchValidationError
 from app.schemas.workbench_schema import (
@@ -18,7 +18,7 @@ from app.schemas.workbench_schema import (
     WorkbenchRunResponse,
 )
 from app.services.dashboard_service import anomaly_list_data, report_data, review_rows_data
-from app.services.workbench.orchestrator import preview_workbench, run_workbench
+from app.services.workbench.orchestrator import run_workbench
 from app.services.workbench.result_store import list_saved_datasets, update_dataset_feedback
 from app.services.workbench.source_db import list_source_tables, source_connection_status
 from app.services.workbench.trained_datasets import apply_trained_dataset_defaults, trained_selectable_tables
@@ -80,35 +80,6 @@ def get_tables(request: Request):
             status_code=500,
             detail="Failed to retrieve tables. Check the request ID in server logs.",
         )
-
-
-@router.post(
-    "/preview",
-    summary="Preview workbench join output",
-    responses={
-        400: {"description": "The request is valid JSON but fails workbench validation."},
-        503: {"description": "Source database is unavailable."},
-    },
-)
-def preview_workbench_route(payload: WorkbenchRunRequest, request: Request):
-    """Preview the joined dataset without training a model or writing result rows."""
-    try:
-        effective_payload = apply_trained_dataset_defaults(payload)
-        result = preview_workbench(effective_payload)
-        _log_request(request, "Preview completed successfully")
-        return result
-    except ConnectionError as exc:
-        logger.warning("Workbench preview connection error: %s", exc)
-        raise HTTPException(status_code=503, detail="Cannot connect to source database")
-    except WorkbenchValidationError as exc:
-        logger.warning("Workbench preview structured validation error: %s", exc.message)
-        raise HTTPException(status_code=400, detail=exc.to_http_detail())
-    except ValueError as exc:
-        logger.warning("Workbench preview validation error: %s", exc)
-        raise HTTPException(status_code=400, detail=f"Validation error: {str(exc)}")
-    except Exception:
-        logger.exception("Workbench preview failed")
-        raise HTTPException(status_code=500, detail="Preview execution failed")
 
 
 @router.post(

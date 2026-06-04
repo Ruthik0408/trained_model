@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+import numpy as np
 import pandas as pd
 
 
@@ -29,6 +30,26 @@ def normalize_boolean_feature_columns(
             continue
         normalized_df[column_name] = normalized_bool_series(normalized_df[column_name]).astype("Float64")
     return normalized_df
+
+
+def business_day_gap_series(
+    previous_series: pd.Series,
+    next_series: pd.Series,
+) -> pd.Series:
+    """Return weekday-only day gaps, excluding Saturdays and Sundays."""
+    previous_dt = pd.to_datetime(previous_series, errors="coerce")
+    next_dt = pd.to_datetime(next_series, errors="coerce")
+    result = pd.Series(pd.NA, index=previous_series.index, dtype="Float64")
+
+    comparable_mask = previous_dt.notna() & next_dt.notna()
+    if not comparable_mask.any():
+        return result
+
+    start_days = previous_dt.loc[comparable_mask].dt.normalize().to_numpy(dtype="datetime64[D]")
+    end_days = next_dt.loc[comparable_mask].dt.normalize().to_numpy(dtype="datetime64[D]")
+    gap_values = np.busday_count(start_days, end_days).astype("float64")
+    result.loc[comparable_mask] = gap_values
+    return result
 
 
 def build_invoice_row_filter_summary(
