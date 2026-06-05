@@ -11,6 +11,7 @@ sys.modules.setdefault("redis.exceptions", redis_exceptions_stub)
 from app.services.workbench.sql_runtime import (
     _build_join_sql,
     _build_date_sequence_anomaly_conditions,
+    _build_night_timestamp_anomaly_conditions,
     _build_sql_anomaly_expressions,
     _qualified_builtin_scoring_columns,
 )
@@ -61,6 +62,30 @@ def test_build_date_sequence_anomaly_conditions_avoids_cross_family_comparisons(
     assert 'base."bill.bill_list_date"' not in combined_sql
     assert 'base."dak.dak_list_date") > (CAST(base."bill.bill_auditor_date"' not in combined_sql
     assert 'base."bill.bill_list_date") > (CAST(base."dak.dak_auditor_date"' not in combined_sql
+
+
+def test_build_night_timestamp_anomaly_conditions_only_uses_timestamp_columns() -> None:
+    source_columns = {
+        "dak": [
+            {"column_name": "list_date", "data_type": "date"},
+            {"column_name": "created_at", "data_type": "timestamp without time zone"},
+            {"column_name": "approved_time", "data_type": "time without time zone"},
+        ],
+    }
+
+    conditions = _build_night_timestamp_anomaly_conditions(["dak"], source_columns)
+    combined_sql = "\n".join(condition for condition, _message in conditions)
+    combined_messages = "\n".join(message for _condition, message in conditions)
+
+    assert len(conditions) == 2
+    assert 'base."dak.created_at"' in combined_sql
+    assert 'base."dak.approved_time"' in combined_sql
+    assert 'base."dak.list_date"' not in combined_sql
+    assert ">= 21" in combined_sql
+    assert "< 6" in combined_sql
+    assert "EXTRACT(HOUR" in combined_sql
+    assert "<> 0" in combined_sql
+    assert "dak.created_at" in combined_messages
 
 
 def test_invoice_duplicate_rule_uses_preaggregated_ctes() -> None:

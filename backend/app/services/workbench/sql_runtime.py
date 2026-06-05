@@ -7,6 +7,7 @@ import pandas as pd
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from app.services.workbench.business_rules import (
+    NIGHT_TIMESTAMP_RULE_REASON,
     cheque_slip_approval_owner_columns,
     cheque_slip_approval_owner_runtime_rule,
 )
@@ -203,6 +204,14 @@ def _type_family(data_type: str | None) -> str:
     if value in {"boolean"}:
         return "boolean"
     return value
+
+def _has_time_component_type(data_type: str | None) -> bool:
+    return str(data_type or "").strip().lower() in {
+        "timestamp without time zone",
+        "timestamp with time zone",
+        "time without time zone",
+        "time with time zone",
+    }
 
 def _sql_join_keyword(join_type: str) -> str:
     normalized = (join_type or "inner").strip().lower()
@@ -413,6 +422,38 @@ def _sql_safe_timestamp(expr: str, data_type: str | None = None) -> str:
         f"WHEN {text_expr} ~ '^\\d{{4}}-\\d{{2}}-\\d{{2}}' THEN left({text_expr}, 10)::date::timestamp "
         "ELSE NULL::timestamp "
         "END"
+    )
+
+def _sql_hour_expr(expr: str, data_type: str | None = None) -> str:
+    data_type_value = str(data_type or "").strip().lower()
+    if data_type_value in {"time without time zone", "time with time zone"}:
+        return (
+            "CASE "
+            f"WHEN {expr} IS NULL THEN NULL::double precision "
+            f"ELSE EXTRACT(HOUR FROM {expr}) "
+            "END"
+        )
+    safe_ts = _sql_safe_timestamp(expr, data_type)
+    return (
+        "CASE "
+        f"WHEN {safe_ts} IS NULL THEN NULL::double precision "
+        f"ELSE EXTRACT(HOUR FROM {safe_ts}) "
+        "END"
+    )
+
+def _sql_has_meaningful_time_expr(expr: str, data_type: str | None = None) -> str:
+    data_type_value = str(data_type or "").strip().lower()
+    if data_type_value in {"time without time zone", "time with time zone"}:
+        time_expr = expr
+    else:
+        time_expr = _sql_safe_timestamp(expr, data_type)
+    return (
+        "("
+        f"{time_expr} IS NOT NULL "
+        f"AND (EXTRACT(HOUR FROM {time_expr}) <> 0 "
+        f"OR EXTRACT(MINUTE FROM {time_expr}) <> 0 "
+        f"OR EXTRACT(SECOND FROM {time_expr}) <> 0)"
+        ")"
     )
 
 def _sql_boolean_as_double(predicate: str) -> str:
@@ -1084,6 +1125,37 @@ def _build_date_sequence_anomaly_conditions(
         )
     return comparisons
 
+def _build_night_timestamp_anomaly_conditions(
+    joined_tables: list[str],
+    source_columns: dict[str, list[dict]],
+) -> list[tuple[str, str]]:
+    conditions: list[tuple[str, str]] = []
+
+    for table_name in joined_tables:
+        for column in source_columns.get(table_name, []):
+            data_type = column.get("data_type")
+            if not _has_time_component_type(data_type):
+                continue
+            column_name = str(column.get("column_name"))
+            qualified_name = f"{table_name}.{column_name}"
+            column_expr = f'base."{qualified_name}"'
+            hour_expr = _sql_hour_expr(column_expr, data_type)
+            has_meaningful_time_expr = _sql_has_meaningful_time_expr(column_expr, data_type)
+            conditions.append(
+                (
+                    f"""
+                    (
+                        {hour_expr} IS NOT NULL
+                        AND {has_meaningful_time_expr}
+                        AND ({hour_expr} >= 21 OR {hour_expr} < 6)
+                    )
+                    """,
+                    f"{NIGHT_TIMESTAMP_RULE_REASON}: {qualified_name}",
+                )
+            )
+
+    return conditions
+
 def _build_sql_anomaly_expressions(
     joined_tables: list[str],
     source_columns: dict[str, list[dict]],
@@ -1313,6 +1385,12 @@ def _build_sql_anomaly_expressions(
     )
 
     conditions.extend(date_sequence_conditions)
+    conditions.extend(
+        _build_night_timestamp_anomaly_conditions(
+            joined_tables,
+            source_columns,
+        )
+    )
 
     return conditions, ctes, outer_joins, evidence_expressions
 

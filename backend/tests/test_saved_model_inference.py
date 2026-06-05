@@ -100,10 +100,46 @@ def test_saved_model_preprocessing_policy_round_trips_artifact_fields() -> None:
     assert artifact["training_row_drop_policies"] == [
         "duplicate_void_invoice_rows",
         "date_sequence_violation_rows",
+        "night_timestamp_rows",
     ]
     assert "boolean_normalization" in artifact["shared_feature_transform_policies"]
     assert "date_sequence_violation_rows" in artifact["runtime_rule_flag_policies"]
+    assert "night_timestamp_rows" in artifact["runtime_rule_flag_policies"]
     assert restored == policy
+
+
+def test_saved_training_cleaning_drops_night_timestamp_rows() -> None:
+    raw_df = pd.DataFrame(
+        {
+            "created_at": [
+                "2025-01-01 00:00:00",
+                "2025-01-01 20:59:00",
+                "2025-01-01 21:00:00",
+                "2025-01-02 05:59:00",
+                "2025-01-02 06:00:00",
+            ],
+            "amount": [5, 10, 20, 30, 40],
+        },
+        index=[9, 10, 11, 12, 13],
+    )
+    artifact = {
+        "cleaned_columns": ["created_at", "amount"],
+        "date_sequence_checked_columns": ["created_at"],
+        "night_timestamp_summary": {
+            "columns": [
+                {
+                    "column_name": "created_at",
+                    "rows_checked": 4,
+                    "invalid_row_count": 2,
+                    "status": "checked",
+                }
+            ]
+        },
+    }
+
+    cleaned = _apply_saved_training_cleaning(raw_df, artifact)
+
+    assert cleaned.index.tolist() == [9, 10, 13]
 
 
 def test_saved_training_cleaning_builds_business_day_gap_features() -> None:
@@ -152,8 +188,8 @@ def test_saved_model_flags_only_scores_above_threshold_margin() -> None:
     assert isolation_scores.tolist() == [0.62, 0.63, 0.64]
     assert ml_flag.to_dict() == {
         101: False,
-        102: True,
-        103: True,
+        102: False,
+        103: False,
     }
 
 

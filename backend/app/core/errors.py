@@ -51,23 +51,6 @@ class WorkbenchConnectionError(Exception):
         }
 
 
-class WorkbenchExecutionError(Exception):
-    """Runtime error during workbench execution."""
-
-    def __init__(self, message: str, stage: str = "unknown"):
-        self.message = message
-        self.stage = stage
-        super().__init__(message)
-
-    def to_http_detail(self) -> Dict[str, Any]:
-        """Convert to HTTP response format (500 Internal Server Error)."""
-        return {
-            "error": "Workbench execution failed",
-            "error_code": "EXECUTION_ERROR",
-            "details": {"stage": self.stage, "message": self.message},
-        }
-
-
 def format_error_response(
     error: Exception, status_code: int = 500
 ) -> Dict[str, Any]:
@@ -84,8 +67,6 @@ def format_error_response(
     if isinstance(error, WorkbenchValidationError):
         return error.to_http_detail()
     elif isinstance(error, WorkbenchConnectionError):
-        return error.to_http_detail()
-    elif isinstance(error, WorkbenchExecutionError):
         return error.to_http_detail()
     elif isinstance(error, ValueError):
         return {

@@ -32,7 +32,7 @@ KNOWN_MODEL_TABLE_PREFIXES = (
     "ecs",
 )
 
-ML_SCORE_THRESHOLD_MARGIN = 0.05
+ML_SCORE_THRESHOLD_MARGIN = 0.07
 
 
 @dataclass(frozen=True)

@@ -1,4 +1,4 @@
-"""End-to-end run orchestration for the anomaly workbench."""
+"""End-to-end run execution for the anomaly workbench."""
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import time

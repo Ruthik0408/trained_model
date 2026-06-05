@@ -27,6 +27,10 @@ CHEQUE_SLIP_SCHEDULE3_COUNT_MISMATCH_RULE_NAME = (
 CHEQUE_SLIP_SCHEDULE3_COUNT_MISMATCH_RULE_REASON = (
     "Approved V cheque_slip count does not match schedule3 P/V count for same fk_dak"
 )
+NIGHT_TIMESTAMP_RULE_NAME = "night_timestamp_activity"
+NIGHT_TIMESTAMP_RULE_REASON = (
+    "Timestamp activity happened between 21:00 and 06:00"
+)
 
 
 @dataclass(frozen=True)
@@ -96,6 +100,12 @@ RULE_REGISTRY_INDEX = [
         "scope": "runtime",
         "applies_to": ["any joined dataset with matching date-stage columns"],
         "description": "Flags rows where a later processing stage date appears before an earlier stage date.",
+    },
+    {
+        "rule_name": NIGHT_TIMESTAMP_RULE_NAME,
+        "scope": "training_and_runtime",
+        "applies_to": ["any timestamp/time column"],
+        "description": NIGHT_TIMESTAMP_RULE_REASON,
     },
 ]
 

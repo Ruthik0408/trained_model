@@ -33,6 +33,7 @@ from app.services.workbench.constants import (
 from app.services.workbench.source_db import (
     _clear_result_table_columns_cache,
     _clear_result_table_exists_cache,
+    _index_name,
     _normalize_storage_columns,
     _previous_dataset_row_count,
     _quote,
@@ -513,6 +514,7 @@ def _write_dataset_to_result(
 
     with engine.begin() as conn:
         _normalize_result_table_feature_names(conn, dataset_table)
+        _ensure_result_table_indexes(conn, dataset_table, available_columns)
         result = conn.execute(
             result_table.insert().returning(result_table.c[SERIAL_COLUMN]),
             records,
@@ -537,6 +539,55 @@ def _write_dataset_to_result(
         "column_count": int(len(df.columns)),
         "inserted_ids": inserted_ids,
     }
+
+
+def _ensure_result_table_indexes(
+    conn,
+    dataset_table: str,
+    available_columns: frozenset[str] | set[str],
+) -> None:
+    """Create indexes used by dashboard/review queries on the persisted result table."""
+    indexed_columns = {
+        SERIAL_COLUMN,
+        RUN_ID_COLUMN,
+        SELECTED_TABLES_COLUMN,
+        FEEDBACK_SCORE_COLUMN,
+        FK_DAK_COLUMN,
+    }
+    for column_name in sorted(indexed_columns.intersection(available_columns)):
+        index_name = _index_name(RESULT_SCHEMA, dataset_table, column_name)
+        conn.execute(
+            text(
+                f"CREATE INDEX IF NOT EXISTS {_quote(index_name)} "
+                f"ON {_result_table_ref(dataset_table)} ({_quote(column_name)})"
+            )
+        )
+
+    flag_columns = {
+        USER_RULE_COLUMN,
+        ISOLATION_RULE_COLUMN,
+    }.intersection(available_columns)
+    for column_name in sorted(flag_columns):
+        index_name = _index_name(RESULT_SCHEMA, dataset_table, column_name, "truthy")
+        column_ref = _quote(column_name)
+        conn.execute(
+            text(
+                f"CREATE INDEX IF NOT EXISTS {_quote(index_name)} "
+                f"ON {_result_table_ref(dataset_table)} "
+                f"(LOWER(BTRIM({column_ref}::text)))"
+            )
+        )
+
+    if RUN_ID_COLUMN in available_columns and SERIAL_COLUMN in available_columns:
+        index_name = _index_name(RESULT_SCHEMA, dataset_table, RUN_ID_COLUMN, SERIAL_COLUMN)
+        conn.execute(
+            text(
+                f"CREATE INDEX IF NOT EXISTS {_quote(index_name)} "
+                f"ON {_result_table_ref(dataset_table)} "
+                f"({_quote(RUN_ID_COLUMN)}, {_quote(SERIAL_COLUMN)} DESC)"
+            )
+        )
+
 
 def _normalize_result_table_feature_names(conn, dataset_table: str) -> None:
     """Clean malformed selected-table labels left from earlier result-table writes."""

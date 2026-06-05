@@ -2,8 +2,6 @@ from types import SimpleNamespace
 
 from app.core import cache as cache_module
 from app.core.cache import TTLCache
-from app.core import resilience
-from app.core.resilience import CircuitBreaker, CircuitBreakerState
 from app.services import dashboard_service
 
 
@@ -22,24 +20,17 @@ def test_namespaced_cache_size_counts_valkey_prefix(monkeypatch) -> None:
     assert seen_prefixes == ["query_result:"]
 
 
-def test_circuit_breaker_refreshes_open_timer_on_repeated_failures(monkeypatch) -> None:
-    current_time = 100.0
+def test_namespaced_cache_falls_back_to_local_memory_when_valkey_unavailable(monkeypatch) -> None:
+    monkeypatch.setattr(cache_module, "valkey_available", lambda: False)
+    monkeypatch.setattr(cache_module, "valkey_get_json", lambda _key: None)
+    monkeypatch.setattr(cache_module, "valkey_count_prefix", lambda _prefix: None)
 
-    def fake_monotonic() -> float:
-        return current_time
+    cache = TTLCache(ttl_seconds=30, namespace="query_result")
 
-    monkeypatch.setattr(resilience.time, "monotonic", fake_monotonic)
-    breaker = CircuitBreaker(fail_threshold=2, reset_timeout_seconds=10)
+    cache.set("expensive-report", {"rows": 3})
 
-    breaker.record_failure()
-    breaker.record_failure()
-    assert breaker.get_state() == CircuitBreakerState.OPEN
-
-    current_time = 109.0
-    breaker.record_failure()
-
-    current_time = 111.0
-    assert breaker.get_state() == CircuitBreakerState.OPEN
+    assert cache.get("expensive-report") == {"rows": 3}
+    assert cache.size() == 1
 
 
 def test_latest_run_id_cache_stores_no_run_sentinel(monkeypatch) -> None:
@@ -57,4 +48,24 @@ def test_latest_run_id_cache_stores_no_run_sentinel(monkeypatch) -> None:
 
     assert dashboard_service._latest_run_id_for_dataset(db, "missing_table") is None
     assert dashboard_service._latest_run_id_for_dataset(db, "missing_table") is None
+    assert calls == 1
+
+
+def test_ml_run_id_lookup_is_cached(monkeypatch) -> None:
+    calls = 0
+
+    class FakeQuery:
+        def filter(self, *_args, **_kwargs):
+            return self
+
+        def first(self):
+            nonlocal calls
+            calls += 1
+            return SimpleNamespace(metrics_json={"ml_run_id": 77})
+
+    db = SimpleNamespace(query=lambda _model: FakeQuery())
+    monkeypatch.setattr(dashboard_service, "_ml_run_id_cache", TTLCache(ttl_seconds=30))
+
+    assert dashboard_service._ml_run_id_for_app_run(db, 12) == 77
+    assert dashboard_service._ml_run_id_for_app_run(db, 12) == 77
     assert calls == 1

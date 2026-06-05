@@ -18,7 +18,7 @@ from app.schemas.workbench_schema import (
     WorkbenchRunResponse,
 )
 from app.services.dashboard_service import anomaly_list_data, report_data, review_rows_data
-from app.services.workbench.orchestrator import run_workbench
+from app.services.workbench.runner import run_workbench
 from app.services.workbench.result_store import list_saved_datasets, update_dataset_feedback
 from app.services.workbench.source_db import list_source_tables, source_connection_status
 from app.services.workbench.trained_datasets import apply_trained_dataset_defaults, trained_selectable_tables

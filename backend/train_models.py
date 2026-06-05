@@ -15,7 +15,7 @@ from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import IsolationForest
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.preprocessing import OneHotEncoder, RobustScaler
 
 from app.services.workbench.business_rules import (
     cheque_slip_approval_owner_columns,
@@ -34,9 +34,11 @@ from app.services.workbench.date_stage_config import (
 from app.services.workbench.model_cleaning import (
     apply_date_sequence_summary,
     apply_invoice_row_filter_summary,
+    apply_night_timestamp_summary,
     business_day_gap_series,
     build_date_sequence_summary,
     build_invoice_row_filter_summary,
+    build_night_timestamp_summary,
     normalize_boolean_feature_columns,
 )
 
@@ -156,6 +158,12 @@ NUMERIC_DATA_TYPES = {
 BOOLEAN_DATA_TYPES = {"boolean"}
 DATE_DATA_TYPES = {
     "date",
+    "timestamp without time zone",
+    "timestamp with time zone",
+    "time without time zone",
+    "time with time zone",
+}
+TIMESTAMP_DATA_TYPES = {
     "timestamp without time zone",
     "timestamp with time zone",
     "time without time zone",
@@ -324,8 +332,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--contamination",
         type=float,
-        default=0.05,
+        default=0.02,
         help="IsolationForest contamination value.",
+    )
+    parser.add_argument(
+        "--n-estimators",
+        type=int,
+        default=500,
+        help="Number of IsolationForest trees.",
+    )
+    parser.add_argument(
+        "--max-samples",
+        type=int,
+        default=2048,
+        help="Rows sampled per IsolationForest tree.",
     )
     parser.add_argument(
         "--random-state",
@@ -827,6 +847,19 @@ def drop_invalid_date_sequence_rows(
     return apply_date_sequence_summary(df, summary), summary
 
 
+def drop_night_timestamp_rows(
+    df: pd.DataFrame,
+    schema_df: pd.DataFrame,
+) -> tuple[pd.DataFrame, dict[str, object]]:
+    timestamp_columns = schema_df.loc[
+        schema_df["data_type"].isin(TIMESTAMP_DATA_TYPES),
+        "prefixed_column_name",
+    ].tolist()
+    timestamp_columns = [column for column in timestamp_columns if column in df.columns]
+    summary = build_night_timestamp_summary(df, timestamp_columns)
+    return apply_night_timestamp_summary(df, summary), summary
+
+
 def engineer_date_gap_features(
     df: pd.DataFrame,
     schema_df: pd.DataFrame,
@@ -923,6 +956,8 @@ def build_training_pipeline(
     categorical_columns: list[str],
     *,
     contamination: float,
+    n_estimators: int,
+    max_samples: int,
     random_state: int,
 ) -> Pipeline:
     transformers = []
@@ -931,7 +966,7 @@ def build_training_pipeline(
         numeric_pipeline = Pipeline(
             steps=[
                 ("imputer", SimpleImputer(strategy="median")),
-                ("scaler", StandardScaler()),
+                ("scaler", RobustScaler()),
             ]
         )
         transformers.append(("numeric", numeric_pipeline, numeric_columns))
@@ -965,6 +1000,10 @@ def build_training_pipeline(
             (
                 "model",
                 IsolationForest(
+                    n_estimators=n_estimators,
+                    max_samples=max_samples,
+                    n_jobs=-1,
+                    bootstrap=False,
                     contamination=contamination,
                     random_state=random_state,
                 ),
@@ -1043,9 +1082,10 @@ def train_dataset(
         varchar_length_threshold=args.varchar_length_threshold,
     )
     dated_df, converted_date_columns = coerce_date_columns(cleaned_df, schema_df)
+    daytime_df, night_timestamp_summary = drop_night_timestamp_rows(dated_df, schema_df)
     date_stage_plan = resolve_date_stage_plan(dated_df.columns.tolist(), tables_in_dataset)
     sequence_filtered_df, date_sequence_summary = drop_invalid_date_sequence_rows(
-        dated_df,
+        daytime_df,
         date_stage_plan,
     )
     feature_ready_df, original_date_columns_dropped, created_gap_features = (
@@ -1076,6 +1116,8 @@ def train_dataset(
         boolean_columns,
         categorical_columns,
         contamination=args.contamination,
+        n_estimators=args.n_estimators,
+        max_samples=args.max_samples,
         random_state=args.random_state,
     )
     training_pipeline.fit(feature_df)
@@ -1112,6 +1154,7 @@ def train_dataset(
         invoice_row_filter_summary=invoice_row_filter_summary,
         date_sequence_summary=date_sequence_summary,
         date_gap_features=created_gap_features,
+        night_timestamp_summary=night_timestamp_summary,
     )
 
     model_path = models_dir / f"{dataset_name}_pipeline.joblib"
@@ -1136,6 +1179,7 @@ def train_dataset(
             "training_row_count": int(len(feature_df.index)),
             "source_row_count": source_row_count,
             "post_invoice_filter_row_count": int(len(row_filtered_df.index)),
+            "post_night_timestamp_filter_row_count": int(len(daytime_df.index)),
             "post_date_sequence_filter_row_count": int(len(sequence_filtered_df.index)),
             "anomaly_count": anomaly_count,
             "inlier_count": inlier_count,
@@ -1156,6 +1200,7 @@ def train_dataset(
         "source_row_count": source_row_count,
         "queried_row_count": int(len(raw_df.index)),
         "post_invoice_filter_row_count": int(len(row_filtered_df.index)),
+        "post_night_timestamp_filter_row_count": int(len(daytime_df.index)),
         "post_date_sequence_filter_row_count": int(len(sequence_filtered_df.index)),
         "training_row_count": int(len(feature_df.index)),
         "anomaly_count": anomaly_count,
@@ -1170,6 +1215,7 @@ def train_dataset(
         "dropped_columns_summary": dropped_summary,
         "converted_date_columns": converted_date_columns,
         "date_stage_plan": date_stage_plan,
+        "night_timestamp_summary": night_timestamp_summary,
         "original_date_columns_dropped_before_training": original_date_columns_dropped,
         "numeric_columns_standardized": numeric_columns,
         "boolean_columns_converted_to_numeric": boolean_columns,

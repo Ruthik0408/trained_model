@@ -142,6 +142,15 @@ export default function ReviewPage({ latestWorkbenchRun }) {
     const totalPages = Math.max(1, Math.ceil((tableData.total_rows || 0) / PAGE_SIZE));
     const canGoPrevious = pageOffset > 0;
     const canGoNext = pageOffset + PAGE_SIZE < (tableData.total_rows || 0);
+    const visibleSlideIndexes = useMemo(() => {
+        const indexes = new Set();
+        for (const index of [activeSlideIndex - 1, activeSlideIndex, activeSlideIndex + 1]) {
+            if (index >= 0 && index < pending.length) {
+                indexes.add(index);
+            }
+        }
+        return indexes;
+    }, [activeSlideIndex, pending.length]);
     const displayRuleCount = anomalyFilter === "rule"
         ? tableData.total_rows || 0
         : latestWorkbenchRun?.userRuleCount ?? latestWorkbenchRun?.userOutlierCount ?? 0;
@@ -291,7 +300,7 @@ export default function ReviewPage({ latestWorkbenchRun }) {
         {pending.map((item, index) => (<div key={item.prediction_id} ref={(node) => {
                 cardRefs.current[item.prediction_id] = node;
             }} style={focusedPredictionId === item.prediction_id ? focusedSlide : slide}>
-            <PredictionRow item={item} onAction={handleFeedback} selectedTables={activeTables} />
+            {visibleSlideIndexes.has(index) ? (<PredictionRow item={item} onAction={handleFeedback} selectedTables={activeTables} />) : (<div style={virtualSlidePlaceholder} aria-hidden="true"/>)}
           </div>))}
       </div>
     </div>);
@@ -317,6 +326,7 @@ const pagerMeta = { color: "#6b7280", fontSize: 13, fontWeight: 600 };
 const slideTrack = { display: "flex", alignItems: "flex-start", gap: 0, overflowX: "auto", padding: "4px 0 12px", scrollSnapType: "x mandatory", scrollBehavior: "smooth" };
 const slide = { flex: "0 0 100%", minWidth: "100%", boxSizing: "border-box", scrollSnapAlign: "start", paddingRight: 4, transition: "transform 160ms ease, box-shadow 160ms ease" };
 const focusedSlide = { ...slide, transform: "translateY(-2px)", boxShadow: "0 0 0 3px rgba(245, 158, 11, 0.25)", borderRadius: 24 };
+const virtualSlidePlaceholder = { minHeight: 420 };
 const errorBox = { borderRadius: 12, border: "1px solid #fecaca", background: "#fef2f2", color: "#b91c1c", padding: "12px 14px" };
 
 function buildReviewTableData(rows, summary, offset) {

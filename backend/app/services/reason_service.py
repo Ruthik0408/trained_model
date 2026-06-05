@@ -34,6 +34,13 @@ IMPORTANT_KEYWORDS = (
     "ratio",
 )
 
+COMMON_VALUE_RATIO_CUTOFF = 0.20
+MIN_NUMERIC_STRENGTH = 2.0
+
+INDICATOR_SIGNAL_STRENGTHS = {
+    "rule_indicator": 1.75,
+}
+
 # Connectors used to join multiple clauses so sentences don't sound repetitive
 _CLAUSE_CONNECTORS = [
     "and",
@@ -60,9 +67,10 @@ def build_feature_explanation_signals(
     """
     Build per-row feature signals explaining why IF flagged each anomaly row.
 
-    Ranks transformed IF features by absolute value. Continuous numeric
-    features are standardized, while indicator-style features are preserved
-    as raw 0/1 values so the explanation signals still mirror model input.
+    Ranks transformed IF features using type-aware explanation strength.
+    Continuous numeric features use standardized magnitude. Indicator-style
+    features are only considered when active and use conservative fixed
+    weights because their raw 0/1 values are not comparable with z-scores.
 
     Returns:
         Dict mapping row-index → list of signal dicts.
@@ -117,20 +125,22 @@ def _build_deterministic_explanation(
     payload: IsolationReasonRequest,
 ) -> dict[str, Any]:
     """
-    Build a high-quality explanation without any LLM call.
+    Build a deterministic explanation without an LLM call.
 
-    Strategy:
-      1. Translate each IF signal into a self-contained English clause.
-      2. Prioritise clauses (IQR flags > missing fields > date gaps >
-         categoricals > generic numeric).
-      3. Select the top 3 clauses and assemble them with natural connectors.
-      4. Append rule-based reasons if present and not already covered.
-      5. Clean and return.
+    Detection and explanation are intentionally separated:
+      * Isolation Forest detects the anomalous row.
+      * This service explains what makes the row different from the reference
+        population.
+      * Numeric features are explained by standardized deviation.
+      * Categorical / boolean features are explained only when the current
+        value is genuinely rare.
+      * Common values such as 70%, 95%, or 100% occurrence are never described
+        as unusual.
     """
     signal_clauses = [
         clause
         for clause in _translate_signals_to_clauses(payload.feature_signals)
-        if not _is_missing_reason_clause(clause)
+        if clause
     ]
     rule_reasons = [
         reason
@@ -143,7 +153,10 @@ def _build_deterministic_explanation(
     reason = _clean_reason(reason)
 
     if not reason:
-        reason = "This record shows an unusual combination of values compared to similar records."
+        reason = (
+            "This record is isolated by an unusual combination of values, "
+            "but no single strong feature difference was found."
+        )
 
     return {
         "reason": reason,
@@ -243,7 +256,7 @@ def _different_feature_group(clause_a: str, clause_b: str) -> bool:
     return _first_content_word(clause_a) != _first_content_word(clause_b)
 
 
-# Signal extraction — ranked by transformed magnitude
+# Signal extraction — ranked by real row-difference strength
 
 def _build_magnitude_signals(
     feature_frame: pd.DataFrame,
@@ -251,67 +264,193 @@ def _build_magnitude_signals(
     selected_index: list[Any],
 ) -> dict[Any, list[dict[str, Any]]]:
     """
-    For each anomaly row, sort features by |transformed_value| descending.
+    For each anomaly row, rank features by real explanation strength.
 
-    Continuous numeric features use standardized values.
-    Indicator-style features keep their raw 0/1 representation.
+    Correct behavior:
+      * Numeric standardized features use abs(transformed value).
+      * One-hot categorical features use rarity of the active category.
+      * Boolean features use rarity of the current boolean value.
+      * Missing indicators use rarity of missingness.
+      * Common categorical/boolean/missing values are skipped.
     """
     signals_by_index: dict[Any, list[dict[str, Any]]] = {}
     selected_rows = transformed_frame.loc[selected_index]
 
     for row_index, scaled_row in selected_rows.iterrows():
         scaled_values = scaled_row.to_numpy()
-        ranked_positions = np.argsort(np.abs(scaled_values))[::-1]
+        candidates: list[dict[str, Any]] = []
 
-        seen: set[str] = set()
-        signals: list[dict[str, Any]] = []
-
-        for position in ranked_positions:
+        for position in range(len(scaled_values)):
             raw_feature_name = str(transformed_frame.columns[int(position)])
             feature_name = _display_feature_name(raw_feature_name, feature_frame.columns)
             source_name = _source_feature_name(feature_name)
-            feature_group = _signal_group_name(feature_name)
-            if feature_group in seen:
-                continue
-            seen.add(feature_group)
 
-            scaled_val = float(scaled_values[int(position)])
+            scaled_val = _safe_float(scaled_values[int(position)])
+            if scaled_val is None:
+                continue
+
             raw_value = (
                 feature_frame.at[row_index, source_name]
                 if source_name in feature_frame.columns
                 else None
             )
 
-            signals.append(
+            signal_kind = _signal_kind(feature_frame, source_name, feature_name)
+            comparison = _build_signal_comparison(
+                feature_frame,
+                source_name,
+                feature_name,
+                raw_value=raw_value,
+            )
+
+            strength_result = _signal_explanation_strength(
+                signal_kind=signal_kind,
+                transformed_value=scaled_val,
+                raw_value=raw_value,
+                comparison=comparison,
+            )
+            if strength_result is None:
+                continue
+
+            strength, method, direction = strength_result
+
+            candidates.append(
                 {
                     "feature": feature_name,
                     "value": _safe_signal_value(raw_value),
                     "scaled_value": _safe_float(scaled_val),
-                    "strength": _safe_float(abs(scaled_val)),
-                    "direction": "high" if scaled_val >= 0 else "low",
-                    "method": "transformed_magnitude",
-                    "comparison": _build_signal_comparison(
-                        feature_frame,
-                        source_name,
-                        feature_name,
-                    ),
+                    "strength": _safe_float(strength),
+                    "direction": direction,
+                    "method": method,
+                    "comparison": comparison,
                 }
             )
 
+        ranked_candidates = sorted(
+            candidates,
+            key=lambda item: (
+                _signal_priority(item),
+                -(_safe_float(item.get("strength")) or 0.0),
+            ),
+        )
+
+        seen: set[str] = set()
+        signals: list[dict[str, Any]] = []
+
+        for candidate in ranked_candidates:
+            feature_group = _signal_group_name(candidate["feature"])
+            if feature_group in seen:
+                continue
+            seen.add(feature_group)
+
+            signals.append(candidate)
             if len(signals) >= 5:
                 break
 
         if signals:
-            prioritized = sorted(
-                signals,
-                key=lambda item: (
-                    _signal_priority(item),
-                    -abs(_safe_float(item.get("scaled_value")) or 0.0),
-                ),
-            )
-            signals_by_index[row_index] = prioritized[:5]
+            signals_by_index[row_index] = signals
 
     return signals_by_index
+
+
+def _signal_kind(
+    feature_frame: pd.DataFrame,
+    source_name: str,
+    feature_name: str,
+) -> str:
+    lowered = feature_name.lower()
+
+    if lowered.startswith("iqr_flag::"):
+        return "rule_indicator"
+
+    if feature_name.endswith("__missing") or "missingflag" in lowered:
+        return "missing_indicator"
+
+    if "::" in feature_name:
+        return "categorical_one_hot"
+
+    if _is_boolean_indicator_feature(feature_frame, source_name, feature_name):
+        return "boolean_indicator"
+
+    return "standardized_numeric"
+
+
+def _signal_explanation_strength(
+    *,
+    signal_kind: str,
+    transformed_value: float,
+    raw_value: Any,
+    comparison: dict[str, Any] | None,
+) -> tuple[float, str, str] | None:
+    """
+    Return (strength, method, direction) or None when the feature should not be
+    shown as a row-level explanation.
+    """
+    if signal_kind == "standardized_numeric":
+        strength = abs(transformed_value)
+        if strength < MIN_NUMERIC_STRENGTH:
+            return None
+        direction = "high" if transformed_value >= 0 else "low"
+        return strength, "numeric_standardized_deviation", direction
+
+    if signal_kind == "categorical_one_hot":
+        # For one-hot encoded categoricals, only active category columns matter.
+        if transformed_value < 0.5:
+            return None
+
+        ratio = _safe_float((comparison or {}).get("match_ratio"))
+        if ratio is None or ratio >= COMMON_VALUE_RATIO_CUTOFF:
+            return None
+
+        return _rarity_strength(ratio), "categorical_rarity", "rare"
+
+    if signal_kind == "boolean_indicator":
+        ratio = _safe_float((comparison or {}).get("value_ratio"))
+        if ratio is None or ratio >= COMMON_VALUE_RATIO_CUTOFF:
+            return None
+
+        return _rarity_strength(ratio), "boolean_rarity", "rare"
+
+    if signal_kind == "missing_indicator":
+        # Missing indicator is useful only when this row is missing the field.
+        if transformed_value < 0.5:
+            return None
+
+        missing_ratio = _safe_float((comparison or {}).get("missing_ratio"))
+        if missing_ratio is None or missing_ratio >= COMMON_VALUE_RATIO_CUTOFF:
+            return None
+
+        return _rarity_strength(missing_ratio), "missing_rarity", "missing"
+
+    if signal_kind == "rule_indicator":
+        if abs(transformed_value) < 0.5:
+            return None
+        return INDICATOR_SIGNAL_STRENGTHS["rule_indicator"], "rule_indicator", "high"
+
+    return None
+
+
+def _is_boolean_indicator_feature(
+    feature_frame: pd.DataFrame,
+    source_name: str,
+    feature_name: str,
+) -> bool:
+    lowered = feature_name.lower()
+    boolean_name = (
+        "isweekend" in lowered
+        or "isbusinesshour" in lowered
+        or lowered.startswith(("is_", "has_", "can_"))
+        or lowered.endswith(("_flag", "__flag"))
+        or lowered.startswith("flag_")
+    )
+    if boolean_name:
+        return True
+
+    if source_name not in feature_frame.columns:
+        return False
+
+    series = _select_series_column(feature_frame, source_name)
+    return _is_binary_series(series)
 
 
 # Signal translation — raw signal dicts → English clauses
@@ -351,14 +490,23 @@ def _translate_one_signal(signal: dict[str, Any]) -> str | None:
     # ── Missing-value flag ────────────────────────────────────────────────
     if feature.endswith("__missing") or "missingflag" in feature.lower():
         source = _readable_feature(feature.replace("__missing", "")).strip()
+        comparison = signal.get("comparison") or {}
+        missing_ratio = _safe_float(comparison.get("missing_ratio"))
         if not source:
-            return "a required field is missing"
+            return "a field is missing even though it is usually present"
+        if missing_ratio is not None:
+            if missing_ratio >= COMMON_VALUE_RATIO_CUTOFF:
+                return None
+            return (
+                f"the {source} field is missing, which happens in only "
+                f"{_format_percent(missing_ratio)} of similar records"
+            )
         return f"the {source} field is missing"
 
 
     # ── One-hot / encoded categorical feature (column::value) ─────────────
     if "::" in feature:
-        return _translate_categorical_signal(feature, raw_value, direction)
+        return _translate_categorical_signal(signal)
 
     # ── Date-gap feature (gap_days_left_stage_to_right_stage) ─────────────
     if feature.startswith("gap_days_") and "_to_" in feature:
@@ -369,17 +517,20 @@ def _translate_one_signal(signal: dict[str, Any]) -> str | None:
         if date_clause:
             return date_clause
 
-    # ── IsWeekend / IsBusinessHour boolean flags ──────────────────────────
+    # ── Boolean flags ─────────────────────────────────────────────────────
+    if str(signal.get("method") or "") == "boolean_rarity":
+        return _translate_boolean_signal(signal)
+
     if "isweekend" in feature.lower():
         val_text = "on a weekend" if _truthy(raw_value) else "not on a weekend"
-        return f"the transaction was posted {val_text}, which is unusual"
+        return f"the transaction was posted {val_text}, which is rare for similar records"
 
     if "isbusinesshour" in feature.lower():
         val_text = (
             "within normal business hours" if _truthy(raw_value)
             else "outside business hours"
         )
-        return f"the transaction time is {val_text}, which is unusual"
+        return f"the transaction time is {val_text}, which is rare for similar records"
     # ── Generic numeric / normal feature fallback ─────────────────────────
     readable = _readable_feature(feature)
     value_text = _format_raw_value(raw_value)
@@ -395,32 +546,50 @@ def _translate_one_signal(signal: dict[str, Any]) -> str | None:
 
     return None
 
-def _translate_categorical_signal(
-    feature: str,
-    raw_value: Any,
-    direction: str,
-) -> str | None:
+def _translate_categorical_signal(signal: dict[str, Any]) -> str | None:
+    feature = str(signal.get("feature") or "").strip()
+    comparison = signal.get("comparison") or {}
+
     parts = feature.split("::", 1)
     if len(parts) != 2:
         return None
 
     field_name = _readable_feature(parts[0]).strip()
     category_value = _readable_category_value(parts[1]).strip()
-    if not field_name:
+    if not field_name or not category_value:
         return None
 
-    if category_value:
-        if direction == "low":
-            return (
-                f"the record is missing a usually-common "
-                f"{field_name} value ({category_value})"
-            )
+    ratio = _safe_float(comparison.get("match_ratio"))
+    if ratio is not None:
+        if ratio >= COMMON_VALUE_RATIO_CUTOFF:
+            return None
         return (
-            f"the {field_name} value ({category_value}) "
-            f"is an unusual value compared to similar records"
+            f"the {field_name} value ({category_value}) appears in only "
+            f"{_format_percent(ratio)} of similar records"
         )
 
-    return f"the {field_name} value is unusual compared to similar records"
+    return f"the {field_name} value ({category_value}) is rare compared to similar records"
+
+
+def _translate_boolean_signal(signal: dict[str, Any]) -> str | None:
+    feature = str(signal.get("feature") or "").strip()
+    raw_value = signal.get("value")
+    comparison = signal.get("comparison") or {}
+
+    ratio = _safe_float(comparison.get("value_ratio"))
+    if ratio is not None and ratio >= COMMON_VALUE_RATIO_CUTOFF:
+        return None
+
+    readable = _readable_feature(feature)
+    value_text = "true" if _truthy(raw_value) else "false"
+
+    if ratio is not None:
+        return (
+            f"the {readable} value is {value_text}, appearing in only "
+            f"{_format_percent(ratio)} of similar records"
+        )
+
+    return f"the {readable} value is {value_text}, which is rare for similar records"
 
 
 def _translate_date_gap_signal(
@@ -634,15 +803,28 @@ def _transformed_feature_labels(
     pipeline: Any,
     feature_frame: pd.DataFrame,
 ) -> list[str]:
+    """
+    Best-effort fallback for transformed feature labels.
+
+    Prefer passing transformed_feature_labels from the trained artifact. This
+    fallback supports both old imputer/scaler pipelines and newer
+    preprocessor/model pipelines.
+    """
+    named_steps = getattr(pipeline, "named_steps", {})
+
+    if isinstance(named_steps, dict) and "preprocessor" in named_steps:
+        preprocessor = named_steps["preprocessor"]
+        try:
+            return [str(name) for name in preprocessor.get_feature_names_out()]
+        except Exception:
+            pass
+
     base_labels = [str(c) for c in feature_frame.columns]
-    imputer = (
-        pipeline.named_steps.get("imputer")
-        if hasattr(pipeline, "named_steps")
-        else None
-    )
+    imputer = named_steps.get("imputer") if isinstance(named_steps, dict) else None
     indicator_features = getattr(
         getattr(imputer, "indicator_", None), "features_", None
     )
+
     indicator_labels: list[str] = []
     if indicator_features is not None:
         for fi in indicator_features:
@@ -650,28 +832,44 @@ def _transformed_feature_labels(
                 indicator_labels.append(f"{base_labels[int(fi)]}__missing")
             else:
                 indicator_labels.append(f"feature_{int(fi)}__missing")
+
     labels = base_labels + indicator_labels
-    if len(feature_frame.index) > 0:
-        transformed_width = int(
-            np.asarray(
-                pipeline.named_steps["scaler"].transform(
-                    pipeline.named_steps["imputer"].transform(
-                        feature_frame.iloc[:1]
+
+    try:
+        if isinstance(named_steps, dict) and "scaler" in named_steps and imputer is not None:
+            transformed_width = int(
+                np.asarray(
+                    named_steps["scaler"].transform(
+                        named_steps["imputer"].transform(feature_frame.iloc[:1])
                     )
-                )
-            ).shape[1]
-        )
-    else:
+                ).shape[1]
+            )
+        else:
+            transformed_width = len(labels)
+    except Exception:
         transformed_width = len(labels)
+
     if len(labels) < transformed_width:
-        labels.extend(
-            [f"feature_{i}" for i in range(len(labels), transformed_width)]
-        )
+        labels.extend([f"feature_{i}" for i in range(len(labels), transformed_width)])
+
     return labels[:transformed_width]
 
 
-def _source_feature_name(feature_name: Any) -> str:
+def _strip_transformer_prefix(feature_name: str) -> str:
+    """
+    Convert ColumnTransformer names like categorical__bill_make_type_9.0 or
+    numeric__bill_amount_claimed into names used by existing matching logic.
+    """
     text = str(feature_name)
+    if "__" in text:
+        prefix, rest = text.split("__", 1)
+        if prefix in {"numeric", "boolean", "categorical", "onehot", "cat", "bool", "num"}:
+            return rest
+    return text
+
+
+def _source_feature_name(feature_name: Any) -> str:
+    text = _strip_transformer_prefix(str(feature_name))
     if "::" in text:
         return text.split("::", 1)[0]
     return text[: -len("__missing")] if text.endswith("__missing") else text
@@ -681,7 +879,7 @@ def _display_feature_name(
     feature_name: Any,
     source_columns: Any,
 ) -> str:
-    text = str(feature_name)
+    text = _strip_transformer_prefix(str(feature_name))
     if text in source_columns or "::" in text or text.endswith("__missing"):
         return text
 
@@ -704,6 +902,8 @@ def _build_signal_comparison(
     feature_frame: pd.DataFrame,
     source_name: str,
     feature_name: str,
+    *,
+    raw_value: Any = None,
 ) -> dict[str, Any] | None:
     series_name = feature_name if feature_name in feature_frame.columns else source_name
     if series_name not in feature_frame.columns:
@@ -724,6 +924,7 @@ def _build_signal_comparison(
             "present_count": present_count,
             "missing_count": missing_count,
             "present_ratio": _safe_float(present_count / total_count) if total_count else None,
+            "missing_ratio": _safe_float(missing_count / total_count) if total_count else None,
         }
 
     if "::" in feature_name:
@@ -742,6 +943,22 @@ def _build_signal_comparison(
             "total_count": total_count,
             "match_count": active_count,
             "match_ratio": _safe_float(active_count / total_count) if total_count else None,
+        }
+
+    if _is_binary_series(series):
+        total_count = int(len(series.index))
+        truthy_series = series.map(_truthy)
+        true_count = int(truthy_series.sum())
+        false_count = int(total_count - true_count)
+        value_ratio = _value_ratio(series, raw_value)
+        return {
+            "kind": "boolean",
+            "total_count": total_count,
+            "true_count": true_count,
+            "false_count": false_count,
+            "true_ratio": _safe_float(true_count / total_count) if total_count else None,
+            "false_ratio": _safe_float(false_count / total_count) if total_count else None,
+            "value_ratio": _safe_float(value_ratio),
         }
 
     numeric_series = pd.to_numeric(series, errors="coerce").dropna()
@@ -792,6 +1009,71 @@ def _compact_row_facts(row_payload: dict[str, Any]) -> str:
             parts.append(f"{plain_key}={_format_raw_value(value)}")
     return "; ".join(parts)
 
+
+
+# Difference-scoring helpers
+
+def _is_binary_series(series: pd.Series) -> bool:
+    """Return True for real boolean/binary 0-1 style columns."""
+    if series is None:
+        return False
+
+    non_missing = series.dropna()
+    if non_missing.empty:
+        return False
+
+    normalized: set[Any] = set()
+    for value in non_missing.unique().tolist():
+        if isinstance(value, (bool, np.bool_)):
+            normalized.add(int(value))
+            continue
+
+        numeric = _safe_float(value)
+        if numeric is not None and numeric in {0.0, 1.0}:
+            normalized.add(int(numeric))
+            continue
+
+        text_value = str(value).strip().lower()
+        if text_value in {"true", "false", "yes", "no", "y", "n", "0", "1"}:
+            normalized.add(text_value)
+            continue
+
+        return False
+
+    return len(normalized) <= 2
+
+
+def _value_ratio(series: pd.Series, value: Any) -> float | None:
+    total_count = len(series.index)
+    if total_count == 0:
+        return None
+
+    if _is_binary_series(series):
+        current_bool = _truthy(value)
+        return float(series.map(_truthy).eq(current_bool).mean())
+
+    return float(series.eq(value).mean())
+
+
+def _rarity_strength(ratio: float) -> float:
+    """
+    Convert frequency into explanation strength.
+
+    10% -> 1.0
+    1%  -> 2.0
+    0.1% -> 3.0
+    """
+    safe_ratio = max(float(ratio), 1e-6)
+    return float(-np.log10(safe_ratio))
+
+
+def _format_percent(ratio: float) -> str:
+    pct = float(ratio) * 100.0
+    if pct >= 10:
+        return f"{pct:.1f}%"
+    if pct >= 1:
+        return f"{pct:.2f}%"
+    return f"{pct:.3f}%"
 
 
 # General helpers

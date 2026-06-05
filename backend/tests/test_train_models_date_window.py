@@ -182,6 +182,8 @@ def test_boolean_features_are_converted_directly_instead_of_one_hot_encoded() ->
         ["schedule3_approved"],
         ["record_status"],
         contamination=0.25,
+        n_estimators=500,
+        max_samples=2048,
         random_state=42,
     )
 
@@ -197,6 +199,25 @@ def test_boolean_features_are_converted_directly_instead_of_one_hot_encoded() ->
     assert "schedule3_approved" in feature_names
     assert "schedule3_approved_f" not in feature_names
     assert "schedule3_approved_t" not in feature_names
+
+
+def test_training_pipeline_uses_explicit_isolation_forest_tree_config() -> None:
+    pipeline = build_training_pipeline(
+        ["amount"],
+        [],
+        [],
+        contamination=0.02,
+        n_estimators=500,
+        max_samples=2048,
+        random_state=42,
+    )
+
+    model = pipeline.named_steps["model"]
+
+    assert model.n_estimators == 500
+    assert model.max_samples == 2048
+    assert model.n_jobs == -1
+    assert model.bootstrap is False
 
 
 def test_business_day_gap_series_excludes_weekends() -> None:

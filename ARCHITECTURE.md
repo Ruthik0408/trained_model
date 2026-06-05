@@ -30,8 +30,8 @@ The codebase has three main execution surfaces:
 
 ### Backend Service Layer
 
-- `backend/app/services/workbench/orchestrator.py`
-  Owns the end-to-end preview and run flow.
+- `backend/app/services/workbench/runner.py`
+  Owns the end-to-end workbench run flow.
 - `backend/app/services/workbench/sql_runtime.py`
   Builds safe SQL joins, pushes rule logic into SQL, materializes temp tables, and reads scoring frames.
 - `backend/app/services/workbench/saved_model_inference.py`
@@ -102,7 +102,7 @@ If Valkey is unavailable, the system falls back to local in-process memory for s
 
 1. Frontend sends `POST /api/workbench/preview`.
 2. `routes_workbench.py` validates the request and applies trained dataset defaults.
-3. `orchestrator.preview_workbench()` checks Valkey for a cached preview artifact.
+3. The workbench preview flow checks Valkey for a cached preview artifact.
 4. On a cache miss, `sql_runtime.py` builds and executes the join SQL against the source database.
 5. The preview result is serialized into Valkey and returned to the frontend.
 
@@ -110,7 +110,7 @@ If Valkey is unavailable, the system falls back to local in-process memory for s
 
 1. Frontend sends `POST /api/workbench/run`.
 2. `routes_workbench.py` validates input and opens an app DB session.
-3. `orchestrator.run_workbench()` checks Valkey for cached execution artifacts.
+3. `runner.run_workbench()` checks Valkey for cached execution artifacts.
 4. On a cache miss:
    - `sql_runtime.py` builds the joined workbench SQL.
    - the SQL is executed in the source database
@@ -118,7 +118,7 @@ If Valkey is unavailable, the system falls back to local in-process memory for s
 5. `saved_model_inference.py` loads the trained model and scores the candidate rows.
 6. `result_store._build_dataset_frame()` produces the persisted anomaly-row DataFrame.
 7. `result_store._write_dataset_to_result()` appends anomaly rows into the result table in PostgreSQL.
-8. `orchestrator._create_run_record()` persists run metadata into `anomaly_workbench_runs`.
+8. `runner._create_run_record()` persists run metadata into `anomaly_workbench_runs`.
 9. Review payload rows and execution artifacts are cached in Valkey.
 10. The API returns the run summary to the frontend.
 
@@ -135,7 +135,7 @@ The main backend dependency chain is:
 
 `main.py`
 -> `routes_workbench.py`
--> `orchestrator.py`
+-> `runner.py`
 -> `sql_runtime.py`
 -> `saved_model_inference.py`
 -> `result_store.py`

@@ -6,3 +6,11 @@ node_modules/
 *.db
 .pytest_cache/
 frontend/dist/
+
+# Runtime logs
+.run-logs/
+
+# Local/generated model outputs
+backend/models/
+backend/artifacts/models/
+backend/artifacts/reports/

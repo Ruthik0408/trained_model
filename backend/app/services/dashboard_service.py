@@ -46,6 +46,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_REVIEW_PAGE_SIZE = 50
 _latest_dataset_cache = TTLCache(ttl_seconds=5.0, namespace="latest_dataset")
 _latest_run_id_cache = TTLCache(ttl_seconds=5.0, namespace="latest_run_id")
+_ml_run_id_cache = TTLCache(ttl_seconds=30.0, namespace="ml_run_id")
 _NO_LATEST_RUN_ID = "__NO_LATEST_RUN_ID__"
 
 def _sql_truthy(column_name: str) -> str:
@@ -111,14 +112,14 @@ def review_rows_data(
         run_id=selected_ml_run_id,
         app_run_id=selected_run_id,
     )
-    df = _dataset_frame(
+    raw_rows = _dataset_rows(
         selected_dataset,
         anomaly_filter=anomaly_filter,
         limit=page_limit,
         offset=page_offset,
         run_id=selected_ml_run_id,
     )
-    rows = [_dataset_row_to_prediction(row, builtin_reason_by_record_id) for _, row in df.iterrows()]
+    rows = [_dataset_row_to_prediction(row, builtin_reason_by_record_id) for row in raw_rows]
     for row in rows:
         row["dataset_table"] = selected_dataset
     rows = _rehydrate_prediction_payloads_with_run(run if selected_run_id is not None else None, rows)
@@ -485,6 +486,7 @@ def invalidate_dashboard_caches(dataset_table: str | None = None) -> None:
     QUERY_RESULT_CACHE.invalidate()
     DATASET_SUMMARY_CACHE.invalidate()
     _latest_dataset_cache.invalidate()
+    _ml_run_id_cache.invalidate()
     if dataset_table:
         _latest_run_id_cache.invalidate(dataset_table)
     else:
@@ -520,11 +522,18 @@ def _latest_run_id_for_dataset(db: Session, dataset_table: str) -> int | None:
 def _ml_run_id_for_app_run(db: Session, app_run_id: int | None) -> int | None:
     if app_run_id is None:
         return None
+    cache_key = str(int(app_run_id))
+    cached = _ml_run_id_cache.get(cache_key)
+    if cached is not None:
+        return int(cached)
     run = db.query(WorkbenchRun).filter(WorkbenchRun.run_id == int(app_run_id)).first()
     if not run or not isinstance(run.metrics_json, dict):
+        _ml_run_id_cache.set(cache_key, int(app_run_id))
         return int(app_run_id)
     ml_run_id = run.metrics_json.get("ml_run_id")
-    return int(ml_run_id) if ml_run_id is not None else int(app_run_id)
+    value = int(ml_run_id) if ml_run_id is not None else int(app_run_id)
+    _ml_run_id_cache.set(cache_key, value)
+    return value
 
 def _iter_recent_runs(db: Session, batch_size: int = 100):
     offset = 0
@@ -566,13 +575,13 @@ def _dataset_summary(
         run = db.query(WorkbenchRun).filter(WorkbenchRun.run_id == int(app_run_id)).first()
         payload_rows = _review_payload_rows_for_run(run)
         if payload_rows:
-            df = _dataset_frame(
+            rows = _dataset_rows(
                 dataset_table,
                 anomaly_filter=anomaly_filter,
                 run_id=run_id,
             )
             total_amount = 0.0
-            for _, row in df.iterrows():
+            for row in rows:
                 record_id = row.get(SERIAL_COLUMN)
                 numeric_record_id = _safe_numeric_scalar(record_id, default=None)
                 if numeric_record_id is None:
@@ -581,7 +590,7 @@ def _dataset_summary(
                 if isinstance(payload, dict):
                     total_amount += _payload_amount(payload)
             result = {
-                "total_rows": int(len(df.index)),
+                "total_rows": int(len(rows)),
                 "total_amount": float(total_amount),
             }
             DATASET_SUMMARY_CACHE.set(cache_key, result)
@@ -749,8 +758,56 @@ def _dataset_frame(
     with _source_connect() as conn:
         return pd.read_sql_query(text(sql), conn)
 
+
+def _dataset_rows(
+    dataset_table: str,
+    *,
+    anomaly_filter: str = "all",
+    limit: int | None = None,
+    offset: int | None = None,
+    run_id: int | None = None,
+) -> list[dict[str, Any]]:
+    if not _result_table_exists(dataset_table):
+        return []
+    available_columns = _result_table_columns(dataset_table)
+    where_clause = _add_run_filter(
+        _dataset_query_filter(anomaly_filter),
+        run_id,
+        dataset_table=dataset_table,
+    )
+    compact_columns = [
+        column_name
+        for column_name in (
+            SERIAL_COLUMN,
+            SELECTED_TABLES_COLUMN,
+            USER_RULE_NAME_COLUMN,
+            USER_RULE_COLUMN,
+            ISOLATION_RULE_COLUMN,
+            IF_SCORE_COLUMN,
+            ML_THRESHOLD_COLUMN,
+            FEEDBACK_SCORE_COLUMN,
+            RUN_ID_COLUMN,
+            FK_DAK_COLUMN,
+            FEATURE_VALUES_COLUMN,
+        )
+        if column_name in available_columns
+    ]
+    selected_columns = ", ".join(_quote(column_name) for column_name in compact_columns) if compact_columns else "*"
+    sql = (
+        f"SELECT {selected_columns} FROM {_result_table_ref(dataset_table)} "
+        f"{where_clause} "
+        f"ORDER BY {_quote(SERIAL_COLUMN)} ASC"
+    )
+    if limit and limit > 0:
+        sql += f" LIMIT {int(limit)}"
+    if offset and offset > 0:
+        sql += f" OFFSET {int(offset)}"
+    with _source_connect() as conn:
+        return [dict(row) for row in conn.execute(text(sql)).mappings().all()]
+
+
 def _dataset_row_to_prediction(
-    row: pd.Series,
+    row: pd.Series | dict[str, Any],
     builtin_reason_by_record_id: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     rule_reason = row.get(USER_RULE_NAME_COLUMN)

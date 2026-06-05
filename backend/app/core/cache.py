@@ -13,6 +13,7 @@ from app.core.valkey import delete_prefix as valkey_delete_prefix
 from app.core.valkey import count_prefix as valkey_count_prefix
 from app.core.valkey import get_json as valkey_get_json
 from app.core.valkey import set_json as valkey_set_json
+from app.core.valkey import valkey_available
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +39,26 @@ class TTLCache:
         if not self.namespace:
             return key
         return f"{self.namespace}:{key}"
+
+    def _get_local(self, key: str) -> Optional[Any]:
+        with self._lock:
+            if key not in self._cache:
+                logger.debug(f"Cache miss: {key}")
+                return None
+
+            value, timestamp = self._cache[key]
+            if time.monotonic() - timestamp > self.ttl:
+                logger.debug(f"Cache expired: {key}")
+                del self._cache[key]
+                return None
+
+            logger.debug(f"Cache hit: {key}")
+            return value
+
+    def _set_local(self, key: str, value: Any) -> None:
+        with self._lock:
+            self._cache[key] = (value, time.monotonic())
+            logger.debug(f"Cache set: {key}")
     
     def get(self, key: str) -> Optional[Any]:
         """
@@ -49,29 +70,16 @@ class TTLCache:
         Returns:
             Cached value or None if not found or expired
         """
-        # Namespaced caches are Valkey-backed only. We intentionally avoid
-        # keeping a parallel in-process copy so Valkey is the single temporary
-        # storage layer for shared backend caches/artifacts.
         if self.namespace:
             shared_value = valkey_get_json(self._valkey_key(key))
             if shared_value is not None:
                 logger.debug(f"Valkey cache hit: {self._valkey_key(key)}")
                 return shared_value
+            if not valkey_available():
+                return self._get_local(key)
             logger.debug(f"Valkey cache miss: {self._valkey_key(key)}")
             return None
-        with self._lock:
-            if key not in self._cache:
-                logger.debug(f"Cache miss: {key}")
-                return None
-            
-            value, timestamp = self._cache[key]
-            if time.monotonic() - timestamp > self.ttl:
-                logger.debug(f"Cache expired: {key}")
-                del self._cache[key]
-                return None
-            
-            logger.debug(f"Cache hit: {key}")
-            return value
+        return self._get_local(key)
     
     def set(self, key: str, value: Any) -> None:
         """
@@ -82,12 +90,13 @@ class TTLCache:
             value: Value to cache
         """
         if self.namespace:
-            valkey_set_json(self._valkey_key(key), value, self.ttl)
-            logger.debug(f"Valkey cache set: {self._valkey_key(key)}")
+            if valkey_available():
+                valkey_set_json(self._valkey_key(key), value, self.ttl)
+                logger.debug(f"Valkey cache set: {self._valkey_key(key)}")
+            else:
+                self._set_local(key, value)
             return
-        with self._lock:
-            self._cache[key] = (value, time.monotonic())
-            logger.debug(f"Cache set: {key}")
+        self._set_local(key, value)
     
     def invalidate(self, key: Optional[str] = None) -> None:
         """
@@ -100,9 +109,13 @@ class TTLCache:
             if key is None:
                 logger.info("Valkey cache cleared (all entries) for namespace=%s", self.namespace)
                 valkey_delete_prefix(f"{self.namespace}:")
+                with self._lock:
+                    self._cache.clear()
             else:
                 logger.debug("Valkey cache invalidated: %s", self._valkey_key(key))
                 valkey_delete(self._valkey_key(key))
+                with self._lock:
+                    self._cache.pop(key, None)
             return
         with self._lock:
             if key is None:
@@ -127,6 +140,10 @@ class TTLCache:
                 prefix,
             )
             valkey_delete_prefix(f"{self.namespace}:{prefix}")
+            with self._lock:
+                keys_to_delete = [k for k in self._cache if k.startswith(prefix)]
+                for k in keys_to_delete:
+                    del self._cache[k]
             return
         with self._lock:
             keys_to_delete = [k for k in self._cache if k.startswith(prefix)]
@@ -139,7 +156,8 @@ class TTLCache:
         """Get current cache size."""
         if self.namespace:
             shared_count = valkey_count_prefix(f"{self.namespace}:")
-            return int(shared_count or 0)
+            if shared_count is not None:
+                return int(shared_count)
         with self._lock:
             return len(self._cache)
 

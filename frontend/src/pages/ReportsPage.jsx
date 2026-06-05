@@ -238,7 +238,7 @@ export default function ReportsPage({ latestWorkbenchRun }) {
         }));
     }, [filteredDashboardRows, showAllAlerts]);
     const networkNodes = useMemo(() => {
-        const rows = dashboardRows.slice(0, NETWORK_POSITIONS.length);
+        const rows = filteredDashboardRows.slice(0, NETWORK_POSITIONS.length);
         return rows.map((row, index) => {
             const position = NETWORK_POSITIONS[index];
             const label = row.entityType === "office" ? "OFFICE" : row.entityType === "vendor" ? "VENDOR" : "BILL";
@@ -259,7 +259,7 @@ export default function ReportsPage({ latestWorkbenchRun }) {
     const approverNodes = useMemo(() => {
         const seen = new Set();
         const approvers = [];
-        for (const row of detailRows) {
+        for (const row of filteredDetailRows) {
             const payload = row.row_payload_json || {};
             const candidates = [
                 resolvePayloadValue(payload, ["approver_emp_id", "approver_id", "employee_id", "emp_id", "user_id"]),
@@ -285,10 +285,25 @@ export default function ReportsPage({ latestWorkbenchRun }) {
     const layout = getLayout(viewportWidth);
     const activeTables = report?.selected_tables?.length ? report.selected_tables : activeDataset?.selected_tables || [];
     const filteredAnomalies = filteredDashboardRows.length;
-    const filteredReviewedCount = filteredDashboardRows.filter((row) => row.status === "Under Review" || row.status === "Approved").length;
-    const filteredAcceptedCount = filteredDashboardRows.filter((row) => row.status === "Approved").length;
+    const rowTotals = useMemo(() => {
+        let reviewed = 0;
+        let accepted = 0;
+        let amount = 0;
+        for (const row of filteredDashboardRows) {
+            if (row.status === "Under Review" || row.status === "Approved") {
+                reviewed += 1;
+            }
+            if (row.status === "Approved") {
+                accepted += 1;
+            }
+            amount += row.amount;
+        }
+        return { reviewed, accepted, amount };
+    }, [filteredDashboardRows]);
+    const filteredReviewedCount = rowTotals.reviewed;
+    const filteredAcceptedCount = rowTotals.accepted;
     const filteredPendingCount = Math.max(filteredAnomalies - filteredReviewedCount, 0);
-    const financialImpact = filteredDashboardRows.reduce((sum, row) => sum + row.amount, 0);
+    const financialImpact = rowTotals.amount;
     const highRiskPercent = filteredAnomalies > 0 ? (riskBuckets.high / filteredAnomalies) * 100 : 0;
     const breakupConicGradient = buildConicGradient(reasonStats, BREAKUP_COLORS);
     const riskConicGradient = buildConicGradient([

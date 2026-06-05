@@ -12,6 +12,7 @@ from app.services.workbench.business_rules import RULE_REGISTRY_INDEX
 from app.services.workbench.model_cleaning import (
     apply_date_sequence_summary,
     apply_invoice_row_filter_summary,
+    apply_night_timestamp_summary,
     business_day_gap_series,
     normalize_boolean_feature_columns,
 )
@@ -20,11 +21,13 @@ from app.services.workbench.model_cleaning import (
 TRAINING_ROW_DROP_POLICIES = [
     "duplicate_void_invoice_rows",
     "date_sequence_violation_rows",
+    "night_timestamp_rows",
 ]
 
 RUNTIME_RULE_FLAG_POLICIES = [
     "duplicate_void_invoice_rows",
     "date_sequence_violation_rows",
+    "night_timestamp_rows",
     *[
         str(rule["rule_name"])
         for rule in RULE_REGISTRY_INDEX
@@ -49,6 +52,7 @@ class SavedModelPreprocessingPolicy:
     boolean_columns: list[str]
     invoice_row_filter_summary: dict[str, Any]
     date_sequence_summary: dict[str, Any]
+    night_timestamp_summary: dict[str, Any]
     date_gap_features: list[dict[str, Any]]
     training_row_drop_policies: list[str]
     runtime_rule_flag_policies: list[str]
@@ -74,6 +78,7 @@ class SavedModelPreprocessingPolicy:
             boolean_columns=[str(column) for column in artifact.get("boolean_columns") or []],
             invoice_row_filter_summary=dict(artifact.get("invoice_row_filter_summary") or {}),
             date_sequence_summary=dict(artifact.get("date_sequence_summary") or {}),
+            night_timestamp_summary=dict(artifact.get("night_timestamp_summary") or {}),
             date_gap_features=[
                 dict(item)
                 for item in artifact.get("date_gap_features") or []
@@ -105,6 +110,7 @@ class SavedModelPreprocessingPolicy:
             "boolean_columns": list(self.boolean_columns),
             "invoice_row_filter_summary": dict(self.invoice_row_filter_summary),
             "date_sequence_summary": dict(self.date_sequence_summary),
+            "night_timestamp_summary": dict(self.night_timestamp_summary),
             "date_gap_features": [dict(item) for item in self.date_gap_features],
             "training_row_drop_policies": list(self.training_row_drop_policies),
             "runtime_rule_flag_policies": list(self.runtime_rule_flag_policies),
@@ -122,6 +128,7 @@ def build_saved_model_preprocessing_policy(
     invoice_row_filter_summary: dict[str, Any],
     date_sequence_summary: dict[str, Any],
     date_gap_features: list[dict[str, Any]],
+    night_timestamp_summary: dict[str, Any] | None = None,
 ) -> SavedModelPreprocessingPolicy:
     """Create the shared preprocessing contract stored with each trained model."""
     return SavedModelPreprocessingPolicy(
@@ -132,6 +139,7 @@ def build_saved_model_preprocessing_policy(
         boolean_columns=[str(column) for column in boolean_columns],
         invoice_row_filter_summary=dict(invoice_row_filter_summary),
         date_sequence_summary=dict(date_sequence_summary),
+        night_timestamp_summary=dict(night_timestamp_summary or {}),
         date_gap_features=[dict(item) for item in date_gap_features],
         training_row_drop_policies=list(TRAINING_ROW_DROP_POLICIES),
         runtime_rule_flag_policies=list(RUNTIME_RULE_FLAG_POLICIES),
@@ -250,6 +258,7 @@ def apply_saved_model_preprocessing_policy(
 
     working = apply_invoice_row_filter_summary(working, policy.invoice_row_filter_summary)
     working = apply_date_sequence_summary(working, policy.date_sequence_summary)
+    working = apply_night_timestamp_summary(working, policy.night_timestamp_summary)
     working = _add_saved_date_gap_features(working, policy)
     working = normalize_boolean_feature_columns(working, policy.boolean_columns)
     return working.where(pd.notna(working), np.nan)

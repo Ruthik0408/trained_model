@@ -209,6 +209,53 @@ def apply_date_sequence_summary(
     return df
 
 
+def build_night_timestamp_summary(
+    df: pd.DataFrame,
+    timestamp_columns: list[str],
+) -> dict[str, object]:
+    """Describe timestamp columns that contain rows between 21:00 and 05:59."""
+    column_summaries: list[dict[str, object]] = []
+
+    for column_name in timestamp_columns:
+        if column_name not in df.columns:
+            continue
+        night_indexes = _night_timestamp_indexes(df, column_name=column_name)
+        parsed = pd.to_datetime(df[column_name], errors="coerce")
+        rows_checked = int((parsed.notna() & _has_meaningful_time(parsed)).sum())
+        column_summaries.append(
+            {
+                "column_name": column_name,
+                "rows_checked": rows_checked,
+                "invalid_row_count": len(night_indexes),
+                "status": "checked",
+            }
+        )
+
+    return {
+        "dropped_row_count": int(sum(int(item["invalid_row_count"]) for item in column_summaries)),
+        "columns": column_summaries,
+        "night_window": {"start_hour": 21, "end_hour": 6},
+    }
+
+
+def apply_night_timestamp_summary(
+    df: pd.DataFrame,
+    summary: dict[str, Any] | None,
+) -> pd.DataFrame:
+    """Drop rows where any configured timestamp falls between 21:00 and 05:59."""
+    rows_to_drop: set[Any] = set()
+
+    for column_summary in (summary or {}).get("columns") or []:
+        column_name = column_summary.get("column_name")
+        if not column_name or column_name not in df.columns:
+            continue
+        rows_to_drop.update(_night_timestamp_indexes(df, column_name=str(column_name)))
+
+    if rows_to_drop:
+        return df.drop(index=sorted(rows_to_drop), errors="ignore")
+    return df
+
+
 def _invoice_row_indexes(
     df: pd.DataFrame,
     *,
@@ -243,3 +290,23 @@ def _date_sequence_invalid_indexes(
     comparable = df[previous_column].notna() & df[next_column].notna()
     invalid = comparable & (df[next_column] < df[previous_column])
     return df.index[invalid].tolist()
+
+
+def _night_timestamp_indexes(
+    df: pd.DataFrame,
+    *,
+    column_name: str,
+) -> list[Any]:
+    parsed = pd.to_datetime(df[column_name], errors="coerce")
+    comparable = parsed.notna() & _has_meaningful_time(parsed)
+    night_time = comparable & ((parsed.dt.hour >= 21) | (parsed.dt.hour < 6))
+    return df.index[night_time.fillna(False)].tolist()
+
+
+def _has_meaningful_time(parsed: pd.Series) -> pd.Series:
+    return (
+        (parsed.dt.hour != 0)
+        | (parsed.dt.minute != 0)
+        | (parsed.dt.second != 0)
+        | (parsed.dt.microsecond != 0)
+    ).fillna(False)

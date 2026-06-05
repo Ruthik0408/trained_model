@@ -173,7 +173,7 @@ class WorkbenchRunRequest(BaseModel):
                         "second_column": "bills.approval_date",
                     }
                 ],
-                "contamination": 0.05,
+                "contamination": 0.02,
                 "from_date": "2025-01-01",
                 "to_date": "2025-12-31",
             }

@@ -5,8 +5,8 @@ import pandas as pd
 import pytest
 
 from app.schemas.workbench_schema import WorkbenchRunRequest
-import app.services.workbench.orchestrator as orchestrator
-from app.services.workbench.orchestrator import (
+import app.services.workbench.runner as runner
+from app.services.workbench.runner import (
     RuleFlagState,
     WorkbenchExecutionState,
     _build_builtin_reason_lookup,
@@ -146,14 +146,14 @@ def test_run_workbench_does_not_create_run_when_dataset_build_fails(monkeypatch)
     )
     created_run = False
 
-    monkeypatch.setattr(orchestrator, "get_run_execution_artifact", lambda _payload: {"cached": True})
-    monkeypatch.setattr(orchestrator, "get_isolation_forest_artifact", lambda _payload: {"cached": True})
-    monkeypatch.setattr(orchestrator, "_execution_state_from_artifact", lambda _payload, _artifact: execution)
-    monkeypatch.setattr(orchestrator, "_extract_rule_flags", lambda _joined: rule_flags)
-    monkeypatch.setattr(orchestrator, "_isolation_forest_state_from_artifact", lambda _artifact: model_state)
-    monkeypatch.setattr(orchestrator, "_calculate_amount_total", lambda _payload, _filtered: 0.0)
+    monkeypatch.setattr(runner, "get_run_execution_artifact", lambda _payload: {"cached": True})
+    monkeypatch.setattr(runner, "get_isolation_forest_artifact", lambda _payload: {"cached": True})
+    monkeypatch.setattr(runner, "_execution_state_from_artifact", lambda _payload, _artifact: execution)
+    monkeypatch.setattr(runner, "_extract_rule_flags", lambda _joined: rule_flags)
+    monkeypatch.setattr(runner, "_isolation_forest_state_from_artifact", lambda _artifact: model_state)
+    monkeypatch.setattr(runner, "_calculate_amount_total", lambda _payload, _filtered: 0.0)
     monkeypatch.setattr(
-        orchestrator,
+        runner,
         "_build_dataset_frame",
         lambda _inputs: (_ for _ in ()).throw(ValueError("bad scoring length")),
     )
@@ -163,10 +163,10 @@ def test_run_workbench_does_not_create_run_when_dataset_build_fails(monkeypatch)
         created_run = True
         return SimpleNamespace(run_id=1)
 
-    monkeypatch.setattr(orchestrator, "_create_run_record", fake_create_run_record)
+    monkeypatch.setattr(runner, "_create_run_record", fake_create_run_record)
 
     with pytest.raises(ValueError, match="bad scoring length"):
-        orchestrator.run_workbench(SimpleNamespace(), payload)
+        runner.run_workbench(SimpleNamespace(), payload)
 
     assert created_run is False
 
@@ -196,9 +196,9 @@ def test_run_isolation_forest_scores_only_non_rule_rows(monkeypatch) -> None:
     full_feature_frame = pd.DataFrame({"feature": [100.0, 200.0]}, index=[10, 20])
     scored_inputs: list[pd.DataFrame] = []
 
-    monkeypatch.setattr(orchestrator, "load_saved_model_artifact", lambda _payload: {"pipeline": object(), "transformed_feature_names": []})
+    monkeypatch.setattr(runner, "load_saved_model_artifact", lambda _payload: {"pipeline": object(), "transformed_feature_names": []})
     monkeypatch.setattr(
-        orchestrator,
+        runner,
         "build_saved_model_feature_frame",
         lambda _joined, _artifact: (
             full_feature_frame,
@@ -215,8 +215,8 @@ def test_run_isolation_forest_scores_only_non_rule_rows(monkeypatch) -> None:
         scored_inputs.append(feature_frame.copy())
         return np.asarray([[1.0]]), np.asarray([0.91]), pd.Series([True], index=feature_frame.index, dtype=bool), 0.5
 
-    monkeypatch.setattr(orchestrator, "score_with_saved_model", fake_score)
-    monkeypatch.setattr(orchestrator, "build_feature_explanation_signals", lambda *_args, **_kwargs: {20: [{"signal": "ml"}]})
+    monkeypatch.setattr(runner, "score_with_saved_model", fake_score)
+    monkeypatch.setattr(runner, "build_feature_explanation_signals", lambda *_args, **_kwargs: {20: [{"signal": "ml"}]})
 
     model_state = _run_isolation_forest(payload, execution, rule_flags)
 
